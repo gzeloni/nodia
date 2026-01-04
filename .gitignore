@@ -3,7 +3,9 @@
 *.egg-info
 setup.py
 pyproject.toml
-test*
 *__pycache__*
 .DS_Store
 dist/*
+build/
+.pytest_cache/
+target/
