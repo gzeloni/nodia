@@ -56,9 +56,9 @@ fn run_command(args: &[String]) -> Result<(), String> {
         }
     }
 
-    let path = path.ok_or_else(|| "missing .orich path".to_string())?;
-    if !path.ends_with(".orich") {
-        return Err("invalid file extension; expected .orich".to_string());
+    let path = path.ok_or_else(|| "missing .och path".to_string())?;
+    if !path.ends_with(".och") {
+        return Err("invalid file extension; expected .och".to_string());
     }
     let source = fs::read_to_string(&path).map_err(|err| format!("cannot read '{path}': {err}"))?;
     let input = parse_vars(&vars)?;
@@ -195,5 +195,5 @@ fn unquote(value: &str) -> String {
 }
 
 fn print_help() {
-    println!("usage: orich run <file.orich> [-o|--output] [--vars key=value ...]");
+    println!("usage: orich run <file.och> [-o|--output] [--vars key=value ...]");
 }
