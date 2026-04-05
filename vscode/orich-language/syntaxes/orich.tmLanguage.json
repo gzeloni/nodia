@@ -1,0 +1,213 @@
+{
+  "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
+  "name": "Orich",
+  "scopeName": "source.orich",
+  "patterns": [
+    {
+      "include": "#comments"
+    },
+    {
+      "include": "#strings"
+    },
+    {
+      "include": "#numbers"
+    },
+    {
+      "include": "#keywords"
+    },
+    {
+      "include": "#builtins"
+    },
+    {
+      "include": "#declarations"
+    },
+    {
+      "include": "#operators"
+    },
+    {
+      "include": "#punctuation"
+    }
+  ],
+  "repository": {
+    "comments": {
+      "patterns": [
+        {
+          "name": "comment.line.number-sign.orich",
+          "match": "#.*$"
+        },
+        {
+          "name": "comment.line.double-slash.orich",
+          "match": "//.*$"
+        }
+      ]
+    },
+    "strings": {
+      "patterns": [
+        {
+          "name": "string.quoted.triple.orich",
+          "begin": "\"\"\"",
+          "end": "\"\"\"",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.orich",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.double.orich",
+          "begin": "\"",
+          "end": "\"",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.orich",
+              "match": "\\\\."
+            }
+          ]
+        }
+      ]
+    },
+    "interpolation": {
+      "patterns": [
+        {
+          "name": "meta.interpolation.orich",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.begin.orich"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.section.interpolation.end.orich"
+            }
+          },
+          "patterns": [
+            {
+              "include": "$self"
+            }
+          ]
+        }
+      ]
+    },
+    "numbers": {
+      "patterns": [
+        {
+          "name": "constant.numeric.float.orich",
+          "match": "\\b\\d+\\.\\d+\\b"
+        },
+        {
+          "name": "constant.numeric.integer.orich",
+          "match": "\\b\\d+\\b"
+        }
+      ]
+    },
+    "keywords": {
+      "patterns": [
+        {
+          "name": "keyword.control.orich",
+          "match": "\\b(?:if|else|for|in|while|break|continue|return)\\b"
+        },
+        {
+          "name": "keyword.declaration.orich",
+          "match": "\\b(?:let|const|fn)\\b"
+        },
+        {
+          "name": "keyword.operator.logical.orich",
+          "match": "\\b(?:and|or|not)\\b"
+        },
+        {
+          "name": "keyword.other.emit.orich",
+          "match": "\\bemit\\b"
+        },
+        {
+          "name": "keyword.other.import.orich",
+          "match": "\\b(?:import|from|as)\\b"
+        },
+        {
+          "name": "constant.language.orich",
+          "match": "\\b(?:true|false|null)\\b"
+        },
+        {
+          "name": "invalid.deprecated.reserved.orich",
+          "match": "\\b(?:match|case|default|try|catch|throw|defer|type|enum|struct|namespace|use)\\b"
+        }
+      ]
+    },
+    "builtins": {
+      "patterns": [
+        {
+          "name": "support.function.builtin.orich",
+          "match": "\\b(?:uppercase|lowercase|capitalize|trim|replace|split|len|int|float|string|bool|range)\\b(?=\\s*\\()"
+        },
+        {
+          "name": "variable.language.input.orich",
+          "match": "\\binput\\b"
+        }
+      ]
+    },
+    "declarations": {
+      "patterns": [
+        {
+          "name": "meta.function.orich",
+          "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.function.orich"
+            },
+            "2": {
+              "name": "entity.name.function.orich"
+            }
+          }
+        },
+        {
+          "name": "meta.variable.orich",
+          "match": "\\b(let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "keyword.declaration.variable.orich"
+            },
+            "2": {
+              "name": "variable.other.definition.orich"
+            }
+          }
+        }
+      ]
+    },
+    "operators": {
+      "patterns": [
+        {
+          "name": "keyword.operator.comparison.orich",
+          "match": "==|!=|<=|>=|<|>"
+        },
+        {
+          "name": "keyword.operator.assignment.orich",
+          "match": "="
+        },
+        {
+          "name": "keyword.operator.arithmetic.orich",
+          "match": "\\+|-|\\*|/|%"
+        }
+      ]
+    },
+    "punctuation": {
+      "patterns": [
+        {
+          "name": "punctuation.separator.orich",
+          "match": "[,.:;]"
+        },
+        {
+          "name": "punctuation.bracket.orich",
+          "match": "[(){}\\[\\]]"
+        }
+      ]
+    }
+  }
+}
