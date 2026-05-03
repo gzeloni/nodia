@@ -1,8 +1,22 @@
 use crate::ast::Stmt;
+use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::PathBuf;
+use std::rc::Rc;
 
-#[derive(Debug, Clone, PartialEq)]
+pub type ModuleRef = Rc<RefCell<Module>>;
+
+#[derive(Debug, Clone)]
+pub struct Module {
+    pub path: PathBuf,
+    pub declared: Vec<String>,
+    pub exports: BTreeMap<String, Value>,
+    pub mutability: BTreeMap<String, bool>,
+    pub loaded: bool,
+}
+
+#[derive(Debug, Clone)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -11,6 +25,7 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    ImportBinding(ModuleRef, String),
     Function(Function),
 }
 
@@ -18,6 +33,7 @@ pub enum Value {
 pub struct Function {
     pub params: Vec<String>,
     pub body: Vec<Stmt>,
+    pub captures: BTreeMap<String, Value>,
 }
 
 impl Value {
@@ -30,6 +46,7 @@ impl Value {
             Value::String(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
+            Value::ImportBinding(_, _) => true,
             Value::Function(_) => true,
         }
     }
@@ -43,7 +60,27 @@ impl Value {
             Value::String(_) => "string",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::ImportBinding(_, _) => "import",
             Value::Function(_) => "function",
+        }
+    }
+}
+
+impl PartialEq for Value {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Value::Null, Value::Null) => true,
+            (Value::Bool(a), Value::Bool(b)) => a == b,
+            (Value::Int(a), Value::Int(b)) => a == b,
+            (Value::Float(a), Value::Float(b)) => a == b,
+            (Value::String(a), Value::String(b)) => a == b,
+            (Value::List(a), Value::List(b)) => a == b,
+            (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Function(a), Value::Function(b)) => a == b,
+            (Value::ImportBinding(a_module, a_name), Value::ImportBinding(b_module, b_name)) => {
+                Rc::ptr_eq(a_module, b_module) && a_name == b_name
+            }
+            _ => false,
         }
     }
 }
@@ -82,6 +119,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::ImportBinding(_, name) => write!(f, "<import {name}>"),
             Value::Function(_) => write!(f, "<fn>"),
         }
     }

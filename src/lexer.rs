@@ -31,8 +31,18 @@ impl Lexer {
                     self.advance();
                     tokens.push(Token::new(TokenKind::Newline, line, column));
                 }
-                '#' => self.skip_line_comment(),
-                '/' if self.peek_next() == Some('/') => self.skip_line_comment(),
+                '#' => tokens.push(Token::new(
+                    TokenKind::Comment(self.line_comment(1)),
+                    line,
+                    column,
+                )),
+                '/' if self.peek_next() == Some('/') => {
+                    tokens.push(Token::new(
+                        TokenKind::Comment(self.line_comment(2)),
+                        line,
+                        column,
+                    ));
+                }
                 '"' if self.peek_next() == Some('"') && self.peek_n(2) == Some('"') => {
                     tokens.push(Token::new(
                         TokenKind::String(self.triple_string(line, column)?),
@@ -41,7 +51,12 @@ impl Lexer {
                     ));
                 }
                 '"' => tokens.push(Token::new(
-                    TokenKind::String(self.string(line, column)?),
+                    TokenKind::String(self.string(line, column, '"')?),
+                    line,
+                    column,
+                )),
+                '\'' => tokens.push(Token::new(
+                    TokenKind::String(self.string(line, column, '\'')?),
                     line,
                     column,
                 )),
@@ -49,26 +64,11 @@ impl Lexer {
                 'a'..='z' | 'A'..='Z' | '_' => {
                     tokens.push(Token::new(self.identifier(), line, column))
                 }
-                '+' => {
-                    self.advance();
-                    tokens.push(Token::new(TokenKind::Plus, line, column));
-                }
-                '-' => {
-                    self.advance();
-                    tokens.push(Token::new(TokenKind::Minus, line, column));
-                }
-                '*' => {
-                    self.advance();
-                    tokens.push(Token::new(TokenKind::Star, line, column));
-                }
-                '/' => {
-                    self.advance();
-                    tokens.push(Token::new(TokenKind::Slash, line, column));
-                }
-                '%' => {
-                    self.advance();
-                    tokens.push(Token::new(TokenKind::Percent, line, column));
-                }
+                '+' => self.single(&mut tokens, TokenKind::Plus),
+                '-' => self.single(&mut tokens, TokenKind::Minus),
+                '*' => self.single(&mut tokens, TokenKind::Star),
+                '/' => self.single(&mut tokens, TokenKind::Slash),
+                '%' => self.single(&mut tokens, TokenKind::Percent),
                 '=' => {
                     self.advance();
                     if self.match_char('=') {
@@ -169,11 +169,11 @@ impl Lexer {
         }
     }
 
-    fn string(&mut self, line: usize, column: usize) -> OrichResult<String> {
+    fn string(&mut self, line: usize, column: usize, quote: char) -> OrichResult<String> {
         self.advance();
         let mut out = String::new();
         while let Some(ch) = self.peek() {
-            if ch == '"' {
+            if ch == quote {
                 self.advance();
                 return Ok(out);
             }
@@ -187,6 +187,7 @@ impl Lexer {
                     'r' => '\r',
                     't' => '\t',
                     '"' => '"',
+                    '\'' => '\'',
                     '\\' => '\\',
                     other => other,
                 });
@@ -221,13 +222,25 @@ impl Lexer {
         }
     }
 
-    fn skip_line_comment(&mut self) {
+    fn line_comment(&mut self, prefix_len: usize) -> String {
+        for _ in 0..prefix_len {
+            self.advance();
+        }
+        if self.peek() == Some(' ') {
+            self.advance();
+        }
+        let start = self.pos;
         while let Some(ch) = self.peek() {
             if ch == '\n' {
                 break;
             }
             self.advance();
         }
+        self.chars[start..self.pos]
+            .iter()
+            .collect::<String>()
+            .trim_end()
+            .to_string()
     }
 
     fn match_char(&mut self, expected: char) -> bool {
@@ -269,12 +282,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn tokenizes_keywords_and_strings() {
-        let tokens = Lexer::new("let name = \"Ana\"\nemit \"Hi {name}\"")
+    fn tokenizes_keywords_strings_and_comments() {
+        let tokens = Lexer::new("# hi\nlet name = \"Ana\"\nemit \"Hi {name}\"")
             .tokenize()
             .unwrap();
-        assert!(matches!(tokens[0].kind, TokenKind::Let));
-        assert!(matches!(tokens[1].kind, TokenKind::Identifier(_)));
+        assert!(matches!(tokens[0].kind, TokenKind::Comment(_)));
+        assert!(matches!(tokens[2].kind, TokenKind::Let));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Emit)));
     }
 }

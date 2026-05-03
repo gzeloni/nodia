@@ -7,6 +7,13 @@ pub struct Program {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
+    Comment(String),
+    Import {
+        path: String,
+        alias: Option<String>,
+        show: Vec<String>,
+        hide: Vec<String>,
+    },
     Let {
         name: String,
         value: Expr,

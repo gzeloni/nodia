@@ -33,6 +33,69 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
                     .collect(),
             )
         }
+        "join" => {
+            expect_arity(&args, 2, "join")?;
+            let Value::List(values) = &args[0] else {
+                return Err(OrichError::runtime(format!(
+                    "join() expects list as first argument, got {}",
+                    args[0].type_name()
+                )));
+            };
+            Value::String(
+                values
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join(&args[1].to_string()),
+            )
+        }
+        "contains" => {
+            expect_arity(&args, 2, "contains")?;
+            Value::Bool(match &args[0] {
+                Value::String(value) => value.contains(&args[1].to_string()),
+                Value::List(values) => values.contains(&args[1]),
+                Value::Map(values) => values.contains_key(&args[1].to_string()),
+                other => {
+                    return Err(OrichError::runtime(format!(
+                        "contains() does not accept {}",
+                        other.type_name()
+                    )));
+                }
+            })
+        }
+        "starts_with" => {
+            expect_arity(&args, 2, "starts_with")?;
+            Value::Bool(args[0].to_string().starts_with(&args[1].to_string()))
+        }
+        "ends_with" => {
+            expect_arity(&args, 2, "ends_with")?;
+            Value::Bool(args[0].to_string().ends_with(&args[1].to_string()))
+        }
+        "indent" => indent(args)?,
+        "dedent" => {
+            expect_arity(&args, 1, "dedent")?;
+            Value::String(dedent(&args[0].to_string()))
+        }
+        "keys" => {
+            expect_arity(&args, 1, "keys")?;
+            let Value::Map(values) = &args[0] else {
+                return Err(OrichError::runtime(format!(
+                    "keys() expects map, got {}",
+                    args[0].type_name()
+                )));
+            };
+            Value::List(values.keys().cloned().map(Value::String).collect())
+        }
+        "values" => {
+            expect_arity(&args, 1, "values")?;
+            let Value::Map(values) = &args[0] else {
+                return Err(OrichError::runtime(format!(
+                    "values() expects map, got {}",
+                    args[0].type_name()
+                )));
+            };
+            Value::List(values.values().cloned().collect())
+        }
         "len" => {
             expect_arity(&args, 1, "len")?;
             let len = match &args[0] {
@@ -77,6 +140,45 @@ fn unary_string(
 ) -> OrichResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::String(f(args[0].to_string())))
+}
+
+fn indent(args: Vec<Value>) -> OrichResult<Value> {
+    expect_arity(&args, 2, "indent")?;
+    let text = args[0].to_string();
+    let prefix = match &args[1] {
+        Value::Int(size) => " ".repeat((*size).max(0) as usize),
+        other => other.to_string(),
+    };
+    Ok(Value::String(
+        text.lines()
+            .map(|line| format!("{prefix}{line}"))
+            .collect::<Vec<_>>()
+            .join("\n"),
+    ))
+}
+
+fn dedent(text: &str) -> String {
+    let min_indent = text
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.chars()
+                .take_while(|ch| *ch == ' ' || *ch == '\t')
+                .count()
+        })
+        .min()
+        .unwrap_or(0);
+
+    text.lines()
+        .map(|line| {
+            if line.trim().is_empty() {
+                String::new()
+            } else {
+                line.chars().skip(min_indent).collect()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
 fn range(args: Vec<Value>) -> OrichResult<Value> {

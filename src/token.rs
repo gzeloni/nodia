@@ -1,3 +1,5 @@
+use std::fmt;
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
     pub kind: TokenKind,
@@ -34,6 +36,8 @@ pub enum TokenKind {
     Import,
     From,
     As,
+    Show,
+    Hide,
     Match,
     Case,
     Default,
@@ -50,6 +54,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     String(String),
+    Comment(String),
     Plus,
     Minus,
     Star,
@@ -76,6 +81,98 @@ pub enum TokenKind {
     Eof,
 }
 
+impl TokenKind {
+    pub fn name(&self) -> &'static str {
+        match self {
+            TokenKind::Let => "Let",
+            TokenKind::Const => "Const",
+            TokenKind::Fn => "Fn",
+            TokenKind::Return => "Return",
+            TokenKind::Emit => "Emit",
+            TokenKind::If => "If",
+            TokenKind::Else => "Else",
+            TokenKind::For => "For",
+            TokenKind::In => "In",
+            TokenKind::While => "While",
+            TokenKind::Break => "Break",
+            TokenKind::Continue => "Continue",
+            TokenKind::True => "True",
+            TokenKind::False => "False",
+            TokenKind::Null => "Null",
+            TokenKind::And => "And",
+            TokenKind::Or => "Or",
+            TokenKind::Not => "Not",
+            TokenKind::Import => "Import",
+            TokenKind::From => "From",
+            TokenKind::As => "As",
+            TokenKind::Show => "Show",
+            TokenKind::Hide => "Hide",
+            TokenKind::Match => "Match",
+            TokenKind::Case => "Case",
+            TokenKind::Default => "Default",
+            TokenKind::Try => "Try",
+            TokenKind::Catch => "Catch",
+            TokenKind::Throw => "Throw",
+            TokenKind::Defer => "Defer",
+            TokenKind::Type => "Type",
+            TokenKind::Enum => "Enum",
+            TokenKind::Struct => "Struct",
+            TokenKind::Namespace => "Namespace",
+            TokenKind::Use => "Use",
+            TokenKind::Identifier(_) => "Identifier",
+            TokenKind::Int(_) => "Int",
+            TokenKind::Float(_) => "Float",
+            TokenKind::String(_) => "String",
+            TokenKind::Comment(_) => "Comment",
+            TokenKind::Plus => "Plus",
+            TokenKind::Minus => "Minus",
+            TokenKind::Star => "Star",
+            TokenKind::Slash => "Slash",
+            TokenKind::Percent => "Percent",
+            TokenKind::Equal => "Equal",
+            TokenKind::EqualEqual => "EqualEqual",
+            TokenKind::BangEqual => "BangEqual",
+            TokenKind::Less => "Less",
+            TokenKind::LessEqual => "LessEqual",
+            TokenKind::Greater => "Greater",
+            TokenKind::GreaterEqual => "GreaterEqual",
+            TokenKind::LeftParen => "LeftParen",
+            TokenKind::RightParen => "RightParen",
+            TokenKind::LeftBrace => "LeftBrace",
+            TokenKind::RightBrace => "RightBrace",
+            TokenKind::LeftBracket => "LeftBracket",
+            TokenKind::RightBracket => "RightBracket",
+            TokenKind::Comma => "Comma",
+            TokenKind::Dot => "Dot",
+            TokenKind::Colon => "Colon",
+            TokenKind::Semicolon => "Semicolon",
+            TokenKind::Newline => "Newline",
+            TokenKind::Eof => "Eof",
+        }
+    }
+
+    pub fn literal(&self) -> Option<String> {
+        match self {
+            TokenKind::Identifier(value) | TokenKind::String(value) | TokenKind::Comment(value) => {
+                Some(value.clone())
+            }
+            TokenKind::Int(value) => Some(value.to_string()),
+            TokenKind::Float(value) => Some(value.to_string()),
+            _ => None,
+        }
+    }
+}
+
+impl fmt::Display for TokenKind {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if let Some(literal) = self.literal() {
+            write!(f, "{}({literal:?})", self.name())
+        } else {
+            write!(f, "{}", self.name())
+        }
+    }
+}
+
 pub fn keyword_kind(text: &str) -> Option<TokenKind> {
     Some(match text {
         "let" => TokenKind::Let,
@@ -99,6 +196,8 @@ pub fn keyword_kind(text: &str) -> Option<TokenKind> {
         "import" => TokenKind::Import,
         "from" => TokenKind::From,
         "as" => TokenKind::As,
+        "show" => TokenKind::Show,
+        "hide" => TokenKind::Hide,
         "match" => TokenKind::Match,
         "case" => TokenKind::Case,
         "default" => TokenKind::Default,

@@ -25,9 +25,9 @@ impl Parser {
     }
 
     pub fn parse_expression_only(&mut self) -> OrichResult<Expr> {
-        self.skip_newlines();
+        self.skip_separators();
         let expr = self.expression()?;
-        self.skip_newlines();
+        self.skip_separators();
         if !self.is_at_end() {
             return Err(self.error_here("unexpected token after expression"));
         }
@@ -36,6 +36,12 @@ impl Parser {
 
     fn statement(&mut self) -> OrichResult<Stmt> {
         match &self.peek().kind {
+            TokenKind::Comment(text) => {
+                let text = text.clone();
+                self.advance();
+                Ok(Stmt::Comment(text))
+            }
+            TokenKind::Import => self.import_statement(),
             TokenKind::Let => self.let_statement(true),
             TokenKind::Const => self.let_statement(false),
             TokenKind::Fn => self.fn_statement(),
@@ -52,10 +58,8 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::Continue)
             }
-            TokenKind::Import | TokenKind::From => {
-                Err(self.error_here("imports are reserved but not implemented in v0.1"))
-            }
-            TokenKind::Match
+            TokenKind::From
+            | TokenKind::Match
             | TokenKind::Case
             | TokenKind::Default
             | TokenKind::Try
@@ -73,6 +77,7 @@ impl Parser {
                 let name = name.clone();
                 self.advance();
                 self.expect_equal()?;
+                self.skip_separators();
                 let value = self.expression()?;
                 Ok(Stmt::Assign { name, value })
             }
@@ -80,10 +85,68 @@ impl Parser {
         }
     }
 
+    fn import_statement(&mut self) -> OrichResult<Stmt> {
+        self.advance();
+        self.skip_separators();
+        let token = self.advance().clone();
+        let path = match token.kind {
+            TokenKind::String(path) => path,
+            _ => {
+                return Err(OrichError::new(
+                    "expected string path after import",
+                    token.line,
+                    token.column,
+                ))
+            }
+        };
+
+        let mut alias = None;
+        let mut show = Vec::new();
+        let mut hide = Vec::new();
+        loop {
+            self.skip_separators();
+            if self.match_kind(&TokenKind::As) {
+                self.skip_separators();
+                alias = Some(self.expect_identifier("expected alias after 'as'")?);
+            } else if self.match_kind(&TokenKind::Show) {
+                show = self.import_name_list("show")?;
+            } else if self.match_kind(&TokenKind::Hide) {
+                hide = self.import_name_list("hide")?;
+            } else {
+                break;
+            }
+        }
+
+        Ok(Stmt::Import {
+            path,
+            alias,
+            show,
+            hide,
+        })
+    }
+
+    fn import_name_list(&mut self, clause: &str) -> OrichResult<Vec<String>> {
+        let mut names = Vec::new();
+        loop {
+            self.skip_separators();
+            names.push(self.expect_identifier(&format!("expected name after '{clause}'"))?);
+            self.skip_separators();
+            if !self.match_kind(&TokenKind::Comma) {
+                break;
+            }
+            self.skip_separators();
+            if self.at_statement_end() {
+                break;
+            }
+        }
+        Ok(names)
+    }
+
     fn let_statement(&mut self, mutable: bool) -> OrichResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected variable name")?;
         self.expect_equal()?;
+        self.skip_separators();
         let value = self.expression()?;
         Ok(Stmt::Let {
             name,
@@ -96,16 +159,23 @@ impl Parser {
         self.advance();
         let name = self.expect_identifier("expected function name")?;
         self.expect(TokenKind::LeftParen, "expected '(' after function name")?;
+        self.skip_separators();
         let mut params = Vec::new();
         if !self.check(&TokenKind::RightParen) {
             loop {
                 params.push(self.expect_identifier("expected parameter name")?);
+                self.skip_separators();
                 if !self.match_kind(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_separators();
+                if self.check(&TokenKind::RightParen) {
                     break;
                 }
             }
         }
         self.expect(TokenKind::RightParen, "expected ')' after parameters")?;
+        self.skip_newlines();
         let body = self.block()?;
         Ok(Stmt::Fn { name, params, body })
     }
@@ -121,18 +191,21 @@ impl Parser {
 
     fn emit_statement(&mut self) -> OrichResult<Stmt> {
         self.advance();
+        self.skip_separators();
         Ok(Stmt::Emit(self.expression()?))
     }
 
     fn if_statement(&mut self) -> OrichResult<Stmt> {
         self.advance();
         let condition = self.expression()?;
+        self.skip_newlines();
         let then_branch = self.block()?;
         self.skip_newlines();
         let else_branch = if self.match_kind(&TokenKind::Else) {
             self.skip_newlines();
             if self.match_kind(&TokenKind::If) {
                 let condition = self.expression()?;
+                self.skip_newlines();
                 let then_branch = self.block()?;
                 vec![Stmt::If {
                     condition,
@@ -156,7 +229,9 @@ impl Parser {
         self.advance();
         let name = self.expect_identifier("expected loop variable")?;
         self.expect(TokenKind::In, "expected 'in' after loop variable")?;
+        self.skip_separators();
         let iterable = self.expression()?;
+        self.skip_newlines();
         let body = self.block()?;
         Ok(Stmt::For {
             name,
@@ -168,6 +243,7 @@ impl Parser {
     fn while_statement(&mut self) -> OrichResult<Stmt> {
         self.advance();
         let condition = self.expression()?;
+        self.skip_newlines();
         let body = self.block()?;
         Ok(Stmt::While { condition, body })
     }
@@ -192,6 +268,7 @@ impl Parser {
     fn or(&mut self) -> OrichResult<Expr> {
         let mut expr = self.and()?;
         while self.match_kind(&TokenKind::Or) {
+            self.skip_separators();
             let right = self.and()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -205,6 +282,7 @@ impl Parser {
     fn and(&mut self) -> OrichResult<Expr> {
         let mut expr = self.equality()?;
         while self.match_kind(&TokenKind::And) {
+            self.skip_separators();
             let right = self.equality()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -226,6 +304,7 @@ impl Parser {
                 None
             };
             let Some(op) = op else { break };
+            self.skip_separators();
             let right = self.comparison()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -251,6 +330,7 @@ impl Parser {
                 None
             };
             let Some(op) = op else { break };
+            self.skip_separators();
             let right = self.term()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -272,6 +352,7 @@ impl Parser {
                 None
             };
             let Some(op) = op else { break };
+            self.skip_separators();
             let right = self.factor()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -295,6 +376,7 @@ impl Parser {
                 None
             };
             let Some(op) = op else { break };
+            self.skip_separators();
             let right = self.unary()?;
             expr = Expr::Binary {
                 left: Box::new(expr),
@@ -307,12 +389,14 @@ impl Parser {
 
     fn unary(&mut self) -> OrichResult<Expr> {
         if self.match_kind(&TokenKind::Minus) {
+            self.skip_separators();
             return Ok(Expr::Unary {
                 op: UnaryOp::Negate,
                 expr: Box::new(self.unary()?),
             });
         }
         if self.match_kind(&TokenKind::Not) {
+            self.skip_separators();
             return Ok(Expr::Unary {
                 op: UnaryOp::Not,
                 expr: Box::new(self.unary()?),
@@ -325,11 +409,17 @@ impl Parser {
         let mut expr = self.primary()?;
         loop {
             if self.match_kind(&TokenKind::LeftParen) {
+                self.skip_separators();
                 let mut args = Vec::new();
                 if !self.check(&TokenKind::RightParen) {
                     loop {
                         args.push(self.expression()?);
+                        self.skip_separators();
                         if !self.match_kind(&TokenKind::Comma) {
+                            break;
+                        }
+                        self.skip_separators();
+                        if self.check(&TokenKind::RightParen) {
                             break;
                         }
                     }
@@ -346,7 +436,9 @@ impl Parser {
                     field,
                 };
             } else if self.match_kind(&TokenKind::LeftBracket) {
+                self.skip_separators();
                 let index = self.expression()?;
+                self.skip_separators();
                 self.expect(TokenKind::RightBracket, "expected ']' after index")?;
                 expr = Expr::Index {
                     object: Box::new(expr),
@@ -370,7 +462,9 @@ impl Parser {
             TokenKind::String(value) => Ok(Expr::Literal(Value::String(value))),
             TokenKind::Identifier(name) => Ok(Expr::Identifier(name)),
             TokenKind::LeftParen => {
+                self.skip_separators();
                 let expr = self.expression()?;
+                self.skip_separators();
                 self.expect(TokenKind::RightParen, "expected ')' after expression")?;
                 Ok(expr)
             }
@@ -386,10 +480,16 @@ impl Parser {
 
     fn list_literal(&mut self) -> OrichResult<Expr> {
         let mut values = Vec::new();
+        self.skip_separators();
         if !self.check(&TokenKind::RightBracket) {
             loop {
                 values.push(self.expression()?);
+                self.skip_separators();
                 if !self.match_kind(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_separators();
+                if self.check(&TokenKind::RightBracket) {
                     break;
                 }
             }
@@ -400,6 +500,7 @@ impl Parser {
 
     fn map_literal(&mut self) -> OrichResult<Expr> {
         let mut pairs = Vec::new();
+        self.skip_separators();
         if !self.check(&TokenKind::RightBrace) {
             loop {
                 let key = match self.advance().kind.clone() {
@@ -413,10 +514,17 @@ impl Parser {
                         ))
                     }
                 };
+                self.skip_separators();
                 self.expect(TokenKind::Colon, "expected ':' after map key")?;
+                self.skip_separators();
                 let value = self.expression()?;
                 pairs.push((key, value));
+                self.skip_separators();
                 if !self.match_kind(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_separators();
+                if self.check(&TokenKind::RightBrace) {
                     break;
                 }
             }
@@ -474,12 +582,29 @@ impl Parser {
     fn at_statement_end(&self) -> bool {
         matches!(
             self.peek().kind,
-            TokenKind::Newline | TokenKind::Semicolon | TokenKind::RightBrace | TokenKind::Eof
+            TokenKind::Newline
+                | TokenKind::Semicolon
+                | TokenKind::RightBrace
+                | TokenKind::Eof
+                | TokenKind::Comment(_)
         )
     }
 
     fn skip_newlines(&mut self) {
         while self.match_kind(&TokenKind::Newline) {}
+    }
+
+    fn skip_separators(&mut self) {
+        loop {
+            if self.match_kind(&TokenKind::Newline) {
+                continue;
+            }
+            if matches!(self.peek().kind, TokenKind::Comment(_)) {
+                self.advance();
+                continue;
+            }
+            break;
+        }
     }
 
     fn is_at_end(&self) -> bool {
@@ -518,6 +643,27 @@ mod tests {
         let tokens = Lexer::new("let name = \"Ana\"\nemit \"Hi {name}\"")
             .tokenize()
             .unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        assert_eq!(program.statements.len(), 2);
+    }
+
+    #[test]
+    fn parses_multiline_maps_lists_and_calls() {
+        let source = r#"
+const user = {
+  name: "Ana",
+  tags: [
+    "dev",
+    "ops",
+  ],
+}
+
+emit join(
+  user.tags,
+  ",",
+)
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
         assert_eq!(program.statements.len(), 2);
     }

@@ -3,8 +3,14 @@ use crate::error::{OrichError, OrichResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::stdlib;
-use crate::value::{Function, Value};
+use crate::value::{Function, Module, ModuleRef, Value};
+use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::path::{Path, PathBuf};
+use std::rc::Rc;
+
+type ModuleCache = Rc<RefCell<HashMap<PathBuf, ModuleRef>>>;
 
 #[derive(Clone)]
 struct Binding {
@@ -22,28 +28,49 @@ enum Flow {
 pub struct Runtime {
     scopes: Vec<HashMap<String, Binding>>,
     output: String,
+    input: BTreeMap<String, Value>,
+    base_dir: Option<PathBuf>,
+    modules: ModuleCache,
+    current_module: Option<ModuleRef>,
 }
 
 impl Runtime {
     pub fn new(input: BTreeMap<String, Value>) -> Self {
+        Self::with_base_dir(input, None)
+    }
+
+    pub fn with_base_dir(input: BTreeMap<String, Value>, base_dir: Option<PathBuf>) -> Self {
+        Self::with_context(input, base_dir, Rc::new(RefCell::new(HashMap::new())), None)
+    }
+
+    fn with_context(
+        input: BTreeMap<String, Value>,
+        base_dir: Option<PathBuf>,
+        modules: ModuleCache,
+        current_module: Option<ModuleRef>,
+    ) -> Self {
         let mut root = HashMap::new();
         root.insert(
             "input".to_string(),
             Binding {
-                value: Value::Map(input),
+                value: Value::Map(input.clone()),
                 mutable: false,
             },
         );
         Self {
             scopes: vec![root],
             output: String::new(),
+            input,
+            base_dir,
+            modules,
+            current_module,
         }
     }
 
     pub fn run(&mut self, program: &Program) -> OrichResult<String> {
         for statement in &program.statements {
             match self.execute(statement)? {
-                Flow::None => {}
+                Flow::None => self.publish_statement(statement)?,
                 Flow::Return(_) => return Err(OrichError::runtime("return outside function")),
                 Flow::Break => return Err(OrichError::runtime("break outside loop")),
                 Flow::Continue => return Err(OrichError::runtime("continue outside loop")),
@@ -67,6 +94,16 @@ impl Runtime {
 
     fn execute(&mut self, statement: &Stmt) -> OrichResult<Flow> {
         match statement {
+            Stmt::Comment(_) => Ok(Flow::None),
+            Stmt::Import {
+                path,
+                alias,
+                show,
+                hide,
+            } => {
+                self.execute_import(path, alias.as_deref(), show, hide)?;
+                Ok(Flow::None)
+            }
             Stmt::Let {
                 name,
                 value,
@@ -87,6 +124,7 @@ impl Runtime {
                     Value::Function(Function {
                         params: params.clone(),
                         body: body.clone(),
+                        captures: BTreeMap::new(),
                     }),
                     false,
                 )?;
@@ -170,13 +208,214 @@ impl Runtime {
         }
     }
 
+    fn execute_import(
+        &mut self,
+        path: &str,
+        alias: Option<&str>,
+        show: &[String],
+        hide: &[String],
+    ) -> OrichResult<()> {
+        let resolved = self.resolve_import(path)?;
+        let module = self.load_module(&resolved)?;
+        let names = self.selected_import_names(&module, show, hide)?;
+
+        if let Some(alias) = alias {
+            let mut namespace = BTreeMap::new();
+            for name in names {
+                namespace.insert(name.clone(), Value::ImportBinding(module.clone(), name));
+            }
+            self.define(alias, Value::Map(namespace), false)
+        } else {
+            for name in names {
+                self.define(
+                    &name,
+                    Value::ImportBinding(module.clone(), name.clone()),
+                    false,
+                )?;
+            }
+            Ok(())
+        }
+    }
+
+    fn load_module(&mut self, resolved: &Path) -> OrichResult<ModuleRef> {
+        if let Some(module) = self.modules.borrow().get(resolved).cloned() {
+            return Ok(module);
+        }
+
+        let source = fs::read_to_string(resolved).map_err(|err| {
+            OrichError::io(format!(
+                "cannot read import '{}': {err}",
+                resolved.display()
+            ))
+        })?;
+        let tokens = Lexer::new(&source)
+            .tokenize()
+            .map_err(|err| err.with_file(resolved.display().to_string()))?;
+        let program = Parser::new(tokens)
+            .parse_program()
+            .map_err(|err| err.with_file(resolved.display().to_string()))?;
+        let declared = declared_bindings(&program);
+        let module = Rc::new(RefCell::new(Module {
+            path: resolved.to_path_buf(),
+            declared: declared.keys().cloned().collect(),
+            exports: BTreeMap::new(),
+            mutability: declared,
+            loaded: false,
+        }));
+        self.modules
+            .borrow_mut()
+            .insert(resolved.to_path_buf(), module.clone());
+
+        let mut runtime = Runtime::with_context(
+            self.input.clone(),
+            resolved.parent().map(Path::to_path_buf),
+            self.modules.clone(),
+            Some(module.clone()),
+        );
+        runtime
+            .run(&program)
+            .map_err(|err| err.with_file(resolved.display().to_string()))?;
+        let exports = runtime.export_declared_bindings();
+        let mut module_mut = module.borrow_mut();
+        module_mut.exports = exports;
+        module_mut.loaded = true;
+        drop(module_mut);
+        Ok(module)
+    }
+
+    fn selected_import_names(
+        &self,
+        module: &ModuleRef,
+        show: &[String],
+        hide: &[String],
+    ) -> OrichResult<Vec<String>> {
+        let module = module.borrow();
+        let all = if module.declared.is_empty() {
+            module.exports.keys().cloned().collect::<Vec<_>>()
+        } else {
+            module.declared.clone()
+        };
+
+        let mut names = if show.is_empty() {
+            all.clone()
+        } else {
+            for name in show {
+                if !all.contains(name) {
+                    return Err(OrichError::runtime(format!(
+                        "import '{}' does not export '{name}'",
+                        module.path.display()
+                    )));
+                }
+            }
+            show.to_vec()
+        };
+
+        names.retain(|name| !hide.contains(name));
+        Ok(names)
+    }
+
+    fn resolve_import(&self, path: &str) -> OrichResult<PathBuf> {
+        let raw = Path::new(path);
+        let joined = if raw.is_absolute() {
+            raw.to_path_buf()
+        } else {
+            self.base_dir
+                .as_deref()
+                .unwrap_or_else(|| Path::new("."))
+                .join(raw)
+        };
+
+        let candidates = if joined.extension().is_some() {
+            vec![joined]
+        } else {
+            vec![
+                joined.with_extension("och"),
+                joined.join("index.och"),
+                joined,
+            ]
+        };
+
+        for candidate in candidates {
+            if candidate.exists() {
+                return candidate.canonicalize().map_err(|err| {
+                    OrichError::io(format!(
+                        "cannot resolve import '{}': {err}",
+                        candidate.display()
+                    ))
+                });
+            }
+        }
+
+        Err(OrichError::io(format!("cannot resolve import '{path}'")))
+    }
+
+    fn publish_statement(&mut self, statement: &Stmt) -> OrichResult<()> {
+        let Some(name) = statement_export_name(statement) else {
+            return Ok(());
+        };
+        let Some(module) = &self.current_module else {
+            return Ok(());
+        };
+        if !module
+            .borrow()
+            .declared
+            .iter()
+            .any(|declared| declared == name)
+        {
+            return Ok(());
+        }
+        let Some(value) = self.root_get(name) else {
+            return Ok(());
+        };
+        let value = self.prepare_export(value);
+        module.borrow_mut().exports.insert(name.to_string(), value);
+        Ok(())
+    }
+
+    fn export_declared_bindings(&self) -> BTreeMap<String, Value> {
+        let Some(module) = &self.current_module else {
+            return BTreeMap::new();
+        };
+        let declared = module.borrow().declared.clone();
+        let mut exports = BTreeMap::new();
+        for name in declared {
+            if let Some(value) = self.root_get(&name) {
+                exports.insert(name, self.prepare_export(value));
+            }
+        }
+        exports
+    }
+
+    fn prepare_export(&self, value: Value) -> Value {
+        match value {
+            Value::Function(mut function) => {
+                function.captures = self.capture_bindings();
+                Value::Function(function)
+            }
+            other => other,
+        }
+    }
+
+    fn capture_bindings(&self) -> BTreeMap<String, Value> {
+        self.scopes
+            .first()
+            .into_iter()
+            .flat_map(|scope| scope.iter())
+            .filter(|(name, _)| name.as_str() != "input")
+            .map(|(name, binding)| (name.clone(), binding.value.clone()))
+            .collect()
+    }
+
     fn eval(&mut self, expr: &Expr) -> OrichResult<Value> {
         match expr {
             Expr::Literal(Value::String(value)) => Ok(Value::String(self.interpolate(value)?)),
-            Expr::Literal(value) => Ok(value.clone()),
-            Expr::Identifier(name) => self
-                .get(name)
-                .ok_or_else(|| OrichError::runtime(format!("undefined variable '{name}'"))),
+            Expr::Literal(value) => self.resolve_value(value.clone()),
+            Expr::Identifier(name) => {
+                let value = self
+                    .get(name)
+                    .ok_or_else(|| OrichError::runtime(format!("undefined variable '{name}'")))?;
+                self.resolve_value(value)
+            }
             Expr::Unary { op, expr } => {
                 let value = self.eval(expr)?;
                 match op {
@@ -196,10 +435,12 @@ impl Runtime {
             Expr::Get { object, field } => {
                 let object = self.eval(object)?;
                 match object {
-                    Value::Map(map) => map
-                        .get(field)
-                        .cloned()
-                        .ok_or_else(|| OrichError::runtime(format!("field '{field}' not found"))),
+                    Value::Map(map) => {
+                        let value = map.get(field).cloned().ok_or_else(|| {
+                            OrichError::runtime(format!("field '{field}' not found"))
+                        })?;
+                        self.resolve_value(value)
+                    }
                     other => Err(OrichError::runtime(format!(
                         "cannot access field on {}",
                         other.type_name()
@@ -223,6 +464,17 @@ impl Runtime {
                 }
                 Ok(Value::Map(map))
             }
+        }
+    }
+
+    fn resolve_value(&self, value: Value) -> OrichResult<Value> {
+        match value {
+            Value::ImportBinding(module, name) => {
+                module.borrow().exports.get(&name).cloned().ok_or_else(|| {
+                    OrichError::runtime(format!("imported binding '{name}' is not initialized yet"))
+                })
+            }
+            other => Ok(other),
         }
     }
 
@@ -284,12 +536,19 @@ impl Runtime {
                         arg_values.len()
                     )));
                 }
+                let has_captures = !function.captures.is_empty();
+                if has_captures {
+                    self.scopes.push(binding_scope(&function.captures, false));
+                }
                 self.scopes.push(HashMap::new());
                 for (name, value) in function.params.iter().zip(arg_values) {
                     self.define(name, value, true)?;
                 }
                 let flow = self.execute_block(&function.body)?;
                 self.scopes.pop();
+                if has_captures {
+                    self.scopes.pop();
+                }
                 match flow {
                     Flow::Return(value) => Ok(value),
                     Flow::None => Ok(Value::Null),
@@ -398,10 +657,11 @@ impl Runtime {
             }
             Value::Map(values) => {
                 let key = index.to_string();
-                values
+                let value = values
                     .get(&key)
                     .cloned()
-                    .ok_or_else(|| OrichError::runtime(format!("key '{key}' not found")))
+                    .ok_or_else(|| OrichError::runtime(format!("key '{key}' not found")))?;
+                self.resolve_value(value)
             }
             other => Err(OrichError::runtime(format!(
                 "cannot index {}",
@@ -460,6 +720,9 @@ impl Runtime {
     fn assign(&mut self, name: &str, value: Value) -> OrichResult<()> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.get_mut(name) {
+                if let Value::ImportBinding(module, export_name) = binding.value.clone() {
+                    return assign_import_binding(module, &export_name, value);
+                }
                 if !binding.mutable {
                     return Err(OrichError::runtime(format!(
                         "cannot assign to const '{name}'"
@@ -478,6 +741,63 @@ impl Runtime {
             .rev()
             .find_map(|scope| scope.get(name).map(|binding| binding.value.clone()))
     }
+
+    fn root_get(&self, name: &str) -> Option<Value> {
+        self.scopes
+            .first()
+            .and_then(|scope| scope.get(name).map(|binding| binding.value.clone()))
+    }
+}
+
+fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
+    program
+        .statements
+        .iter()
+        .filter_map(|statement| match statement {
+            Stmt::Let { name, mutable, .. } => Some((name.clone(), *mutable)),
+            Stmt::Fn { name, .. } => Some((name.clone(), false)),
+            _ => None,
+        })
+        .collect()
+}
+
+fn statement_export_name(statement: &Stmt) -> Option<&str> {
+    match statement {
+        Stmt::Let { name, .. } | Stmt::Fn { name, .. } | Stmt::Assign { name, .. } => Some(name),
+        _ => None,
+    }
+}
+
+fn assign_import_binding(module: ModuleRef, name: &str, value: Value) -> OrichResult<()> {
+    let mut module = module.borrow_mut();
+    let mutable = module.mutability.get(name).copied().unwrap_or(false);
+    if !mutable {
+        return Err(OrichError::runtime(format!(
+            "cannot assign to const '{name}'"
+        )));
+    }
+    if !module.exports.contains_key(name) {
+        return Err(OrichError::runtime(format!(
+            "imported binding '{name}' is not initialized yet"
+        )));
+    }
+    module.exports.insert(name.to_string(), value);
+    Ok(())
+}
+
+fn binding_scope(values: &BTreeMap<String, Value>, mutable: bool) -> HashMap<String, Binding> {
+    values
+        .iter()
+        .map(|(name, value)| {
+            (
+                name.clone(),
+                Binding {
+                    value: value.clone(),
+                    mutable,
+                },
+            )
+        })
+        .collect()
 }
 
 fn to_number(value: &Value) -> OrichResult<f64> {
@@ -495,6 +815,7 @@ fn to_number(value: &Value) -> OrichResult<f64> {
 mod tests {
     use super::*;
     use crate::run_source;
+    use std::fs;
 
     #[test]
     fn emits_interpolated_input() {
@@ -502,5 +823,84 @@ mod tests {
         input.insert("name".to_string(), Value::String("Ana".to_string()));
         let output = run_source("let name = input.name\nemit \"Hello, {name}\"", input).unwrap();
         assert_eq!(output, "Hello, Ana");
+    }
+
+    #[test]
+    fn imported_functions_keep_module_bindings() {
+        let dir = std::env::temp_dir().join(format!("orich-import-capture-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let lib = dir.join("lib.och");
+        let main = dir.join("main.och");
+        fs::write(
+            &lib,
+            "const prefix = \"Hi\"\nfn greet(name) {\n  return \"{prefix}, {name}\"\n}\n",
+        )
+        .unwrap();
+        fs::write(&main, "import './lib' as lib\nemit lib.greet(\"Ana\")\n").unwrap();
+
+        let output = crate::run_file(&main, BTreeMap::new()).unwrap();
+        assert_eq!(output, "Hi, Ana");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn direct_import_of_let_can_be_assigned() {
+        let dir = std::env::temp_dir().join(format!("orich-import-let-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bar = dir.join("bar.och");
+        let main = dir.join("main.och");
+        fs::write(&bar, "let n = 0\n").unwrap();
+        fs::write(
+            &main,
+            "import './bar' show n\nwhile n < 3 {\n  emit n\n  n = n + 1\n}\n",
+        )
+        .unwrap();
+
+        let output = crate::run_file(&main, BTreeMap::new()).unwrap();
+        assert_eq!(output, "0\n1\n2");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn direct_import_of_const_cannot_be_assigned() {
+        let dir = std::env::temp_dir().join(format!("orich-import-const-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let bar = dir.join("bar.och");
+        let main = dir.join("main.och");
+        fs::write(&bar, "const n = 0\n").unwrap();
+        fs::write(&main, "import './bar' show n\nn = n + 1\n").unwrap();
+
+        let err = crate::run_file(&main, BTreeMap::new()).unwrap_err();
+        assert!(err.to_string().contains("cannot assign to const 'n'"));
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn circular_imports_are_cached_and_resolved_lazily() {
+        let dir =
+            std::env::temp_dir().join(format!("orich-circular-import-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let a = dir.join("a.och");
+        let b = dir.join("b.och");
+        let main = dir.join("main.och");
+        fs::write(
+            &a,
+            "import './b' as b\nconst name = \"A\"\nfn pair() {\n  return \"{name}/{b.name}\"\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            &b,
+            "import './a' as a\nconst name = \"B\"\nfn pair() {\n  return \"{name}/{a.name}\"\n}\n",
+        )
+        .unwrap();
+        fs::write(
+            &main,
+            "import './a' as a\nimport './b' as b\nemit a.pair()\nemit b.pair()\n",
+        )
+        .unwrap();
+
+        let output = crate::run_file(&main, BTreeMap::new()).unwrap();
+        assert_eq!(output, "A/B\nB/A");
+        let _ = fs::remove_dir_all(dir);
     }
 }
