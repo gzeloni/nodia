@@ -2,7 +2,7 @@
   "name": "orich-language",
   "displayName": "Orich Language",
   "description": "Syntax highlighting and editor configuration for Orich files.",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "orich",
   "license": "GPL-3.0-or-later",
   "engines": {

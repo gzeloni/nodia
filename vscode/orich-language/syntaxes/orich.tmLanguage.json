@@ -70,6 +70,20 @@
               "match": "\\\\."
             }
           ]
+        },
+        {
+          "name": "string.quoted.single.orich",
+          "begin": "'",
+          "end": "'",
+          "patterns": [
+            {
+              "include": "#interpolation"
+            },
+            {
+              "name": "constant.character.escape.orich",
+              "match": "\\\\."
+            }
+          ]
         }
       ]
     },
@@ -129,7 +143,7 @@
         },
         {
           "name": "keyword.other.import.orich",
-          "match": "\\b(?:import|from|as)\\b"
+          "match": "\\b(?:import|from|as|show|hide)\\b"
         },
         {
           "name": "constant.language.orich",
@@ -145,7 +159,7 @@
       "patterns": [
         {
           "name": "support.function.builtin.orich",
-          "match": "\\b(?:uppercase|lowercase|capitalize|trim|replace|split|len|int|float|string|bool|range)\\b(?=\\s*\\()"
+          "match": "\\b(?:uppercase|lowercase|capitalize|trim|replace|split|join|contains|starts_with|ends_with|indent|dedent|keys|values|len|int|float|string|bool|range)\\b(?=\\s*\\()"
         },
         {
           "name": "variable.language.input.orich",

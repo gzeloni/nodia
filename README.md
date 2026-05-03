@@ -1,27 +1,20 @@
 # Orich
 
-Orich is a small scripting language for text automation and structured output generation.
+Orich is a small programming language for text automation and structured output generation.
 
-It is designed for cases where using a general-purpose language just to assemble text,
-configuration files, payloads, prompts, or reports feels heavier than necessary.
+It is built for scripts that assemble files, prompts, configuration snippets, reports, changelogs,
+payloads, and other text artifacts without reaching for a full general-purpose language.
 
 Source files use the `.och` extension.
 
 ## Status
 
-Orich is experimental. The current implementation is `v0.1` and focuses on a small,
-clear core language:
+Orich is experimental. The current implementation is `v0.2`.
 
-- explicit output with `emit`
-- variables and constants with `let` and `const`
-- string interpolation with `{expr}`
-- lists, maps, booleans, numbers, strings, and `null`
-- `if`, `else`, `for`, `while`, `break`, and `continue`
-- user-defined functions with `fn` and `return`
-- CLI input through `input`
-- a small standard library
+The v0.2 focus is tooling: a stronger CLI, automatic formatting, parser hardening,
+relative imports, JSON-friendly diagnostics, and a small standard library for text/data work.
 
-## Build
+## Install From Source
 
 Orich is implemented in Rust and currently uses only the Rust standard library.
 
@@ -37,17 +30,17 @@ target/release/orich
 
 ## Quick Start
 
-Create a file named `hello.och`:
+Create `hello.och`:
 
 ```orich
-let name = input.name
+const name = input.name
 emit "Hello, {name}"
 ```
 
 Run it:
 
 ```bash
-target/release/orich run hello.och --vars name=Gustavo
+orich run hello.och --var name=Gustavo
 ```
 
 Output:
@@ -58,36 +51,121 @@ Hello, Gustavo
 
 ## CLI
 
-Run a file:
+```bash
+orich run file.och
+orich check file.och
+orich fmt file.och
+orich fmt .
+orich fmt --check .
+orich fmt --stdout file.och
+orich eval 'emit "hello"'
+orich tokens file.och --json
+orich ast file.och --json
+orich init
+orich version
+```
+
+Global flags:
+
+```bash
+--json
+--quiet
+--verbose
+--color auto|always|never
+--help
+--version
+```
+
+### Run
 
 ```bash
 orich run file.och
-```
-
-Pass variables:
-
-```bash
+orich run file.och --var name=Ana
 orich run file.och --vars name=Ana env=prod
-```
-
-Load variables from a flat JSON or YAML file:
-
-```bash
 orich run file.och --vars config.json
-orich run file.och --vars config.yaml
+orich run file.och --out output.txt
 ```
 
-Write output to `file.och.out`:
+CLI variables are exposed through the readonly `input` object.
+
+### Check
 
 ```bash
-orich run file.och --output
+orich check file.och
+orich check file.och --json
 ```
 
-Show version:
+`check` validates lexing and parsing without executing the program.
+
+### Format
+
+Orich has one canonical style. The formatter decides layout.
 
 ```bash
-orich --version
+orich fmt file.och
+orich fmt .
+orich fmt --check .
+orich fmt --stdout file.och
 ```
+
+Formatter rules in v0.2:
+
+| Rule | Style |
+|---|---|
+| Indentation | 2 spaces |
+| Braces | opening brace on the same line |
+| Operators | spaced on both sides |
+| Blocks | always use `{}` |
+| File ending | exactly one trailing newline |
+| Maps | multi-line when non-empty |
+| Short lists/calls | inline when they fit |
+| Comments | preserved as statement comments |
+
+Example input:
+
+```orich
+const user={name:"Ana",role:"dev"}
+if user.name!=""{emit "hello {user.name}"}
+```
+
+Formatted output:
+
+```orich
+const user = {
+  name: "Ana",
+  role: "dev",
+}
+
+if user.name != "" {
+  emit "hello {user.name}"
+}
+```
+
+## Projects
+
+Create a basic project:
+
+```bash
+orich init
+```
+
+Generated layout:
+
+```text
+orich.toml
+src/
+  main.och
+```
+
+`orich.toml`:
+
+```toml
+name = "orich-project"
+entry = "src/main.och"
+```
+
+When a command accepts a file path, omitting the path makes Orich look for `orich.toml`
+and use its `entry` file.
 
 ## Language Basics
 
@@ -102,38 +180,18 @@ emit "{name} / {env}"
 
 `let` declares a mutable variable. `const` declares an immutable variable.
 
-### Input
-
-CLI variables are exposed through the readonly `input` object:
-
-```orich
-let app = input.app
-let port = int(input.port)
-
-emit "APP={app}"
-emit "PORT={port}"
-```
-
-Run:
-
-```bash
-orich run app.och --vars app=api port=8080
-```
-
 ### Strings and Interpolation
 
 ```orich
-let user = "john"
+const user = "john"
 emit "Hello, {capitalize(user)}"
 ```
 
 Triple-quoted strings are supported:
 
 ```orich
-let app = input.app
-
 emit """
-APP_NAME={app}
+APP_NAME={input.app}
 APP_ENV=prod
 """
 ```
@@ -141,9 +199,7 @@ APP_ENV=prod
 ### Conditionals
 
 ```orich
-let env = input.env
-
-if env == "prod" {
+if input.env == "prod" {
   emit "Production"
 } else {
   emit "Development"
@@ -180,22 +236,48 @@ emit greet("ana")
 ### Lists and Maps
 
 ```orich
-let users = ["ana", "john"]
-emit users[0]
-```
-
-```orich
-let user = {
+const user = {
   name: "Ana",
-  role: "admin"
+  roles: ["admin", "dev"],
 }
 
-emit "{user.name}: {user.role}"
+emit user.name
+emit user.roles[0]
 ```
 
-## Standard Library
+Lists, maps, calls, and function parameters can be written across multiple lines.
 
-The current standard library includes:
+### Imports
+
+Imports are relative to the current file and use Dart-style clauses in a smaller form.
+The `.och` extension is optional.
+
+```orich
+import './lib/format' as fmt
+
+emit fmt.title
+```
+
+Without `as`, selected top-level bindings are inserted into the current scope:
+
+```orich
+import './lib/constants' show title, version
+
+emit title
+emit version
+```
+
+You can also hide names:
+
+```orich
+import './lib/constants' hide internal_token
+```
+
+Circular imports are allowed. Orich caches modules by resolved path and links imported
+bindings lazily. A cycle only fails if code tries to read a binding before that module has
+initialized it. Imported `let` bindings remain mutable; imported `const` and `fn` bindings are read-only.
+
+## Standard Library
 
 | Function | Description |
 |---|---|
@@ -205,6 +287,14 @@ The current standard library includes:
 | `trim(value)` | Trims surrounding whitespace |
 | `replace(value, from, to)` | Replaces text |
 | `split(value, delimiter)` | Splits text into a list |
+| `join(list, delimiter)` | Joins a list into text |
+| `contains(value, needle)` | Checks strings, lists, or map keys |
+| `starts_with(value, prefix)` | Checks a text prefix |
+| `ends_with(value, suffix)` | Checks a text suffix |
+| `indent(text, spaces_or_prefix)` | Prefixes each line |
+| `dedent(text)` | Removes common indentation |
+| `keys(map)` | Returns map keys |
+| `values(map)` | Returns map values |
 | `len(value)` | Returns length of a string, list, or map |
 | `int(value)` | Converts to integer |
 | `float(value)` | Converts to float |
@@ -215,23 +305,31 @@ The current standard library includes:
 
 ## Reserved Words
 
-Core `v0.1` reserved words:
-
 ```text
-let const fn return emit
+const let fn return
 if else for in while break continue
+emit import as show hide
 true false null
 and or not
-import from as
 ```
 
 Reserved for future versions:
 
 ```text
-match case default
+from match case default
 try catch throw defer
 type enum struct namespace use
 ```
+
+## Exit Codes
+
+| Code | Meaning |
+|---:|---|
+| `0` | Success |
+| `1` | Language/runtime error |
+| `2` | Invalid CLI usage |
+| `3` | IO error |
+| `4` | Internal error |
 
 ## VSCode Syntax Highlighting
 
@@ -253,49 +351,16 @@ Then select the `vscode/orich-language` folder.
 
 ```text
 src/
-  ast.rs       AST definitions
-  error.rs     error types
-  lexer.rs     lexer/tokenizer
-  parser.rs    parser
-  runtime.rs   evaluator/runtime
-  stdlib.rs    standard library
-  token.rs     token definitions
-  value.rs     runtime values
-  main.rs      CLI
-  lib.rs       public Rust API
-
-tests/
-  smoke.sh     CLI smoke tests
-
-vscode/
-  orich-language/
+  ast.rs        AST definitions
+  cli.rs        command-line interface
+  error.rs      diagnostics and error types
+  formatter.rs  canonical formatter
+  lexer.rs      lexer/tokenizer
+  lib.rs        public Rust API
+  parser.rs     parser
+  project.rs    orich.toml helpers
+  runtime.rs    evaluator/runtime
+  stdlib.rs     standard library
+  token.rs      token definitions
+  value.rs      runtime values
 ```
-
-The old Python implementation remains in `illex/` as a historical reference only.
-
-## Development
-
-Run tests:
-
-```bash
-make test
-```
-
-Run Rust checks directly:
-
-```bash
-cargo check
-cargo test
-```
-
-Format code:
-
-```bash
-cargo fmt
-```
-
-## License
-
-Orich is licensed under GNU General Public License v3.0 or later.
-
-See [LICENSE](LICENSE).
