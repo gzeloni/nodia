@@ -1,0 +1,667 @@
+use orich::project;
+use orich::{check_source, format_source, lex_source, parse_source, run_file, run_source, Value};
+use std::collections::BTreeMap;
+use std::env;
+use std::fs;
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
+
+const EXIT_LANGUAGE: i32 = 1;
+const EXIT_USAGE: i32 = 2;
+const EXIT_IO: i32 = 3;
+
+#[derive(Default)]
+struct Options {
+    json: bool,
+    quiet: bool,
+    verbose: bool,
+    color: ColorMode,
+}
+
+enum ColorMode {
+    Auto,
+    Always,
+    Never,
+}
+
+impl Default for ColorMode {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
+struct CliError {
+    code: i32,
+    message: String,
+}
+
+impl CliError {
+    fn usage(message: impl Into<String>) -> Self {
+        Self {
+            code: EXIT_USAGE,
+            message: message.into(),
+        }
+    }
+
+    fn language(message: impl Into<String>) -> Self {
+        Self {
+            code: EXIT_LANGUAGE,
+            message: message.into(),
+        }
+    }
+
+    fn io(message: impl Into<String>) -> Self {
+        Self {
+            code: EXIT_IO,
+            message: message.into(),
+        }
+    }
+}
+
+pub fn run(args: Vec<String>) -> i32 {
+    let mut options = Options::default();
+    match run_inner(args, &mut options) {
+        Ok(()) => 0,
+        Err(err) => {
+            if options.json {
+                eprintln!(
+                    "{{\"ok\":false,\"error\":{{\"message\":\"{}\",\"exit_code\":{}}}}}",
+                    json_escape(&err.message),
+                    err.code
+                );
+            } else {
+                eprintln!("{}", err.message);
+            }
+            err.code
+        }
+    }
+}
+
+fn run_inner(args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    let mut args = args.into_iter().skip(1).collect::<Vec<_>>();
+    if args.is_empty() {
+        print_help();
+        return Ok(());
+    }
+
+    parse_global_flags(&mut args, options)?;
+    if args.is_empty() {
+        print_help();
+        return Ok(());
+    }
+
+    let command = args.remove(0);
+    match command.as_str() {
+        "run" => run_command(args, options),
+        "check" => check_command(args, options),
+        "fmt" => fmt_command(args, options),
+        "eval" => eval_command(args, options),
+        "tokens" => tokens_command(args, options),
+        "ast" => ast_command(args, options),
+        "init" => init_command(args, options),
+        "version" => version_command(options),
+        "help" | "--help" | "-h" => {
+            print_help();
+            Ok(())
+        }
+        "--version" | "-V" => version_command(options),
+        other => Err(CliError::usage(format!("unknown command '{other}'"))),
+    }
+}
+
+fn parse_global_flags(args: &mut Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    while !args.is_empty() {
+        match args[0].as_str() {
+            "--json" => {
+                options.json = true;
+                args.remove(0);
+            }
+            "--quiet" => {
+                options.quiet = true;
+                args.remove(0);
+            }
+            "--verbose" => {
+                options.verbose = true;
+                args.remove(0);
+            }
+            "--color" => {
+                let value = args
+                    .get(1)
+                    .ok_or_else(|| CliError::usage("--color expects auto, always or never"))?
+                    .clone();
+                options.color = match value.as_str() {
+                    "auto" => ColorMode::Auto,
+                    "always" => ColorMode::Always,
+                    "never" => ColorMode::Never,
+                    _ => return Err(CliError::usage("--color expects auto, always or never")),
+                };
+                args.remove(0);
+                args.remove(0);
+            }
+            "--help" | "-h" | "--version" | "-V" => break,
+            value if value.starts_with('-') => break,
+            _ => break,
+        }
+    }
+    Ok(())
+}
+
+fn parse_command_flags(args: &mut Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--json" => {
+                options.json = true;
+                args.remove(index);
+            }
+            "--quiet" => {
+                options.quiet = true;
+                args.remove(index);
+            }
+            "--verbose" => {
+                options.verbose = true;
+                args.remove(index);
+            }
+            "--color" => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| CliError::usage("--color expects auto, always or never"))?
+                    .clone();
+                options.color = match value.as_str() {
+                    "auto" => ColorMode::Auto,
+                    "always" => ColorMode::Always,
+                    "never" => ColorMode::Never,
+                    _ => return Err(CliError::usage("--color expects auto, always or never")),
+                };
+                args.remove(index);
+                args.remove(index);
+            }
+            _ => index += 1,
+        }
+    }
+    Ok(())
+}
+
+fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let mut path = None;
+    let mut out_path = None;
+    let mut vars = Vec::new();
+    let mut index = 0;
+
+    while index < args.len() {
+        match args[index].as_str() {
+            "--var" => {
+                let value = args
+                    .get(index + 1)
+                    .ok_or_else(|| CliError::usage("--var expects key=value"))?
+                    .clone();
+                vars.push(value);
+                index += 2;
+            }
+            "--vars" => {
+                index += 1;
+                while index < args.len() && !args[index].starts_with("--") {
+                    vars.push(args[index].clone());
+                    index += 1;
+                }
+            }
+            "--out" | "--output" | "-o" => {
+                if let Some(next) = args.get(index + 1).filter(|value| !value.starts_with("--")) {
+                    out_path = Some(PathBuf::from(next));
+                    index += 2;
+                } else {
+                    out_path = Some(PathBuf::new());
+                    index += 1;
+                }
+            }
+            "--stdout" => index += 1,
+            value if path.is_none() => {
+                path = Some(value.to_string());
+                index += 1;
+            }
+            value => return Err(CliError::usage(format!("unexpected argument '{value}'"))),
+        }
+    }
+
+    let input = parse_vars(&vars)?;
+    let output = if path.as_deref() == Some("-") {
+        let source = read_stdin()?;
+        run_source(&source, input).map_err(|err| CliError::language(err.render()))?
+    } else {
+        let path = resolve_entry(path.as_deref())?;
+        ensure_och(&path)?;
+        let output = run_file(&path, input).map_err(|err| CliError::language(err.render()))?;
+        if let Some(target) = out_path {
+            let target = if target.as_os_str().is_empty() {
+                PathBuf::from(format!("{}.out", path.display()))
+            } else {
+                target
+            };
+            fs::write(&target, &output).map_err(|err| {
+                CliError::io(format!("cannot write '{}': {err}", target.display()))
+            })?;
+            return Ok(());
+        }
+        output
+    };
+
+    if !options.quiet {
+        println!("{output}");
+    }
+    Ok(())
+}
+
+fn check_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let path = resolve_entry(args.first().map(String::as_str))?;
+    ensure_och(&path)?;
+    let source = fs::read_to_string(&path)
+        .map_err(|err| CliError::io(format!("cannot read '{}': {err}", path.display())))?;
+    match check_source(&source) {
+        Ok(()) => {
+            if options.json {
+                println!("{{\"ok\":true,\"errors\":[]}}");
+            } else if !options.quiet {
+                println!("ok {}", path.display());
+            }
+            Ok(())
+        }
+        Err(err) => {
+            let err = err.with_file(path.display().to_string());
+            if options.json {
+                Err(CliError::language(format!(
+                    "{{\"ok\":false,\"errors\":[{}]}}",
+                    err.to_json()
+                )))
+            } else {
+                Err(CliError::language(err.render()))
+            }
+        }
+    }
+}
+
+fn fmt_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let mut check = false;
+    let mut stdout = false;
+    let mut targets = Vec::new();
+    let mut index = 0;
+    while index < args.len() {
+        match args[index].as_str() {
+            "--check" => {
+                check = true;
+                index += 1;
+            }
+            "--stdout" => {
+                stdout = true;
+                index += 1;
+            }
+            value => {
+                targets.push(PathBuf::from(value));
+                index += 1;
+            }
+        }
+    }
+    if targets.is_empty() {
+        targets.push(PathBuf::from("."));
+    }
+
+    let mut files = Vec::new();
+    for target in targets {
+        collect_och_files(&target, &mut files)?;
+    }
+    files.sort();
+    files.dedup();
+
+    let mut changed = Vec::new();
+    for file in files {
+        let source = fs::read_to_string(&file)
+            .map_err(|err| CliError::io(format!("cannot read '{}': {err}", file.display())))?;
+        let formatted = format_source(&source).map_err(|err| {
+            CliError::language(err.with_file(file.display().to_string()).render())
+        })?;
+        if stdout {
+            print!("{formatted}");
+            continue;
+        }
+        if formatted != source {
+            changed.push(file.clone());
+            if !check {
+                fs::write(&file, formatted).map_err(|err| {
+                    CliError::io(format!("cannot write '{}': {err}", file.display()))
+                })?;
+            }
+        }
+    }
+
+    if check && !changed.is_empty() {
+        return Err(CliError::language(format!(
+            "format check failed: {} file(s) need formatting",
+            changed.len()
+        )));
+    }
+    if !options.quiet && !stdout {
+        if check {
+            println!("ok format check");
+        } else {
+            println!("ok formatted");
+        }
+    }
+    Ok(())
+}
+
+fn eval_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    if args.is_empty() {
+        return Err(CliError::usage("eval expects source code"));
+    }
+    let source = args.join(" ");
+    let output =
+        run_source(&source, BTreeMap::new()).map_err(|err| CliError::language(err.render()))?;
+    if !options.quiet {
+        println!("{output}");
+    }
+    Ok(())
+}
+
+fn tokens_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let path = args
+        .first()
+        .ok_or_else(|| CliError::usage("tokens expects a .och path"))?;
+    let source = fs::read_to_string(path)
+        .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
+    let tokens =
+        lex_source(&source).map_err(|err| CliError::language(err.with_file(path).render()))?;
+    if options.json {
+        println!("{}", tokens_json(&tokens));
+    } else {
+        for token in tokens {
+            println!("{}:{} {}", token.line, token.column, token.kind);
+        }
+    }
+    Ok(())
+}
+
+fn ast_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let path = args
+        .first()
+        .ok_or_else(|| CliError::usage("ast expects a .och path"))?;
+    let source = fs::read_to_string(path)
+        .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
+    let program =
+        parse_source(&source).map_err(|err| CliError::language(err.with_file(path).render()))?;
+    if options.json {
+        println!(
+            "{{\"ok\":true,\"ast\":\"{}\"}}",
+            json_escape(&format!("{program:#?}"))
+        );
+    } else {
+        println!("{program:#?}");
+    }
+    Ok(())
+}
+
+fn init_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    let dir = args
+        .first()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("."));
+    project::init_project(&dir)
+        .map_err(|err| CliError::io(format!("cannot initialize '{}': {err}", dir.display())))?;
+    if options.json {
+        println!(
+            "{{\"ok\":true,\"path\":\"{}\"}}",
+            json_escape(&dir.display().to_string())
+        );
+    } else if !options.quiet {
+        println!("created Orich project at {}", dir.display());
+    }
+    Ok(())
+}
+
+fn version_command(options: &Options) -> Result<(), CliError> {
+    if options.json {
+        println!(
+            "{{\"name\":\"orich\",\"version\":\"{}\",\"rust_std_only\":true}}",
+            env!("CARGO_PKG_VERSION")
+        );
+    } else {
+        println!("orich {}", env!("CARGO_PKG_VERSION"));
+    }
+    Ok(())
+}
+
+fn resolve_entry(path: Option<&str>) -> Result<PathBuf, CliError> {
+    if let Some(path) = path {
+        return Ok(PathBuf::from(path));
+    }
+    let cwd = env::current_dir()
+        .map_err(|err| CliError::io(format!("cannot read current dir: {err}")))?;
+    let config = project::find_project_config(&cwd)
+        .ok_or_else(|| CliError::usage("missing .och path and no orich.toml found"))?;
+    let config = project::read_project_config(&config)
+        .map_err(|err| CliError::io(format!("cannot read project config: {err}")))?;
+    Ok(config.entry)
+}
+
+fn collect_och_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliError> {
+    if target.is_file() {
+        ensure_och(target)?;
+        files.push(target.to_path_buf());
+        return Ok(());
+    }
+    if target.is_dir() {
+        for entry in fs::read_dir(target)
+            .map_err(|err| CliError::io(format!("cannot read '{}': {err}", target.display())))?
+        {
+            let entry =
+                entry.map_err(|err| CliError::io(format!("cannot read dir entry: {err}")))?;
+            let path = entry.path();
+            if path.file_name().is_some_and(|name| name == "target") {
+                continue;
+            }
+            if path.is_dir() {
+                collect_och_files(&path, files)?;
+            } else if path.extension().is_some_and(|ext| ext == "och") {
+                files.push(path);
+            }
+        }
+        return Ok(());
+    }
+    Err(CliError::io(format!(
+        "target '{}' does not exist",
+        target.display()
+    )))
+}
+
+fn ensure_och(path: &Path) -> Result<(), CliError> {
+    if path.extension().is_some_and(|ext| ext == "och") {
+        Ok(())
+    } else {
+        Err(CliError::usage(format!(
+            "invalid file extension for '{}'; expected .och",
+            path.display()
+        )))
+    }
+}
+
+fn parse_vars(items: &[String]) -> Result<BTreeMap<String, Value>, CliError> {
+    let mut input = BTreeMap::new();
+    if items.is_empty() {
+        return Ok(input);
+    }
+    if items.len() == 1 && Path::new(&items[0]).is_file() {
+        let content = fs::read_to_string(&items[0])
+            .map_err(|err| CliError::io(format!("cannot read vars file: {err}")))?;
+        if items[0].ends_with(".json") {
+            parse_flat_json(&content, &mut input)?;
+        } else if items[0].ends_with(".yaml") || items[0].ends_with(".yml") {
+            parse_flat_yaml(&content, &mut input);
+        } else {
+            return Err(CliError::usage("vars file must be .json, .yaml or .yml"));
+        }
+        return Ok(input);
+    }
+
+    for item in items {
+        let Some((key, value)) = item.split_once('=') else {
+            return Err(CliError::usage(format!(
+                "invalid var format: {item} (expected key=value)"
+            )));
+        };
+        input.insert(key.to_string(), Value::String(value.to_string()));
+    }
+    Ok(input)
+}
+
+fn parse_flat_json(content: &str, input: &mut BTreeMap<String, Value>) -> Result<(), CliError> {
+    let trimmed = content.trim();
+    let body = trimmed
+        .strip_prefix('{')
+        .and_then(|value| value.strip_suffix('}'))
+        .ok_or_else(|| CliError::usage("vars JSON must be a flat object"))?;
+
+    for pair in split_top_level(body) {
+        if pair.trim().is_empty() {
+            continue;
+        }
+        let Some((key, value)) = pair.split_once(':') else {
+            return Err(CliError::usage(format!("invalid JSON pair: {pair}")));
+        };
+        input.insert(unquote(key.trim()), json_value(value.trim()));
+    }
+    Ok(())
+}
+
+fn parse_flat_yaml(content: &str, input: &mut BTreeMap<String, Value>) {
+    for line in content.lines() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once(':') {
+            input.insert(key.trim().to_string(), Value::String(unquote(value.trim())));
+        }
+    }
+}
+
+fn split_top_level(text: &str) -> Vec<String> {
+    let mut parts = Vec::new();
+    let mut current = String::new();
+    let mut in_string = false;
+    let mut escape = false;
+    for ch in text.chars() {
+        if escape {
+            current.push(ch);
+            escape = false;
+            continue;
+        }
+        if ch == '\\' {
+            current.push(ch);
+            escape = true;
+            continue;
+        }
+        if ch == '"' {
+            in_string = !in_string;
+            current.push(ch);
+            continue;
+        }
+        if ch == ',' && !in_string {
+            parts.push(current.trim().to_string());
+            current.clear();
+        } else {
+            current.push(ch);
+        }
+    }
+    if !current.trim().is_empty() {
+        parts.push(current.trim().to_string());
+    }
+    parts
+}
+
+fn json_value(value: &str) -> Value {
+    match value {
+        "true" => Value::Bool(true),
+        "false" => Value::Bool(false),
+        "null" => Value::Null,
+        _ if value.starts_with('"') => Value::String(unquote(value)),
+        _ => value
+            .parse::<i64>()
+            .map(Value::Int)
+            .or_else(|_| value.parse::<f64>().map(Value::Float))
+            .unwrap_or_else(|_| Value::String(value.to_string())),
+    }
+}
+
+fn unquote(value: &str) -> String {
+    let value = value.trim();
+    if value.len() >= 2
+        && ((value.starts_with('"') && value.ends_with('"'))
+            || (value.starts_with('\'') && value.ends_with('\'')))
+    {
+        value[1..value.len() - 1]
+            .replace("\\n", "\n")
+            .replace("\\t", "\t")
+            .replace("\\\"", "\"")
+    } else {
+        value.to_string()
+    }
+}
+
+fn tokens_json(tokens: &[orich::Token]) -> String {
+    let mut out = String::from("{\"ok\":true,\"tokens\":[");
+    for (index, token) in tokens.iter().enumerate() {
+        if index > 0 {
+            out.push(',');
+        }
+        let literal = token
+            .kind
+            .literal()
+            .map(|value| format!("\"{}\"", json_escape(&value)))
+            .unwrap_or_else(|| "null".to_string());
+        out.push_str(&format!(
+            "{{\"kind\":\"{}\",\"literal\":{},\"line\":{},\"column\":{}}}",
+            token.kind.name(),
+            literal,
+            token.line,
+            token.column
+        ));
+    }
+    out.push_str("]}");
+    out
+}
+
+fn read_stdin() -> Result<String, CliError> {
+    let mut source = String::new();
+    io::stdin()
+        .read_to_string(&mut source)
+        .map_err(|err| CliError::io(format!("cannot read stdin: {err}")))?;
+    Ok(source)
+}
+
+fn json_escape(value: &str) -> String {
+    let mut out = String::new();
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch.is_control() => out.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out
+}
+
+fn print_help() {
+    println!(
+        "Orich {}\n\nUsage:\n  orich run [file.och] [--var key=value] [--vars key=value ...] [--out output.txt]\n  orich check [file.och] [--json]\n  orich fmt [file.och|dir] [--check] [--stdout]\n  orich eval 'emit \"hello\"'\n  orich tokens file.och [--json]\n  orich ast file.och [--json]\n  orich init [dir]\n  orich version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --help\n  --version",
+        env!("CARGO_PKG_VERSION")
+    );
+}
