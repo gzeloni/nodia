@@ -197,6 +197,10 @@ impl Parser {
 
     fn if_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
+        self.if_tail()
+    }
+
+    fn if_tail(&mut self) -> DobraResult<Stmt> {
         let condition = self.expression()?;
         self.skip_newlines();
         let then_branch = self.block()?;
@@ -204,14 +208,7 @@ impl Parser {
         let else_branch = if self.match_kind(&TokenKind::Else) {
             self.skip_newlines();
             if self.match_kind(&TokenKind::If) {
-                let condition = self.expression()?;
-                self.skip_newlines();
-                let then_branch = self.block()?;
-                vec![Stmt::If {
-                    condition,
-                    then_branch,
-                    else_branch: Vec::new(),
-                }]
+                vec![self.if_tail()?]
             } else {
                 self.block()?
             }

@@ -1,6 +1,6 @@
 use dobra::project;
 use dobra::{
-    check_source, format_source, lex_source, parse_source, run_file_with_options,
+    check_file, format_source, lex_source, parse_source, run_file_with_options,
     run_source_with_options, RuntimeOptions, Value,
 };
 use std::collections::BTreeMap;
@@ -68,11 +68,15 @@ pub fn run(args: Vec<String>) -> i32 {
         Ok(()) => 0,
         Err(err) => {
             if options.json {
-                eprintln!(
-                    "{{\"ok\":false,\"error\":{{\"message\":\"{}\",\"exit_code\":{}}}}}",
-                    json_escape(&err.message),
-                    err.code
-                );
+                if err.message.trim_start().starts_with('{') {
+                    eprintln!("{}", err.message);
+                } else {
+                    eprintln!(
+                        "{{\"ok\":false,\"error\":{{\"message\":\"{}\",\"exit_code\":{}}}}}",
+                        json_escape(&err.message),
+                        err.code
+                    );
+                }
             } else {
                 eprintln!("{}", err.message);
             }
@@ -270,9 +274,7 @@ fn check_command(mut args: Vec<String>, options: &mut Options) -> Result<(), Cli
     parse_command_flags(&mut args, options)?;
     let path = resolve_entry(args.first().map(String::as_str))?;
     ensure_dob(&path)?;
-    let source = fs::read_to_string(&path)
-        .map_err(|err| CliError::io(format!("cannot read '{}': {err}", path.display())))?;
-    match check_source(&source) {
+    match check_file(&path) {
         Ok(()) => {
             if options.json {
                 println!("{{\"ok\":true,\"errors\":[]}}");

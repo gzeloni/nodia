@@ -42,6 +42,20 @@ impl DobraError {
         }
     }
 
+    pub fn semantic(message: impl Into<String>) -> Self {
+        Self::semantic_at(message, 0, 0)
+    }
+
+    pub fn semantic_at(message: impl Into<String>, line: usize, column: usize) -> Self {
+        Self {
+            code: "E4000".to_string(),
+            message: message.into(),
+            line,
+            column,
+            file: None,
+        }
+    }
+
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = code.into();
         self
@@ -49,6 +63,13 @@ impl DobraError {
 
     pub fn with_file(mut self, file: impl Into<String>) -> Self {
         self.file = Some(file.into());
+        self
+    }
+
+    pub fn with_file_if_missing(mut self, file: impl Into<String>) -> Self {
+        if self.file.is_none() {
+            self.file = Some(file.into());
+        }
         self
     }
 
