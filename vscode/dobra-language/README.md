@@ -1,6 +1,6 @@
-# Orich Language for VSCode
+# Dobra Language for VSCode
 
-Local VSCode language support for `.och` files.
+Local VSCode language support for `.dob` files.
 
 ## Install Locally
 
@@ -9,12 +9,12 @@ Local VSCode language support for `.och` files.
 3. Select this folder:
 
 ```text
-vscode/orich-language
+vscode/dobra-language
 ```
 
 ## Supported
 
-- `.och` file association
+- `.dob` file association
 - Core and future reserved words
 - Strings and triple strings
 - `{expr}` interpolation inside strings

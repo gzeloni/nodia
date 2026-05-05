@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/martinring/tmlanguage/master/tmlanguage.json",
-  "name": "Orich",
-  "scopeName": "source.orich",
+  "name": "Dobra",
+  "scopeName": "source.dobra",
   "patterns": [
     {
       "include": "#comments"
@@ -32,11 +32,11 @@
     "comments": {
       "patterns": [
         {
-          "name": "comment.line.number-sign.orich",
+          "name": "comment.line.number-sign.dobra",
           "match": "#.*$"
         },
         {
-          "name": "comment.line.double-slash.orich",
+          "name": "comment.line.double-slash.dobra",
           "match": "//.*$"
         }
       ]
@@ -44,7 +44,7 @@
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.triple.orich",
+          "name": "string.quoted.triple.dobra",
           "begin": "\"\"\"",
           "end": "\"\"\"",
           "patterns": [
@@ -52,13 +52,13 @@
               "include": "#interpolation"
             },
             {
-              "name": "constant.character.escape.orich",
+              "name": "constant.character.escape.dobra",
               "match": "\\\\."
             }
           ]
         },
         {
-          "name": "string.quoted.double.orich",
+          "name": "string.quoted.double.dobra",
           "begin": "\"",
           "end": "\"",
           "patterns": [
@@ -66,13 +66,13 @@
               "include": "#interpolation"
             },
             {
-              "name": "constant.character.escape.orich",
+              "name": "constant.character.escape.dobra",
               "match": "\\\\."
             }
           ]
         },
         {
-          "name": "string.quoted.single.orich",
+          "name": "string.quoted.single.dobra",
           "begin": "'",
           "end": "'",
           "patterns": [
@@ -80,7 +80,7 @@
               "include": "#interpolation"
             },
             {
-              "name": "constant.character.escape.orich",
+              "name": "constant.character.escape.dobra",
               "match": "\\\\."
             }
           ]
@@ -90,17 +90,17 @@
     "interpolation": {
       "patterns": [
         {
-          "name": "meta.interpolation.orich",
+          "name": "meta.interpolation.dobra",
           "begin": "\\{",
           "beginCaptures": {
             "0": {
-              "name": "punctuation.section.interpolation.begin.orich"
+              "name": "punctuation.section.interpolation.begin.dobra"
             }
           },
           "end": "\\}",
           "endCaptures": {
             "0": {
-              "name": "punctuation.section.interpolation.end.orich"
+              "name": "punctuation.section.interpolation.end.dobra"
             }
           },
           "patterns": [
@@ -114,11 +114,11 @@
     "numbers": {
       "patterns": [
         {
-          "name": "constant.numeric.float.orich",
+          "name": "constant.numeric.float.dobra",
           "match": "\\b\\d+\\.\\d+\\b"
         },
         {
-          "name": "constant.numeric.integer.orich",
+          "name": "constant.numeric.integer.dobra",
           "match": "\\b\\d+\\b"
         }
       ]
@@ -126,31 +126,31 @@
     "keywords": {
       "patterns": [
         {
-          "name": "keyword.control.orich",
+          "name": "keyword.control.dobra",
           "match": "\\b(?:if|else|for|in|while|break|continue|return)\\b"
         },
         {
-          "name": "keyword.declaration.orich",
+          "name": "keyword.declaration.dobra",
           "match": "\\b(?:let|const|fn)\\b"
         },
         {
-          "name": "keyword.operator.logical.orich",
+          "name": "keyword.operator.logical.dobra",
           "match": "\\b(?:and|or|not)\\b"
         },
         {
-          "name": "keyword.other.emit.orich",
+          "name": "keyword.other.emit.dobra",
           "match": "\\bemit\\b"
         },
         {
-          "name": "keyword.other.import.orich",
+          "name": "keyword.other.import.dobra",
           "match": "\\b(?:import|from|as|show|hide)\\b"
         },
         {
-          "name": "constant.language.orich",
+          "name": "constant.language.dobra",
           "match": "\\b(?:true|false|null)\\b"
         },
         {
-          "name": "invalid.deprecated.reserved.orich",
+          "name": "invalid.deprecated.reserved.dobra",
           "match": "\\b(?:match|case|default|try|catch|throw|defer|type|enum|struct|namespace|use)\\b"
         }
       ]
@@ -158,38 +158,38 @@
     "builtins": {
       "patterns": [
         {
-          "name": "support.function.builtin.orich",
-          "match": "\\b(?:uppercase|lowercase|capitalize|trim|replace|split|join|contains|starts_with|ends_with|indent|dedent|keys|values|len|int|float|string|bool|range)\\b(?=\\s*\\()"
+          "name": "support.function.builtin.dobra",
+          "match": "\\b(?:upper|lower|uppercase|lowercase|capitalize|trim|replace|split|join|lines|unlines|words|contains|starts|ends|starts_with|ends_with|indent|dedent|open|close|flush|read|readln|write|writeln|append|eof|keys|values|len|int|float|string|bool|range|abs|floor|ceil|round|sqrt|pow|min|max|clamp|sum|avg|push|pop|first|last|slice|reverse|sort|unique)\\b(?=\\s*\\()"
         },
         {
-          "name": "variable.language.input.orich",
-          "match": "\\binput\\b"
+          "name": "variable.language.input.dobra",
+          "match": "\\b(?:input|stdin|stdout|stderr)\\b"
         }
       ]
     },
     "declarations": {
       "patterns": [
         {
-          "name": "meta.function.orich",
+          "name": "meta.function.dobra",
           "match": "\\b(fn)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
-              "name": "keyword.declaration.function.orich"
+              "name": "keyword.declaration.function.dobra"
             },
             "2": {
-              "name": "entity.name.function.orich"
+              "name": "entity.name.function.dobra"
             }
           }
         },
         {
-          "name": "meta.variable.orich",
+          "name": "meta.variable.dobra",
           "match": "\\b(let|const)\\s+([A-Za-z_][A-Za-z0-9_]*)",
           "captures": {
             "1": {
-              "name": "keyword.declaration.variable.orich"
+              "name": "keyword.declaration.variable.dobra"
             },
             "2": {
-              "name": "variable.other.definition.orich"
+              "name": "variable.other.definition.dobra"
             }
           }
         }
@@ -198,15 +198,15 @@
     "operators": {
       "patterns": [
         {
-          "name": "keyword.operator.comparison.orich",
+          "name": "keyword.operator.comparison.dobra",
           "match": "==|!=|<=|>=|<|>"
         },
         {
-          "name": "keyword.operator.assignment.orich",
+          "name": "keyword.operator.assignment.dobra",
           "match": "="
         },
         {
-          "name": "keyword.operator.arithmetic.orich",
+          "name": "keyword.operator.arithmetic.dobra",
           "match": "\\+|-|\\*|/|%"
         }
       ]
@@ -214,11 +214,11 @@
     "punctuation": {
       "patterns": [
         {
-          "name": "punctuation.separator.orich",
+          "name": "punctuation.separator.dobra",
           "match": "[,.:;]"
         },
         {
-          "name": "punctuation.bracket.orich",
+          "name": "punctuation.bracket.dobra",
           "match": "[(){}\\[\\]]"
         }
       ]
