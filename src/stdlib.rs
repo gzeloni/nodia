@@ -1,10 +1,11 @@
-use crate::error::{OrichError, OrichResult};
+use crate::error::{DobraError, DobraResult};
 use crate::value::Value;
+use std::cmp::Ordering;
 
-pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
+pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
     let result = match name {
-        "uppercase" => unary_string(args, "uppercase", |s| s.to_uppercase())?,
-        "lowercase" => unary_string(args, "lowercase", |s| s.to_lowercase())?,
+        "upper" | "uppercase" => unary_string(args, name, |s| s.to_uppercase())?,
+        "lower" | "lowercase" => unary_string(args, name, |s| s.to_lowercase())?,
         "capitalize" => unary_string(args, "capitalize", |s| {
             let mut chars = s.chars();
             match chars.next() {
@@ -35,18 +36,44 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
         }
         "join" => {
             expect_arity(&args, 2, "join")?;
-            let Value::List(values) = &args[0] else {
-                return Err(OrichError::runtime(format!(
-                    "join() expects list as first argument, got {}",
-                    args[0].type_name()
-                )));
-            };
+            let values = expect_list(&args[0], "join", "first")?;
             Value::String(
                 values
                     .iter()
                     .map(Value::to_string)
                     .collect::<Vec<_>>()
                     .join(&args[1].to_string()),
+            )
+        }
+        "lines" => {
+            expect_arity(&args, 1, "lines")?;
+            Value::List(
+                args[0]
+                    .to_string()
+                    .lines()
+                    .map(|line| Value::String(line.to_string()))
+                    .collect(),
+            )
+        }
+        "unlines" => {
+            expect_arity(&args, 1, "unlines")?;
+            let values = expect_list(&args[0], "unlines", "first")?;
+            Value::String(
+                values
+                    .iter()
+                    .map(Value::to_string)
+                    .collect::<Vec<_>>()
+                    .join("\n"),
+            )
+        }
+        "words" => {
+            expect_arity(&args, 1, "words")?;
+            Value::List(
+                args[0]
+                    .to_string()
+                    .split_whitespace()
+                    .map(|word| Value::String(word.to_string()))
+                    .collect(),
             )
         }
         "contains" => {
@@ -56,19 +83,19 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
                 Value::List(values) => values.contains(&args[1]),
                 Value::Map(values) => values.contains_key(&args[1].to_string()),
                 other => {
-                    return Err(OrichError::runtime(format!(
+                    return Err(DobraError::runtime(format!(
                         "contains() does not accept {}",
                         other.type_name()
                     )));
                 }
             })
         }
-        "starts_with" => {
-            expect_arity(&args, 2, "starts_with")?;
+        "starts" | "starts_with" => {
+            expect_arity(&args, 2, name)?;
             Value::Bool(args[0].to_string().starts_with(&args[1].to_string()))
         }
-        "ends_with" => {
-            expect_arity(&args, 2, "ends_with")?;
+        "ends" | "ends_with" => {
+            expect_arity(&args, 2, name)?;
             Value::Bool(args[0].to_string().ends_with(&args[1].to_string()))
         }
         "indent" => indent(args)?,
@@ -79,7 +106,7 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
         "keys" => {
             expect_arity(&args, 1, "keys")?;
             let Value::Map(values) = &args[0] else {
-                return Err(OrichError::runtime(format!(
+                return Err(DobraError::runtime(format!(
                     "keys() expects map, got {}",
                     args[0].type_name()
                 )));
@@ -89,7 +116,7 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
         "values" => {
             expect_arity(&args, 1, "values")?;
             let Value::Map(values) = &args[0] else {
-                return Err(OrichError::runtime(format!(
+                return Err(DobraError::runtime(format!(
                     "values() expects map, got {}",
                     args[0].type_name()
                 )));
@@ -103,7 +130,7 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
                 Value::List(value) => value.len(),
                 Value::Map(value) => value.len(),
                 other => {
-                    return Err(OrichError::runtime(format!(
+                    return Err(DobraError::runtime(format!(
                         "len() does not accept {}",
                         other.type_name()
                     )));
@@ -128,6 +155,74 @@ pub fn call(name: &str, args: Vec<Value>) -> OrichResult<Option<Value>> {
             Value::Bool(args[0].truthy())
         }
         "range" => range(args)?,
+        "abs" => abs(args)?,
+        "floor" => rounded(args, "floor", f64::floor)?,
+        "ceil" => rounded(args, "ceil", f64::ceil)?,
+        "round" => rounded(args, "round", f64::round)?,
+        "sqrt" => {
+            expect_arity(&args, 1, "sqrt")?;
+            Value::Float(to_float(&args[0])?.sqrt())
+        }
+        "pow" => {
+            expect_arity(&args, 2, "pow")?;
+            number_result(to_float(&args[0])?.powf(to_float(&args[1])?), &args)
+        }
+        "min" => {
+            expect_arity(&args, 2, "min")?;
+            let a = to_float(&args[0])?;
+            let b = to_float(&args[1])?;
+            number_result(a.min(b), &args)
+        }
+        "max" => {
+            expect_arity(&args, 2, "max")?;
+            let a = to_float(&args[0])?;
+            let b = to_float(&args[1])?;
+            number_result(a.max(b), &args)
+        }
+        "clamp" => {
+            expect_arity(&args, 3, "clamp")?;
+            let value = to_float(&args[0])?;
+            let min = to_float(&args[1])?;
+            let max = to_float(&args[2])?;
+            if min > max {
+                return Err(DobraError::runtime(
+                    "clamp() min cannot be greater than max",
+                ));
+            }
+            number_result(value.clamp(min, max), &args)
+        }
+        "sum" => sum(args)?,
+        "avg" => avg(args)?,
+        "push" => {
+            expect_arity(&args, 2, "push")?;
+            let mut values = expect_list(&args[0], "push", "first")?.clone();
+            values.push(args[1].clone());
+            Value::List(values)
+        }
+        "pop" => {
+            expect_arity(&args, 1, "pop")?;
+            let mut values = expect_list(&args[0], "pop", "first")?.clone();
+            values.pop();
+            Value::List(values)
+        }
+        "first" => {
+            expect_arity(&args, 1, "first")?;
+            expect_list(&args[0], "first", "first")?
+                .first()
+                .cloned()
+                .unwrap_or(Value::Null)
+        }
+        "last" => {
+            expect_arity(&args, 1, "last")?;
+            expect_list(&args[0], "last", "first")?
+                .last()
+                .cloned()
+                .unwrap_or(Value::Null)
+        }
+        "slice" => slice(args)?,
+        "reverse" => reverse(args)?,
+        "sort" => sort(args)?,
+        "unique" => unique(args)?,
         _ => return Ok(None),
     };
     Ok(Some(result))
@@ -137,12 +232,12 @@ fn unary_string(
     args: Vec<Value>,
     name: &str,
     f: impl FnOnce(String) -> String,
-) -> OrichResult<Value> {
+) -> DobraResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::String(f(args[0].to_string())))
 }
 
-fn indent(args: Vec<Value>) -> OrichResult<Value> {
+fn indent(args: Vec<Value>) -> DobraResult<Value> {
     expect_arity(&args, 2, "indent")?;
     let text = args[0].to_string();
     let prefix = match &args[1] {
@@ -181,9 +276,9 @@ fn dedent(text: &str) -> String {
         .join("\n")
 }
 
-fn range(args: Vec<Value>) -> OrichResult<Value> {
+fn range(args: Vec<Value>) -> DobraResult<Value> {
     if args.len() != 1 && args.len() != 2 {
-        return Err(OrichError::runtime("range() expects 1 or 2 arguments"));
+        return Err(DobraError::runtime("range() expects 1 or 2 arguments"));
     }
     let (start, end) = if args.len() == 1 {
         (0, to_int(&args[0])?)
@@ -198,41 +293,215 @@ fn range(args: Vec<Value>) -> OrichResult<Value> {
     Ok(Value::List(values))
 }
 
-fn expect_arity(args: &[Value], expected: usize, name: &str) -> OrichResult<()> {
+fn abs(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "abs")?;
+    match &args[0] {
+        Value::Int(value) => value
+            .checked_abs()
+            .map(Value::Int)
+            .ok_or_else(|| DobraError::runtime("abs() integer overflow")),
+        Value::Float(value) => Ok(Value::Float(value.abs())),
+        other => Err(DobraError::runtime(format!(
+            "abs() expects number, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn rounded(args: Vec<Value>, name: &str, op: impl FnOnce(f64) -> f64) -> DobraResult<Value> {
+    expect_arity(&args, 1, name)?;
+    Ok(Value::Int(op(to_float(&args[0])?) as i64))
+}
+
+fn sum(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "sum")?;
+    let values = expect_list(&args[0], "sum", "first")?;
+    let mut total = 0.0;
+    let mut all_ints = true;
+    for value in values {
+        if !matches!(value, Value::Int(_)) {
+            all_ints = false;
+        }
+        total += to_float(value)?;
+    }
+    if all_ints {
+        Ok(Value::Int(total as i64))
+    } else {
+        Ok(Value::Float(total))
+    }
+}
+
+fn avg(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "avg")?;
+    let values = expect_list(&args[0], "avg", "first")?;
+    if values.is_empty() {
+        return Ok(Value::Null);
+    }
+    let mut total = 0.0;
+    for value in values {
+        total += to_float(value)?;
+    }
+    Ok(Value::Float(total / values.len() as f64))
+}
+
+fn slice(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 3, "slice")?;
+    let start = to_int(&args[1])?;
+    let end = to_int(&args[2])?;
+    match &args[0] {
+        Value::List(values) => {
+            let (start, end) = normalize_bounds(values.len(), start, end);
+            Ok(Value::List(values[start..end].to_vec()))
+        }
+        Value::String(value) => {
+            let chars = value.chars().collect::<Vec<_>>();
+            let (start, end) = normalize_bounds(chars.len(), start, end);
+            Ok(Value::String(chars[start..end].iter().collect()))
+        }
+        other => Err(DobraError::runtime(format!(
+            "slice() expects list or string, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn reverse(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "reverse")?;
+    match &args[0] {
+        Value::List(values) => {
+            let mut values = values.clone();
+            values.reverse();
+            Ok(Value::List(values))
+        }
+        Value::String(value) => Ok(Value::String(value.chars().rev().collect())),
+        other => Err(DobraError::runtime(format!(
+            "reverse() expects list or string, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn sort(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "sort")?;
+    let mut values = expect_list(&args[0], "sort", "first")?.clone();
+    values.sort_by(compare_values);
+    Ok(Value::List(values))
+}
+
+fn unique(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 1, "unique")?;
+    let values = expect_list(&args[0], "unique", "first")?;
+    let mut out = Vec::new();
+    for value in values {
+        if !out.contains(value) {
+            out.push(value.clone());
+        }
+    }
+    Ok(Value::List(out))
+}
+
+fn expect_arity(args: &[Value], expected: usize, name: &str) -> DobraResult<()> {
     if args.len() == expected {
         Ok(())
     } else {
-        Err(OrichError::runtime(format!(
+        Err(DobraError::runtime(format!(
             "{name}() expects {expected} argument(s), got {}",
             args.len()
         )))
     }
 }
 
-fn to_int(value: &Value) -> OrichResult<i64> {
+fn expect_list<'a>(value: &'a Value, name: &str, position: &str) -> DobraResult<&'a Vec<Value>> {
+    let Value::List(values) = value else {
+        return Err(DobraError::runtime(format!(
+            "{name}() expects list as {position} argument, got {}",
+            value.type_name()
+        )));
+    };
+    Ok(values)
+}
+
+fn to_int(value: &Value) -> DobraResult<i64> {
     match value {
         Value::Int(value) => Ok(*value),
         Value::Float(value) => Ok(*value as i64),
         Value::String(value) => value
             .parse::<i64>()
-            .map_err(|_| OrichError::runtime(format!("cannot convert '{value}' to int"))),
-        other => Err(OrichError::runtime(format!(
+            .map_err(|_| DobraError::runtime(format!("cannot convert '{value}' to int"))),
+        other => Err(DobraError::runtime(format!(
             "cannot convert {} to int",
             other.type_name()
         ))),
     }
 }
 
-fn to_float(value: &Value) -> OrichResult<f64> {
+fn to_float(value: &Value) -> DobraResult<f64> {
     match value {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
         Value::String(value) => value
             .parse::<f64>()
-            .map_err(|_| OrichError::runtime(format!("cannot convert '{value}' to float"))),
-        other => Err(OrichError::runtime(format!(
+            .map_err(|_| DobraError::runtime(format!("cannot convert '{value}' to float"))),
+        other => Err(DobraError::runtime(format!(
             "cannot convert {} to float",
             other.type_name()
         ))),
+    }
+}
+
+fn number_result(value: f64, args: &[Value]) -> Value {
+    if args.iter().all(|arg| matches!(arg, Value::Int(_))) && value.fract() == 0.0 {
+        Value::Int(value as i64)
+    } else {
+        Value::Float(value)
+    }
+}
+
+fn normalize_bounds(len: usize, start: i64, end: i64) -> (usize, usize) {
+    let len = len as i64;
+    let start = normalize_index(len, start);
+    let end = normalize_index(len, end);
+    let start = start.clamp(0, len) as usize;
+    let end = end.clamp(0, len) as usize;
+    if end < start {
+        (start, start)
+    } else {
+        (start, end)
+    }
+}
+
+fn normalize_index(len: i64, index: i64) -> i64 {
+    if index < 0 {
+        len + index
+    } else {
+        index
+    }
+}
+
+fn compare_values(left: &Value, right: &Value) -> Ordering {
+    match (left, right) {
+        (Value::Int(a), Value::Int(b)) => a.cmp(b),
+        (Value::Float(a), Value::Float(b)) => a.partial_cmp(b).unwrap_or(Ordering::Equal),
+        (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal),
+        (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal),
+        (Value::String(a), Value::String(b)) => a.cmp(b),
+        (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
+        _ => value_rank(left)
+            .cmp(&value_rank(right))
+            .then_with(|| left.to_string().cmp(&right.to_string())),
+    }
+}
+
+fn value_rank(value: &Value) -> u8 {
+    match value {
+        Value::Null => 0,
+        Value::Bool(_) => 1,
+        Value::Int(_) | Value::Float(_) => 2,
+        Value::String(_) => 3,
+        Value::List(_) => 4,
+        Value::Map(_) => 5,
+        Value::Stream(_) => 6,
+        Value::ImportBinding(_, _) => 7,
+        Value::Function(_) => 8,
     }
 }

@@ -1,5 +1,5 @@
 use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
-use crate::error::{OrichError, OrichResult};
+use crate::error::{DobraError, DobraResult};
 use crate::token::{Token, TokenKind};
 use crate::value::Value;
 
@@ -13,7 +13,7 @@ impl Parser {
         Self { tokens, pos: 0 }
     }
 
-    pub fn parse_program(&mut self) -> OrichResult<Program> {
+    pub fn parse_program(&mut self) -> DobraResult<Program> {
         let mut statements = Vec::new();
         self.skip_newlines();
         while !self.is_at_end() {
@@ -24,7 +24,7 @@ impl Parser {
         Ok(Program { statements })
     }
 
-    pub fn parse_expression_only(&mut self) -> OrichResult<Expr> {
+    pub fn parse_expression_only(&mut self) -> DobraResult<Expr> {
         self.skip_separators();
         let expr = self.expression()?;
         self.skip_separators();
@@ -34,7 +34,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn statement(&mut self) -> OrichResult<Stmt> {
+    fn statement(&mut self) -> DobraResult<Stmt> {
         match &self.peek().kind {
             TokenKind::Comment(text) => {
                 let text = text.clone();
@@ -71,7 +71,7 @@ impl Parser {
             | TokenKind::Struct
             | TokenKind::Namespace
             | TokenKind::Use => {
-                Err(self.error_here("keyword is reserved for a future Orich version"))
+                Err(self.error_here("keyword is reserved for a future Dobra version"))
             }
             TokenKind::Identifier(name) if self.peek_next_is_equal() => {
                 let name = name.clone();
@@ -85,14 +85,14 @@ impl Parser {
         }
     }
 
-    fn import_statement(&mut self) -> OrichResult<Stmt> {
+    fn import_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         self.skip_separators();
         let token = self.advance().clone();
         let path = match token.kind {
             TokenKind::String(path) => path,
             _ => {
-                return Err(OrichError::new(
+                return Err(DobraError::new(
                     "expected string path after import",
                     token.line,
                     token.column,
@@ -125,7 +125,7 @@ impl Parser {
         })
     }
 
-    fn import_name_list(&mut self, clause: &str) -> OrichResult<Vec<String>> {
+    fn import_name_list(&mut self, clause: &str) -> DobraResult<Vec<String>> {
         let mut names = Vec::new();
         loop {
             self.skip_separators();
@@ -142,7 +142,7 @@ impl Parser {
         Ok(names)
     }
 
-    fn let_statement(&mut self, mutable: bool) -> OrichResult<Stmt> {
+    fn let_statement(&mut self, mutable: bool) -> DobraResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected variable name")?;
         self.expect_equal()?;
@@ -155,7 +155,7 @@ impl Parser {
         })
     }
 
-    fn fn_statement(&mut self) -> OrichResult<Stmt> {
+    fn fn_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected function name")?;
         self.expect(TokenKind::LeftParen, "expected '(' after function name")?;
@@ -180,7 +180,7 @@ impl Parser {
         Ok(Stmt::Fn { name, params, body })
     }
 
-    fn return_statement(&mut self) -> OrichResult<Stmt> {
+    fn return_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         if self.at_statement_end() || self.check(&TokenKind::RightBrace) {
             Ok(Stmt::Return(None))
@@ -189,13 +189,13 @@ impl Parser {
         }
     }
 
-    fn emit_statement(&mut self) -> OrichResult<Stmt> {
+    fn emit_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         self.skip_separators();
         Ok(Stmt::Emit(self.expression()?))
     }
 
-    fn if_statement(&mut self) -> OrichResult<Stmt> {
+    fn if_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         let condition = self.expression()?;
         self.skip_newlines();
@@ -225,7 +225,7 @@ impl Parser {
         })
     }
 
-    fn for_statement(&mut self) -> OrichResult<Stmt> {
+    fn for_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected loop variable")?;
         self.expect(TokenKind::In, "expected 'in' after loop variable")?;
@@ -240,7 +240,7 @@ impl Parser {
         })
     }
 
-    fn while_statement(&mut self) -> OrichResult<Stmt> {
+    fn while_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         let condition = self.expression()?;
         self.skip_newlines();
@@ -248,7 +248,7 @@ impl Parser {
         Ok(Stmt::While { condition, body })
     }
 
-    fn block(&mut self) -> OrichResult<Vec<Stmt>> {
+    fn block(&mut self) -> DobraResult<Vec<Stmt>> {
         self.expect(TokenKind::LeftBrace, "expected '{' before block")?;
         let mut statements = Vec::new();
         self.skip_newlines();
@@ -261,11 +261,11 @@ impl Parser {
         Ok(statements)
     }
 
-    fn expression(&mut self) -> OrichResult<Expr> {
+    fn expression(&mut self) -> DobraResult<Expr> {
         self.or()
     }
 
-    fn or(&mut self) -> OrichResult<Expr> {
+    fn or(&mut self) -> DobraResult<Expr> {
         let mut expr = self.and()?;
         while self.match_kind(&TokenKind::Or) {
             self.skip_separators();
@@ -279,7 +279,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn and(&mut self) -> OrichResult<Expr> {
+    fn and(&mut self) -> DobraResult<Expr> {
         let mut expr = self.equality()?;
         while self.match_kind(&TokenKind::And) {
             self.skip_separators();
@@ -293,7 +293,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn equality(&mut self) -> OrichResult<Expr> {
+    fn equality(&mut self) -> DobraResult<Expr> {
         let mut expr = self.comparison()?;
         loop {
             let op = if self.match_kind(&TokenKind::EqualEqual) {
@@ -315,7 +315,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn comparison(&mut self) -> OrichResult<Expr> {
+    fn comparison(&mut self) -> DobraResult<Expr> {
         let mut expr = self.term()?;
         loop {
             let op = if self.match_kind(&TokenKind::Less) {
@@ -341,7 +341,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn term(&mut self) -> OrichResult<Expr> {
+    fn term(&mut self) -> DobraResult<Expr> {
         let mut expr = self.factor()?;
         loop {
             let op = if self.match_kind(&TokenKind::Plus) {
@@ -363,7 +363,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn factor(&mut self) -> OrichResult<Expr> {
+    fn factor(&mut self) -> DobraResult<Expr> {
         let mut expr = self.unary()?;
         loop {
             let op = if self.match_kind(&TokenKind::Star) {
@@ -387,7 +387,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn unary(&mut self) -> OrichResult<Expr> {
+    fn unary(&mut self) -> DobraResult<Expr> {
         if self.match_kind(&TokenKind::Minus) {
             self.skip_separators();
             return Ok(Expr::Unary {
@@ -405,7 +405,7 @@ impl Parser {
         self.call()
     }
 
-    fn call(&mut self) -> OrichResult<Expr> {
+    fn call(&mut self) -> DobraResult<Expr> {
         let mut expr = self.primary()?;
         loop {
             if self.match_kind(&TokenKind::LeftParen) {
@@ -451,7 +451,7 @@ impl Parser {
         Ok(expr)
     }
 
-    fn primary(&mut self) -> OrichResult<Expr> {
+    fn primary(&mut self) -> DobraResult<Expr> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Null => Ok(Expr::Literal(Value::Null)),
@@ -470,7 +470,7 @@ impl Parser {
             }
             TokenKind::LeftBracket => self.list_literal(),
             TokenKind::LeftBrace => self.map_literal(),
-            _ => Err(OrichError::new(
+            _ => Err(DobraError::new(
                 "expected expression",
                 token.line,
                 token.column,
@@ -478,7 +478,7 @@ impl Parser {
         }
     }
 
-    fn list_literal(&mut self) -> OrichResult<Expr> {
+    fn list_literal(&mut self) -> DobraResult<Expr> {
         let mut values = Vec::new();
         self.skip_separators();
         if !self.check(&TokenKind::RightBracket) {
@@ -498,7 +498,7 @@ impl Parser {
         Ok(Expr::List(values))
     }
 
-    fn map_literal(&mut self) -> OrichResult<Expr> {
+    fn map_literal(&mut self) -> DobraResult<Expr> {
         let mut pairs = Vec::new();
         self.skip_separators();
         if !self.check(&TokenKind::RightBrace) {
@@ -507,7 +507,7 @@ impl Parser {
                     TokenKind::Identifier(name) => name,
                     TokenKind::String(name) => name,
                     other => {
-                        return Err(OrichError::new(
+                        return Err(DobraError::new(
                             format!("expected map key, got {other:?}"),
                             self.previous().line,
                             self.previous().column,
@@ -533,19 +533,19 @@ impl Parser {
         Ok(Expr::Map(pairs))
     }
 
-    fn expect_identifier(&mut self, message: &str) -> OrichResult<String> {
+    fn expect_identifier(&mut self, message: &str) -> DobraResult<String> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => Ok(name),
-            _ => Err(OrichError::new(message, token.line, token.column)),
+            _ => Err(DobraError::new(message, token.line, token.column)),
         }
     }
 
-    fn expect_equal(&mut self) -> OrichResult<()> {
+    fn expect_equal(&mut self) -> DobraResult<()> {
         self.expect(TokenKind::Equal, "expected '='")
     }
 
-    fn expect(&mut self, kind: TokenKind, message: &str) -> OrichResult<()> {
+    fn expect(&mut self, kind: TokenKind, message: &str) -> DobraResult<()> {
         if self.check(&kind) {
             self.advance();
             Ok(())
@@ -628,8 +628,8 @@ impl Parser {
         &self.tokens[self.pos - 1]
     }
 
-    fn error_here(&self, message: &str) -> OrichError {
-        OrichError::new(message, self.peek().line, self.peek().column)
+    fn error_here(&self, message: &str) -> DobraError {
+        DobraError::new(message, self.peek().line, self.peek().column)
     }
 }
 

@@ -316,6 +316,7 @@ fn format_literal(value: &Value, indent: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
+        Value::Stream(stream) => stream.to_string(),
         Value::ImportBinding(_, name) => format!("<import {name}>"),
         Value::Function(_) => "<fn>".to_string(),
     }

@@ -7,6 +7,14 @@ use std::rc::Rc;
 
 pub type ModuleRef = Rc<RefCell<Module>>;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum StreamId {
+    Stdin,
+    Stdout,
+    Stderr,
+    File(usize),
+}
+
 #[derive(Debug, Clone)]
 pub struct Module {
     pub path: PathBuf,
@@ -25,6 +33,7 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    Stream(StreamId),
     ImportBinding(ModuleRef, String),
     Function(Function),
 }
@@ -46,6 +55,7 @@ impl Value {
             Value::String(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
+            Value::Stream(_) => true,
             Value::ImportBinding(_, _) => true,
             Value::Function(_) => true,
         }
@@ -60,6 +70,7 @@ impl Value {
             Value::String(_) => "string",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::Stream(_) => "stream",
             Value::ImportBinding(_, _) => "import",
             Value::Function(_) => "function",
         }
@@ -76,6 +87,7 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Stream(a), Value::Stream(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a == b,
             (Value::ImportBinding(a_module, a_name), Value::ImportBinding(b_module, b_name)) => {
                 Rc::ptr_eq(a_module, b_module) && a_name == b_name
@@ -119,8 +131,20 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::Stream(stream) => write!(f, "{stream}"),
             Value::ImportBinding(_, name) => write!(f, "<import {name}>"),
             Value::Function(_) => write!(f, "<fn>"),
+        }
+    }
+}
+
+impl fmt::Display for StreamId {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            StreamId::Stdin => write!(f, "<stream stdin>"),
+            StreamId::Stdout => write!(f, "<stream stdout>"),
+            StreamId::Stderr => write!(f, "<stream stderr>"),
+            StreamId::File(id) => write!(f, "<stream {id}>"),
         }
     }
 }

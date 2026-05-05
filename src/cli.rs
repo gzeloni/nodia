@@ -1,5 +1,8 @@
-use orich::project;
-use orich::{check_source, format_source, lex_source, parse_source, run_file, run_source, Value};
+use dobra::project;
+use dobra::{
+    check_source, format_source, lex_source, parse_source, run_file_with_options,
+    run_source_with_options, RuntimeOptions, Value,
+};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -16,6 +19,7 @@ struct Options {
     quiet: bool,
     verbose: bool,
     color: ColorMode,
+    allow_write: bool,
 }
 
 enum ColorMode {
@@ -99,12 +103,12 @@ fn run_inner(args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
         "tokens" => tokens_command(args, options),
         "ast" => ast_command(args, options),
         "init" => init_command(args, options),
-        "version" => version_command(options),
+        "version" => version_command(args, options),
         "help" | "--help" | "-h" => {
             print_help();
             Ok(())
         }
-        "--version" | "-V" => version_command(options),
+        "--version" | "-V" => version_command(Vec::new(), options),
         other => Err(CliError::usage(format!("unknown command '{other}'"))),
     }
 }
@@ -122,6 +126,10 @@ fn parse_global_flags(args: &mut Vec<String>, options: &mut Options) -> Result<(
             }
             "--verbose" => {
                 options.verbose = true;
+                args.remove(0);
+            }
+            "--allow-write" => {
+                options.allow_write = true;
                 args.remove(0);
             }
             "--color" => {
@@ -160,6 +168,10 @@ fn parse_command_flags(args: &mut Vec<String>, options: &mut Options) -> Result<
             }
             "--verbose" => {
                 options.verbose = true;
+                args.remove(index);
+            }
+            "--allow-write" => {
+                options.allow_write = true;
                 args.remove(index);
             }
             "--color" => {
@@ -227,11 +239,13 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     let input = parse_vars(&vars)?;
     let output = if path.as_deref() == Some("-") {
         let source = read_stdin()?;
-        run_source(&source, input).map_err(|err| CliError::language(err.render()))?
+        run_source_with_options(&source, input, runtime_options(options))
+            .map_err(|err| CliError::language(err.render()))?
     } else {
         let path = resolve_entry(path.as_deref())?;
-        ensure_och(&path)?;
-        let output = run_file(&path, input).map_err(|err| CliError::language(err.render()))?;
+        ensure_dob(&path)?;
+        let output = run_file_with_options(&path, input, runtime_options(options))
+            .map_err(|err| CliError::language(err.render()))?;
         if let Some(target) = out_path {
             let target = if target.as_os_str().is_empty() {
                 PathBuf::from(format!("{}.out", path.display()))
@@ -255,7 +269,7 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
 fn check_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
     parse_command_flags(&mut args, options)?;
     let path = resolve_entry(args.first().map(String::as_str))?;
-    ensure_och(&path)?;
+    ensure_dob(&path)?;
     let source = fs::read_to_string(&path)
         .map_err(|err| CliError::io(format!("cannot read '{}': {err}", path.display())))?;
     match check_source(&source) {
@@ -309,7 +323,7 @@ fn fmt_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
 
     let mut files = Vec::new();
     for target in targets {
-        collect_och_files(&target, &mut files)?;
+        collect_dob_files(&target, &mut files)?;
     }
     files.sort();
     files.dedup();
@@ -357,8 +371,8 @@ fn eval_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliE
         return Err(CliError::usage("eval expects source code"));
     }
     let source = args.join(" ");
-    let output =
-        run_source(&source, BTreeMap::new()).map_err(|err| CliError::language(err.render()))?;
+    let output = run_source_with_options(&source, BTreeMap::new(), runtime_options(options))
+        .map_err(|err| CliError::language(err.render()))?;
     if !options.quiet {
         println!("{output}");
     }
@@ -369,7 +383,7 @@ fn tokens_command(mut args: Vec<String>, options: &mut Options) -> Result<(), Cl
     parse_command_flags(&mut args, options)?;
     let path = args
         .first()
-        .ok_or_else(|| CliError::usage("tokens expects a .och path"))?;
+        .ok_or_else(|| CliError::usage("tokens expects a .dob path"))?;
     let source = fs::read_to_string(path)
         .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
     let tokens =
@@ -388,7 +402,7 @@ fn ast_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     parse_command_flags(&mut args, options)?;
     let path = args
         .first()
-        .ok_or_else(|| CliError::usage("ast expects a .och path"))?;
+        .ok_or_else(|| CliError::usage("ast expects a .dob path"))?;
     let source = fs::read_to_string(path)
         .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
     let program =
@@ -418,21 +432,31 @@ fn init_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliE
             json_escape(&dir.display().to_string())
         );
     } else if !options.quiet {
-        println!("created Orich project at {}", dir.display());
+        println!("created Dobra project at {}", dir.display());
     }
     Ok(())
 }
 
-fn version_command(options: &Options) -> Result<(), CliError> {
+fn version_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
+    parse_command_flags(&mut args, options)?;
+    if let Some(value) = args.first() {
+        return Err(CliError::usage(format!("unexpected argument '{value}'")));
+    }
     if options.json {
         println!(
-            "{{\"name\":\"orich\",\"version\":\"{}\",\"rust_std_only\":true}}",
+            "{{\"name\":\"dobra\",\"version\":\"{}\",\"rust_std_only\":true}}",
             env!("CARGO_PKG_VERSION")
         );
     } else {
-        println!("orich {}", env!("CARGO_PKG_VERSION"));
+        println!("dobra {}", env!("CARGO_PKG_VERSION"));
     }
     Ok(())
+}
+
+fn runtime_options(options: &Options) -> RuntimeOptions {
+    RuntimeOptions {
+        allow_write: options.allow_write,
+    }
 }
 
 fn resolve_entry(path: Option<&str>) -> Result<PathBuf, CliError> {
@@ -442,15 +466,15 @@ fn resolve_entry(path: Option<&str>) -> Result<PathBuf, CliError> {
     let cwd = env::current_dir()
         .map_err(|err| CliError::io(format!("cannot read current dir: {err}")))?;
     let config = project::find_project_config(&cwd)
-        .ok_or_else(|| CliError::usage("missing .och path and no orich.toml found"))?;
+        .ok_or_else(|| CliError::usage("missing .dob path and no dobra.toml found"))?;
     let config = project::read_project_config(&config)
         .map_err(|err| CliError::io(format!("cannot read project config: {err}")))?;
     Ok(config.entry)
 }
 
-fn collect_och_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliError> {
+fn collect_dob_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliError> {
     if target.is_file() {
-        ensure_och(target)?;
+        ensure_dob(target)?;
         files.push(target.to_path_buf());
         return Ok(());
     }
@@ -465,8 +489,8 @@ fn collect_och_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliE
                 continue;
             }
             if path.is_dir() {
-                collect_och_files(&path, files)?;
-            } else if path.extension().is_some_and(|ext| ext == "och") {
+                collect_dob_files(&path, files)?;
+            } else if path.extension().is_some_and(|ext| ext == "dob") {
                 files.push(path);
             }
         }
@@ -478,12 +502,12 @@ fn collect_och_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliE
     )))
 }
 
-fn ensure_och(path: &Path) -> Result<(), CliError> {
-    if path.extension().is_some_and(|ext| ext == "och") {
+fn ensure_dob(path: &Path) -> Result<(), CliError> {
+    if path.extension().is_some_and(|ext| ext == "dob") {
         Ok(())
     } else {
         Err(CliError::usage(format!(
-            "invalid file extension for '{}'; expected .och",
+            "invalid file extension for '{}'; expected .dob",
             path.display()
         )))
     }
@@ -612,7 +636,7 @@ fn unquote(value: &str) -> String {
     }
 }
 
-fn tokens_json(tokens: &[orich::Token]) -> String {
+fn tokens_json(tokens: &[dobra::Token]) -> String {
     let mut out = String::from("{\"ok\":true,\"tokens\":[");
     for (index, token) in tokens.iter().enumerate() {
         if index > 0 {
@@ -661,7 +685,7 @@ fn json_escape(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Orich {}\n\nUsage:\n  orich run [file.och] [--var key=value] [--vars key=value ...] [--out output.txt]\n  orich check [file.och] [--json]\n  orich fmt [file.och|dir] [--check] [--stdout]\n  orich eval 'emit \"hello\"'\n  orich tokens file.och [--json]\n  orich ast file.och [--json]\n  orich init [dir]\n  orich version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --help\n  --version",
+        "Dobra {}\n\nUsage:\n  dobra run [file.dob] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write]\n  dobra check [file.dob] [--json]\n  dobra fmt [file.dob|dir] [--check] [--stdout]\n  dobra eval 'emit \"hello\"'\n  dobra tokens file.dob [--json]\n  dobra ast file.dob [--json]\n  dobra init [dir]\n  dobra version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --allow-write\n  --help\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }

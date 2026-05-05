@@ -1,4 +1,4 @@
-use crate::error::{OrichError, OrichResult};
+use crate::error::{DobraError, DobraResult};
 use crate::token::{keyword_kind, Token, TokenKind};
 
 pub struct Lexer {
@@ -18,7 +18,7 @@ impl Lexer {
         }
     }
 
-    pub fn tokenize(mut self) -> OrichResult<Vec<Token>> {
+    pub fn tokenize(mut self) -> DobraResult<Vec<Token>> {
         let mut tokens = Vec::new();
         while let Some(ch) = self.peek() {
             let line = self.line;
@@ -82,7 +82,7 @@ impl Lexer {
                     if self.match_char('=') {
                         tokens.push(Token::new(TokenKind::BangEqual, line, column));
                     } else {
-                        return Err(OrichError::new(
+                        return Err(DobraError::new(
                             "unexpected '!'; use 'not' or '!='",
                             line,
                             column,
@@ -116,7 +116,7 @@ impl Lexer {
                 ':' => self.single(&mut tokens, TokenKind::Colon),
                 ';' => self.single(&mut tokens, TokenKind::Semicolon),
                 _ => {
-                    return Err(OrichError::new(
+                    return Err(DobraError::new(
                         format!("unexpected character '{ch}'"),
                         line,
                         column,
@@ -144,7 +144,7 @@ impl Lexer {
         keyword_kind(&text).unwrap_or(TokenKind::Identifier(text))
     }
 
-    fn number(&mut self) -> OrichResult<TokenKind> {
+    fn number(&mut self) -> DobraResult<TokenKind> {
         let start = self.pos;
         while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
             self.advance();
@@ -161,15 +161,15 @@ impl Lexer {
         if is_float {
             text.parse::<f64>()
                 .map(TokenKind::Float)
-                .map_err(|_| OrichError::new("invalid float literal", self.line, self.column))
+                .map_err(|_| DobraError::new("invalid float literal", self.line, self.column))
         } else {
             text.parse::<i64>()
                 .map(TokenKind::Int)
-                .map_err(|_| OrichError::new("invalid integer literal", self.line, self.column))
+                .map_err(|_| DobraError::new("invalid integer literal", self.line, self.column))
         }
     }
 
-    fn string(&mut self, line: usize, column: usize, quote: char) -> OrichResult<String> {
+    fn string(&mut self, line: usize, column: usize, quote: char) -> DobraResult<String> {
         self.advance();
         let mut out = String::new();
         while let Some(ch) = self.peek() {
@@ -181,7 +181,7 @@ impl Lexer {
                 self.advance();
                 let escaped = self
                     .advance()
-                    .ok_or_else(|| OrichError::new("unterminated escape", line, column))?;
+                    .ok_or_else(|| DobraError::new("unterminated escape", line, column))?;
                 out.push(match escaped {
                     'n' => '\n',
                     'r' => '\r',
@@ -196,17 +196,17 @@ impl Lexer {
                 self.advance();
             }
         }
-        Err(OrichError::new("unterminated string", line, column))
+        Err(DobraError::new("unterminated string", line, column))
     }
 
-    fn triple_string(&mut self, line: usize, column: usize) -> OrichResult<String> {
+    fn triple_string(&mut self, line: usize, column: usize) -> DobraResult<String> {
         self.advance();
         self.advance();
         self.advance();
         let mut out = String::new();
         loop {
             if self.peek().is_none() {
-                return Err(OrichError::new("unterminated triple string", line, column));
+                return Err(DobraError::new("unterminated triple string", line, column));
             }
             if self.peek() == Some('"')
                 && self.peek_next() == Some('"')

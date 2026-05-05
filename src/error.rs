@@ -1,9 +1,9 @@
 use std::fmt;
 
-pub type OrichResult<T> = Result<T, OrichError>;
+pub type DobraResult<T> = Result<T, DobraError>;
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct OrichError {
+pub struct DobraError {
     pub code: String,
     pub message: String,
     pub line: usize,
@@ -11,7 +11,7 @@ pub struct OrichError {
     pub file: Option<String>,
 }
 
-impl OrichError {
+impl DobraError {
     pub fn new(message: impl Into<String>, line: usize, column: usize) -> Self {
         Self {
             code: "E1000".to_string(),
@@ -77,13 +77,13 @@ impl OrichError {
     }
 }
 
-impl fmt::Display for OrichError {
+impl fmt::Display for DobraError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.render())
     }
 }
 
-impl std::error::Error for OrichError {}
+impl std::error::Error for DobraError {}
 
 fn json_escape(value: &str) -> String {
     let mut out = String::new();

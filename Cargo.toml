@@ -1,8 +1,8 @@
 [package]
-name = "orich"
-version = "0.2.0"
+name = "dobra"
+version = "0.3.0"
 edition = "2021"
-description = "Orich text automation language"
+description = "Dobra text automation language"
 license = "GPL-3.0-or-later"
 
 [dependencies]

@@ -1,16 +1,24 @@
 use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
-use crate::error::{OrichError, OrichResult};
+use crate::error::{DobraError, DobraResult};
+use crate::io::{self as fsio, IoRegistry};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::stdlib;
-use crate::value::{Function, Module, ModuleRef, Value};
+use crate::value::{Function, Module, ModuleRef, StreamId, Value};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::io::{self as stdio, BufRead, Read, Write};
 use std::path::{Path, PathBuf};
 use std::rc::Rc;
 
 type ModuleCache = Rc<RefCell<HashMap<PathBuf, ModuleRef>>>;
+type IoState = Rc<RefCell<IoRegistry>>;
+
+#[derive(Debug, Clone, Default)]
+pub struct RuntimeOptions {
+    pub allow_write: bool,
+}
 
 #[derive(Clone)]
 struct Binding {
@@ -32,15 +40,32 @@ pub struct Runtime {
     base_dir: Option<PathBuf>,
     modules: ModuleCache,
     current_module: Option<ModuleRef>,
+    io: IoState,
+    options: RuntimeOptions,
 }
 
 impl Runtime {
     pub fn new(input: BTreeMap<String, Value>) -> Self {
-        Self::with_base_dir(input, None)
+        Self::with_options(input, None, RuntimeOptions::default())
     }
 
     pub fn with_base_dir(input: BTreeMap<String, Value>, base_dir: Option<PathBuf>) -> Self {
-        Self::with_context(input, base_dir, Rc::new(RefCell::new(HashMap::new())), None)
+        Self::with_options(input, base_dir, RuntimeOptions::default())
+    }
+
+    pub fn with_options(
+        input: BTreeMap<String, Value>,
+        base_dir: Option<PathBuf>,
+        options: RuntimeOptions,
+    ) -> Self {
+        Self::with_context(
+            input,
+            base_dir,
+            Rc::new(RefCell::new(HashMap::new())),
+            None,
+            Rc::new(RefCell::new(IoRegistry::new())),
+            options,
+        )
     }
 
     fn with_context(
@@ -48,12 +73,35 @@ impl Runtime {
         base_dir: Option<PathBuf>,
         modules: ModuleCache,
         current_module: Option<ModuleRef>,
+        io: IoState,
+        options: RuntimeOptions,
     ) -> Self {
         let mut root = HashMap::new();
         root.insert(
             "input".to_string(),
             Binding {
                 value: Value::Map(input.clone()),
+                mutable: false,
+            },
+        );
+        root.insert(
+            "stdin".to_string(),
+            Binding {
+                value: Value::Stream(StreamId::Stdin),
+                mutable: false,
+            },
+        );
+        root.insert(
+            "stdout".to_string(),
+            Binding {
+                value: Value::Stream(StreamId::Stdout),
+                mutable: false,
+            },
+        );
+        root.insert(
+            "stderr".to_string(),
+            Binding {
+                value: Value::Stream(StreamId::Stderr),
                 mutable: false,
             },
         );
@@ -64,22 +112,25 @@ impl Runtime {
             base_dir,
             modules,
             current_module,
+            io,
+            options,
         }
     }
 
-    pub fn run(&mut self, program: &Program) -> OrichResult<String> {
+    pub fn run(&mut self, program: &Program) -> DobraResult<String> {
         for statement in &program.statements {
             match self.execute(statement)? {
                 Flow::None => self.publish_statement(statement)?,
-                Flow::Return(_) => return Err(OrichError::runtime("return outside function")),
-                Flow::Break => return Err(OrichError::runtime("break outside loop")),
-                Flow::Continue => return Err(OrichError::runtime("continue outside loop")),
+                Flow::Return(_) => return Err(DobraError::runtime("return outside function")),
+                Flow::Break => return Err(DobraError::runtime("break outside loop")),
+                Flow::Continue => return Err(DobraError::runtime("continue outside loop")),
             }
         }
+        self.io.borrow_mut().flush_all()?;
         Ok(self.output.trim_end_matches('\n').to_string())
     }
 
-    fn execute_block(&mut self, statements: &[Stmt]) -> OrichResult<Flow> {
+    fn execute_block(&mut self, statements: &[Stmt]) -> DobraResult<Flow> {
         self.scopes.push(HashMap::new());
         for statement in statements {
             let flow = self.execute(statement)?;
@@ -92,7 +143,7 @@ impl Runtime {
         Ok(Flow::None)
     }
 
-    fn execute(&mut self, statement: &Stmt) -> OrichResult<Flow> {
+    fn execute(&mut self, statement: &Stmt) -> DobraResult<Flow> {
         match statement {
             Stmt::Comment(_) => Ok(Flow::None),
             Stmt::Import {
@@ -165,7 +216,7 @@ impl Runtime {
                         .collect(),
                     Value::Map(value) => value.keys().cloned().map(Value::String).collect(),
                     other => {
-                        return Err(OrichError::runtime(format!(
+                        return Err(DobraError::runtime(format!(
                             "cannot iterate over {}",
                             other.type_name()
                         )))
@@ -189,7 +240,7 @@ impl Runtime {
                 while self.eval(condition)?.truthy() {
                     iterations += 1;
                     if iterations > 100_000 {
-                        return Err(OrichError::runtime("while loop exceeded 100000 iterations"));
+                        return Err(DobraError::runtime("while loop exceeded 100000 iterations"));
                     }
                     match self.execute_block(body)? {
                         Flow::None | Flow::Continue => {}
@@ -214,7 +265,7 @@ impl Runtime {
         alias: Option<&str>,
         show: &[String],
         hide: &[String],
-    ) -> OrichResult<()> {
+    ) -> DobraResult<()> {
         let resolved = self.resolve_import(path)?;
         let module = self.load_module(&resolved)?;
         let names = self.selected_import_names(&module, show, hide)?;
@@ -237,13 +288,13 @@ impl Runtime {
         }
     }
 
-    fn load_module(&mut self, resolved: &Path) -> OrichResult<ModuleRef> {
+    fn load_module(&mut self, resolved: &Path) -> DobraResult<ModuleRef> {
         if let Some(module) = self.modules.borrow().get(resolved).cloned() {
             return Ok(module);
         }
 
         let source = fs::read_to_string(resolved).map_err(|err| {
-            OrichError::io(format!(
+            DobraError::io(format!(
                 "cannot read import '{}': {err}",
                 resolved.display()
             ))
@@ -271,6 +322,8 @@ impl Runtime {
             resolved.parent().map(Path::to_path_buf),
             self.modules.clone(),
             Some(module.clone()),
+            self.io.clone(),
+            self.options.clone(),
         );
         runtime
             .run(&program)
@@ -288,7 +341,7 @@ impl Runtime {
         module: &ModuleRef,
         show: &[String],
         hide: &[String],
-    ) -> OrichResult<Vec<String>> {
+    ) -> DobraResult<Vec<String>> {
         let module = module.borrow();
         let all = if module.declared.is_empty() {
             module.exports.keys().cloned().collect::<Vec<_>>()
@@ -301,7 +354,7 @@ impl Runtime {
         } else {
             for name in show {
                 if !all.contains(name) {
-                    return Err(OrichError::runtime(format!(
+                    return Err(DobraError::runtime(format!(
                         "import '{}' does not export '{name}'",
                         module.path.display()
                     )));
@@ -314,7 +367,7 @@ impl Runtime {
         Ok(names)
     }
 
-    fn resolve_import(&self, path: &str) -> OrichResult<PathBuf> {
+    fn resolve_import(&self, path: &str) -> DobraResult<PathBuf> {
         let raw = Path::new(path);
         let joined = if raw.is_absolute() {
             raw.to_path_buf()
@@ -329,8 +382,8 @@ impl Runtime {
             vec![joined]
         } else {
             vec![
-                joined.with_extension("och"),
-                joined.join("index.och"),
+                joined.with_extension("dob"),
+                joined.join("index.dob"),
                 joined,
             ]
         };
@@ -338,7 +391,7 @@ impl Runtime {
         for candidate in candidates {
             if candidate.exists() {
                 return candidate.canonicalize().map_err(|err| {
-                    OrichError::io(format!(
+                    DobraError::io(format!(
                         "cannot resolve import '{}': {err}",
                         candidate.display()
                     ))
@@ -346,10 +399,10 @@ impl Runtime {
             }
         }
 
-        Err(OrichError::io(format!("cannot resolve import '{path}'")))
+        Err(DobraError::io(format!("cannot resolve import '{path}'")))
     }
 
-    fn publish_statement(&mut self, statement: &Stmt) -> OrichResult<()> {
+    fn publish_statement(&mut self, statement: &Stmt) -> DobraResult<()> {
         let Some(name) = statement_export_name(statement) else {
             return Ok(());
         };
@@ -406,14 +459,14 @@ impl Runtime {
             .collect()
     }
 
-    fn eval(&mut self, expr: &Expr) -> OrichResult<Value> {
+    fn eval(&mut self, expr: &Expr) -> DobraResult<Value> {
         match expr {
             Expr::Literal(Value::String(value)) => Ok(Value::String(self.interpolate(value)?)),
             Expr::Literal(value) => self.resolve_value(value.clone()),
             Expr::Identifier(name) => {
                 let value = self
                     .get(name)
-                    .ok_or_else(|| OrichError::runtime(format!("undefined variable '{name}'")))?;
+                    .ok_or_else(|| DobraError::runtime(format!("undefined variable '{name}'")))?;
                 self.resolve_value(value)
             }
             Expr::Unary { op, expr } => {
@@ -422,7 +475,7 @@ impl Runtime {
                     UnaryOp::Negate => match value {
                         Value::Int(value) => Ok(Value::Int(-value)),
                         Value::Float(value) => Ok(Value::Float(-value)),
-                        other => Err(OrichError::runtime(format!(
+                        other => Err(DobraError::runtime(format!(
                             "cannot negate {}",
                             other.type_name()
                         ))),
@@ -437,11 +490,11 @@ impl Runtime {
                 match object {
                     Value::Map(map) => {
                         let value = map.get(field).cloned().ok_or_else(|| {
-                            OrichError::runtime(format!("field '{field}' not found"))
+                            DobraError::runtime(format!("field '{field}' not found"))
                         })?;
                         self.resolve_value(value)
                     }
-                    other => Err(OrichError::runtime(format!(
+                    other => Err(DobraError::runtime(format!(
                         "cannot access field on {}",
                         other.type_name()
                     ))),
@@ -455,7 +508,7 @@ impl Runtime {
             Expr::List(values) => values
                 .iter()
                 .map(|expr| self.eval(expr))
-                .collect::<OrichResult<Vec<_>>>()
+                .collect::<DobraResult<Vec<_>>>()
                 .map(Value::List),
             Expr::Map(pairs) => {
                 let mut map = BTreeMap::new();
@@ -467,18 +520,18 @@ impl Runtime {
         }
     }
 
-    fn resolve_value(&self, value: Value) -> OrichResult<Value> {
+    fn resolve_value(&self, value: Value) -> DobraResult<Value> {
         match value {
             Value::ImportBinding(module, name) => {
                 module.borrow().exports.get(&name).cloned().ok_or_else(|| {
-                    OrichError::runtime(format!("imported binding '{name}' is not initialized yet"))
+                    DobraError::runtime(format!("imported binding '{name}' is not initialized yet"))
                 })
             }
             other => Ok(other),
         }
     }
 
-    fn eval_binary(&mut self, left: &Expr, op: BinaryOp, right: &Expr) -> OrichResult<Value> {
+    fn eval_binary(&mut self, left: &Expr, op: BinaryOp, right: &Expr) -> DobraResult<Value> {
         if op == BinaryOp::And {
             let left = self.eval(left)?;
             return if left.truthy() {
@@ -514,13 +567,16 @@ impl Runtime {
         }
     }
 
-    fn call(&mut self, callee: &Expr, args: &[Expr]) -> OrichResult<Value> {
+    fn call(&mut self, callee: &Expr, args: &[Expr]) -> DobraResult<Value> {
         let arg_values = args
             .iter()
             .map(|arg| self.eval(arg))
-            .collect::<OrichResult<Vec<_>>>()?;
+            .collect::<DobraResult<Vec<_>>>()?;
 
         if let Expr::Identifier(name) = callee {
+            if let Some(result) = self.call_io_builtin(name, &arg_values)? {
+                return Ok(result);
+            }
             if let Some(result) = stdlib::call(name, arg_values.clone())? {
                 return Ok(result);
             }
@@ -530,7 +586,7 @@ impl Runtime {
         match callee {
             Value::Function(function) => {
                 if function.params.len() != arg_values.len() {
-                    return Err(OrichError::runtime(format!(
+                    return Err(DobraError::runtime(format!(
                         "function expects {} argument(s), got {}",
                         function.params.len(),
                         arg_values.len()
@@ -552,20 +608,266 @@ impl Runtime {
                 match flow {
                     Flow::Return(value) => Ok(value),
                     Flow::None => Ok(Value::Null),
-                    Flow::Break => Err(OrichError::runtime("break inside function without loop")),
+                    Flow::Break => Err(DobraError::runtime("break inside function without loop")),
                     Flow::Continue => {
-                        Err(OrichError::runtime("continue inside function without loop"))
+                        Err(DobraError::runtime("continue inside function without loop"))
                     }
                 }
             }
-            other => Err(OrichError::runtime(format!(
+            other => Err(DobraError::runtime(format!(
                 "{} is not callable",
                 other.type_name()
             ))),
         }
     }
 
-    fn add(&self, left: Value, right: Value) -> OrichResult<Value> {
+    fn call_io_builtin(&mut self, name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
+        let result = match name {
+            "open" => {
+                self.expect_arity(args, 2, "open")?;
+                let path = self.expect_string(&args[0], "open", "first")?;
+                let mode = self.expect_string(&args[1], "open", "second")?;
+                Value::Stream(
+                    self.io
+                        .borrow_mut()
+                        .open(&path, &mode, self.options.allow_write)?,
+                )
+            }
+            "close" => {
+                self.expect_arity(args, 1, "close")?;
+                self.close_stream(self.expect_stream(&args[0], "close", "first")?)?;
+                Value::Null
+            }
+            "flush" => {
+                self.expect_arity(args, 1, "flush")?;
+                self.flush_stream(self.expect_stream(&args[0], "flush", "first")?)?;
+                Value::Null
+            }
+            "eof" => {
+                self.expect_arity(args, 1, "eof")?;
+                Value::Bool(self.eof_stream(self.expect_stream(&args[0], "eof", "first")?)?)
+            }
+            "read" => self.read_builtin(args)?,
+            "readln" => {
+                self.expect_arity(args, 1, "readln")?;
+                match self.read_line_stream(self.expect_stream(&args[0], "readln", "first")?)? {
+                    Some(line) => Value::String(line),
+                    None => Value::Null,
+                }
+            }
+            "write" => self.write_builtin(args, false)?,
+            "writeln" => self.write_builtin(args, true)?,
+            "append" => {
+                self.expect_arity(args, 2, "append")?;
+                let path = self.expect_string(&args[0], "append", "first")?;
+                fsio::append_path(&path, &args[1].to_string(), self.options.allow_write)?;
+                Value::Null
+            }
+            _ => return Ok(None),
+        };
+        Ok(Some(result))
+    }
+
+    fn read_builtin(&mut self, args: &[Value]) -> DobraResult<Value> {
+        if args.len() == 1 {
+            return match &args[0] {
+                Value::String(path) => fsio::read_path(path).map(Value::String),
+                Value::Stream(stream) => self.read_stream(*stream).map(Value::String),
+                other => Err(DobraError::runtime(format!(
+                    "read() expects path or stream, got {}",
+                    other.type_name()
+                ))),
+            };
+        }
+        if args.len() == 2 {
+            let stream = self.expect_stream(&args[0], "read", "first")?;
+            let size = self.expect_non_negative_size(&args[1], "read", "second")?;
+            return self.read_chunk_stream(stream, size).map(Value::String);
+        }
+        Err(DobraError::runtime(format!(
+            "read() expects 1 or 2 argument(s), got {}",
+            args.len()
+        )))
+    }
+
+    fn write_builtin(&mut self, args: &[Value], line: bool) -> DobraResult<Value> {
+        self.expect_arity(args, 2, if line { "writeln" } else { "write" })?;
+        let mut text = args[1].to_string();
+        if line {
+            text.push('\n');
+        }
+        match &args[0] {
+            Value::String(path) if !line => {
+                fsio::write_path(path, &text, self.options.allow_write)?;
+            }
+            Value::String(_) => {
+                return Err(DobraError::runtime(
+                    "writeln() expects stream as first argument",
+                ));
+            }
+            Value::Stream(stream) => self.write_stream(*stream, &text)?,
+            other => {
+                return Err(DobraError::runtime(format!(
+                    "{}() expects path or stream, got {}",
+                    if line { "writeln" } else { "write" },
+                    other.type_name()
+                )));
+            }
+        }
+        Ok(Value::Null)
+    }
+
+    fn read_stream(&mut self, stream: StreamId) -> DobraResult<String> {
+        match stream {
+            StreamId::Stdin => {
+                let mut input = String::new();
+                stdio::stdin()
+                    .lock()
+                    .read_to_string(&mut input)
+                    .map_err(|err| DobraError::io(format!("cannot read stdin: {err}")))?;
+                Ok(input)
+            }
+            StreamId::Stdout => Err(DobraError::runtime("cannot read from stdout")),
+            StreamId::Stderr => Err(DobraError::runtime("cannot read from stderr")),
+            StreamId::File(_) => self.io.borrow_mut().read_all(stream),
+        }
+    }
+
+    fn read_chunk_stream(&mut self, stream: StreamId, size: usize) -> DobraResult<String> {
+        match stream {
+            StreamId::Stdin => {
+                let mut buffer = vec![0; size];
+                let read = stdio::stdin()
+                    .lock()
+                    .read(&mut buffer)
+                    .map_err(|err| DobraError::io(format!("cannot read stdin: {err}")))?;
+                buffer.truncate(read);
+                Ok(String::from_utf8_lossy(&buffer).to_string())
+            }
+            StreamId::Stdout => Err(DobraError::runtime("cannot read from stdout")),
+            StreamId::Stderr => Err(DobraError::runtime("cannot read from stderr")),
+            StreamId::File(_) => self.io.borrow_mut().read_chunk(stream, size),
+        }
+    }
+
+    fn read_line_stream(&mut self, stream: StreamId) -> DobraResult<Option<String>> {
+        match stream {
+            StreamId::Stdin => {
+                let mut line = String::new();
+                let read = stdio::stdin()
+                    .lock()
+                    .read_line(&mut line)
+                    .map_err(|err| DobraError::io(format!("cannot read stdin: {err}")))?;
+                if read == 0 {
+                    return Ok(None);
+                }
+                if line.ends_with('\n') {
+                    line.pop();
+                    if line.ends_with('\r') {
+                        line.pop();
+                    }
+                }
+                Ok(Some(line))
+            }
+            StreamId::Stdout => Err(DobraError::runtime("cannot read from stdout")),
+            StreamId::Stderr => Err(DobraError::runtime("cannot read from stderr")),
+            StreamId::File(_) => self.io.borrow_mut().read_line(stream),
+        }
+    }
+
+    fn write_stream(&mut self, stream: StreamId, text: &str) -> DobraResult<()> {
+        match stream {
+            StreamId::Stdin => Err(DobraError::runtime("cannot write to stdin")),
+            StreamId::Stdout => {
+                self.output.push_str(text);
+                Ok(())
+            }
+            StreamId::Stderr => stdio::stderr()
+                .write_all(text.as_bytes())
+                .map_err(|err| DobraError::io(format!("cannot write stderr: {err}"))),
+            StreamId::File(_) => self.io.borrow_mut().write(stream, text),
+        }
+    }
+
+    fn flush_stream(&mut self, stream: StreamId) -> DobraResult<()> {
+        match stream {
+            StreamId::Stdin => Ok(()),
+            StreamId::Stdout => Ok(()),
+            StreamId::Stderr => stdio::stderr()
+                .flush()
+                .map_err(|err| DobraError::io(format!("cannot flush stderr: {err}"))),
+            StreamId::File(_) => self.io.borrow_mut().flush(stream),
+        }
+    }
+
+    fn close_stream(&mut self, stream: StreamId) -> DobraResult<()> {
+        match stream {
+            StreamId::Stdin | StreamId::Stdout => Ok(()),
+            StreamId::Stderr => self.flush_stream(stream),
+            StreamId::File(_) => self.io.borrow_mut().close(stream),
+        }
+    }
+
+    fn eof_stream(&mut self, stream: StreamId) -> DobraResult<bool> {
+        match stream {
+            StreamId::Stdin => Ok(false),
+            StreamId::Stdout | StreamId::Stderr => {
+                Err(DobraError::runtime("eof() expects readable stream"))
+            }
+            StreamId::File(_) => self.io.borrow_mut().eof(stream),
+        }
+    }
+
+    fn expect_arity(&self, args: &[Value], expected: usize, name: &str) -> DobraResult<()> {
+        if args.len() == expected {
+            Ok(())
+        } else {
+            Err(DobraError::runtime(format!(
+                "{name}() expects {expected} argument(s), got {}",
+                args.len()
+            )))
+        }
+    }
+
+    fn expect_string(&self, value: &Value, name: &str, position: &str) -> DobraResult<String> {
+        match value {
+            Value::String(value) => Ok(value.clone()),
+            other => Err(DobraError::runtime(format!(
+                "{name}() expects string as {position} argument, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn expect_stream(&self, value: &Value, name: &str, position: &str) -> DobraResult<StreamId> {
+        match value {
+            Value::Stream(stream) => Ok(*stream),
+            other => Err(DobraError::runtime(format!(
+                "{name}() expects stream as {position} argument, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn expect_non_negative_size(
+        &self,
+        value: &Value,
+        name: &str,
+        position: &str,
+    ) -> DobraResult<usize> {
+        match value {
+            Value::Int(value) if *value >= 0 => Ok(*value as usize),
+            Value::Int(_) => Err(DobraError::runtime(format!(
+                "{name}() expects non-negative size as {position} argument"
+            ))),
+            other => Err(DobraError::runtime(format!(
+                "{name}() expects int as {position} argument, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn add(&self, left: Value, right: Value) -> DobraResult<Value> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
@@ -573,7 +875,7 @@ impl Runtime {
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::String(a), b) => Ok(Value::String(a + &b.to_string())),
             (a, Value::String(b)) => Ok(Value::String(a.to_string() + &b)),
-            (a, b) => Err(OrichError::runtime(format!(
+            (a, b) => Err(DobraError::runtime(format!(
                 "cannot add {} and {}",
                 a.type_name(),
                 b.type_name()
@@ -586,7 +888,7 @@ impl Runtime {
         left: Value,
         right: Value,
         op: impl FnOnce(f64, f64) -> f64,
-    ) -> OrichResult<Value> {
+    ) -> DobraResult<Value> {
         let left_float = to_number(&left)?;
         let right_float = to_number(&right)?;
         let result = op(left_float, right_float);
@@ -603,7 +905,7 @@ impl Runtime {
         left: Value,
         right: Value,
         f: impl FnOnce(std::cmp::Ordering) -> bool,
-    ) -> OrichResult<Value> {
+    ) -> DobraResult<Value> {
         let ordering = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::String(a), Value::String(b)) => a.cmp(b),
@@ -611,19 +913,19 @@ impl Runtime {
                 let a = to_number(&left)?;
                 let b = to_number(&right)?;
                 a.partial_cmp(&b)
-                    .ok_or_else(|| OrichError::runtime("cannot compare NaN"))?
+                    .ok_or_else(|| DobraError::runtime("cannot compare NaN"))?
             }
         };
         Ok(Value::Bool(f(ordering)))
     }
 
-    fn index(&self, object: Value, index: Value) -> OrichResult<Value> {
+    fn index(&self, object: Value, index: Value) -> DobraResult<Value> {
         match object {
             Value::List(values) => {
                 let index = match index {
                     Value::Int(value) => value,
                     other => {
-                        return Err(OrichError::runtime(format!(
+                        return Err(DobraError::runtime(format!(
                             "list index must be int, got {}",
                             other.type_name()
                         )))
@@ -637,13 +939,13 @@ impl Runtime {
                 values
                     .get(normalized as usize)
                     .cloned()
-                    .ok_or_else(|| OrichError::runtime("list index out of bounds"))
+                    .ok_or_else(|| DobraError::runtime("list index out of bounds"))
             }
             Value::String(value) => {
                 let index = match index {
                     Value::Int(value) => value,
                     other => {
-                        return Err(OrichError::runtime(format!(
+                        return Err(DobraError::runtime(format!(
                             "string index must be int, got {}",
                             other.type_name()
                         )))
@@ -653,24 +955,24 @@ impl Runtime {
                     .chars()
                     .nth(index as usize)
                     .map(|ch| Value::String(ch.to_string()))
-                    .ok_or_else(|| OrichError::runtime("string index out of bounds"))
+                    .ok_or_else(|| DobraError::runtime("string index out of bounds"))
             }
             Value::Map(values) => {
                 let key = index.to_string();
                 let value = values
                     .get(&key)
                     .cloned()
-                    .ok_or_else(|| OrichError::runtime(format!("key '{key}' not found")))?;
+                    .ok_or_else(|| DobraError::runtime(format!("key '{key}' not found")))?;
                 self.resolve_value(value)
             }
-            other => Err(OrichError::runtime(format!(
+            other => Err(DobraError::runtime(format!(
                 "cannot index {}",
                 other.type_name()
             ))),
         }
     }
 
-    fn interpolate(&mut self, raw: &str) -> OrichResult<String> {
+    fn interpolate(&mut self, raw: &str) -> DobraResult<String> {
         let mut output = String::new();
         let chars: Vec<char> = raw.chars().collect();
         let mut index = 0;
@@ -687,7 +989,7 @@ impl Runtime {
                     end += 1;
                 }
                 if end == chars.len() {
-                    return Err(OrichError::runtime("unterminated interpolation"));
+                    return Err(DobraError::runtime("unterminated interpolation"));
                 }
                 let expr_text: String = chars[start..end].iter().collect();
                 let tokens = Lexer::new(&expr_text).tokenize()?;
@@ -706,10 +1008,10 @@ impl Runtime {
         Ok(output)
     }
 
-    fn define(&mut self, name: &str, value: Value, mutable: bool) -> OrichResult<()> {
+    fn define(&mut self, name: &str, value: Value, mutable: bool) -> DobraResult<()> {
         let scope = self.scopes.last_mut().expect("runtime always has a scope");
         if scope.contains_key(name) {
-            return Err(OrichError::runtime(format!(
+            return Err(DobraError::runtime(format!(
                 "'{name}' is already defined in this scope"
             )));
         }
@@ -717,14 +1019,14 @@ impl Runtime {
         Ok(())
     }
 
-    fn assign(&mut self, name: &str, value: Value) -> OrichResult<()> {
+    fn assign(&mut self, name: &str, value: Value) -> DobraResult<()> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.get_mut(name) {
                 if let Value::ImportBinding(module, export_name) = binding.value.clone() {
                     return assign_import_binding(module, &export_name, value);
                 }
                 if !binding.mutable {
-                    return Err(OrichError::runtime(format!(
+                    return Err(DobraError::runtime(format!(
                         "cannot assign to const '{name}'"
                     )));
                 }
@@ -732,7 +1034,7 @@ impl Runtime {
                 return Ok(());
             }
         }
-        Err(OrichError::runtime(format!("undefined variable '{name}'")))
+        Err(DobraError::runtime(format!("undefined variable '{name}'")))
     }
 
     fn get(&self, name: &str) -> Option<Value> {
@@ -768,16 +1070,16 @@ fn statement_export_name(statement: &Stmt) -> Option<&str> {
     }
 }
 
-fn assign_import_binding(module: ModuleRef, name: &str, value: Value) -> OrichResult<()> {
+fn assign_import_binding(module: ModuleRef, name: &str, value: Value) -> DobraResult<()> {
     let mut module = module.borrow_mut();
     let mutable = module.mutability.get(name).copied().unwrap_or(false);
     if !mutable {
-        return Err(OrichError::runtime(format!(
+        return Err(DobraError::runtime(format!(
             "cannot assign to const '{name}'"
         )));
     }
     if !module.exports.contains_key(name) {
-        return Err(OrichError::runtime(format!(
+        return Err(DobraError::runtime(format!(
             "imported binding '{name}' is not initialized yet"
         )));
     }
@@ -800,11 +1102,11 @@ fn binding_scope(values: &BTreeMap<String, Value>, mutable: bool) -> HashMap<Str
         .collect()
 }
 
-fn to_number(value: &Value) -> OrichResult<f64> {
+fn to_number(value: &Value) -> DobraResult<f64> {
     match value {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
-        other => Err(OrichError::runtime(format!(
+        other => Err(DobraError::runtime(format!(
             "expected number, got {}",
             other.type_name()
         ))),
@@ -827,10 +1129,10 @@ mod tests {
 
     #[test]
     fn imported_functions_keep_module_bindings() {
-        let dir = std::env::temp_dir().join(format!("orich-import-capture-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dobra-import-capture-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let lib = dir.join("lib.och");
-        let main = dir.join("main.och");
+        let lib = dir.join("lib.dob");
+        let main = dir.join("main.dob");
         fs::write(
             &lib,
             "const prefix = \"Hi\"\nfn greet(name) {\n  return \"{prefix}, {name}\"\n}\n",
@@ -845,10 +1147,10 @@ mod tests {
 
     #[test]
     fn direct_import_of_let_can_be_assigned() {
-        let dir = std::env::temp_dir().join(format!("orich-import-let-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dobra-import-let-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let bar = dir.join("bar.och");
-        let main = dir.join("main.och");
+        let bar = dir.join("bar.dob");
+        let main = dir.join("main.dob");
         fs::write(&bar, "let n = 0\n").unwrap();
         fs::write(
             &main,
@@ -863,10 +1165,10 @@ mod tests {
 
     #[test]
     fn direct_import_of_const_cannot_be_assigned() {
-        let dir = std::env::temp_dir().join(format!("orich-import-const-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("dobra-import-const-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let bar = dir.join("bar.och");
-        let main = dir.join("main.och");
+        let bar = dir.join("bar.dob");
+        let main = dir.join("main.dob");
         fs::write(&bar, "const n = 0\n").unwrap();
         fs::write(&main, "import './bar' show n\nn = n + 1\n").unwrap();
 
@@ -878,11 +1180,11 @@ mod tests {
     #[test]
     fn circular_imports_are_cached_and_resolved_lazily() {
         let dir =
-            std::env::temp_dir().join(format!("orich-circular-import-{}", std::process::id()));
+            std::env::temp_dir().join(format!("dobra-circular-import-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let a = dir.join("a.och");
-        let b = dir.join("b.och");
-        let main = dir.join("main.och");
+        let a = dir.join("a.dob");
+        let b = dir.join("b.dob");
+        let main = dir.join("main.dob");
         fs::write(
             &a,
             "import './b' as b\nconst name = \"A\"\nfn pair() {\n  return \"{name}/{b.name}\"\n}\n",
@@ -901,6 +1203,63 @@ mod tests {
 
         let output = crate::run_file(&main, BTreeMap::new()).unwrap();
         assert_eq!(output, "A/B\nB/A");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn file_streams_read_and_write_lines() {
+        let dir = std::env::temp_dir().join(format!("dobra-io-streams-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let input = dir.join("input.txt");
+        let output = dir.join("output.txt");
+        fs::write(&input, "ana\nbruno\n").unwrap();
+
+        let source = format!(
+            r#"const src = open("{}", "read")
+const out = open("{}", "write")
+
+let line = readln(src)
+while line != null {{
+  writeln(out, upper(line))
+  line = readln(src)
+}}
+
+close(src)
+close(out)
+emit read("{}")
+"#,
+            input.display(),
+            output.display(),
+            output.display()
+        );
+        let output_text = crate::run_source_with_options(
+            &source,
+            BTreeMap::new(),
+            RuntimeOptions { allow_write: true },
+        )
+        .unwrap();
+
+        assert_eq!(output_text, "ANA\nBRUNO");
+        assert_eq!(fs::read_to_string(&output).unwrap(), "ANA\nBRUNO\n");
+        let _ = fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn file_writes_require_permission() {
+        let dir = std::env::temp_dir().join(format!("dobra-io-denied-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let output = dir.join("output.txt");
+        let source = format!("write(\"{}\", \"blocked\")", output.display());
+
+        let err = crate::run_source_with_options(
+            &source,
+            BTreeMap::new(),
+            RuntimeOptions { allow_write: false },
+        )
+        .unwrap_err();
+
+        assert_eq!(err.code, "E3001");
+        assert!(!output.exists());
         let _ = fs::remove_dir_all(dir);
     }
 }
