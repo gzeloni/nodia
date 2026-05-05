@@ -1,22 +1,24 @@
-# Orich
+# Dobra
 
-Orich is a small programming language for text automation and structured output generation.
+Dobra is a small programming language for text automation and structured output generation.
 
 It is built for scripts that assemble files, prompts, configuration snippets, reports, changelogs,
 payloads, and other text artifacts without reaching for a full general-purpose language.
 
-Source files use the `.och` extension.
+Source files use the `.dob` extension.
+
+Complete documentation is available in [docs/reference.md](docs/reference.md).
 
 ## Status
 
-Orich is experimental. The current implementation is `v0.2`.
+Dobra is experimental. The current implementation is `v0.3`.
 
-The v0.2 focus is tooling: a stronger CLI, automatic formatting, parser hardening,
-relative imports, JSON-friendly diagnostics, and a small standard library for text/data work.
+The v0.3 focus is real IO, streams, stronger text helpers, mathematical helpers, list/data helpers,
+and the existing v0.2 tooling foundation: formatting, imports, diagnostics, and project support.
 
 ## Install From Source
 
-Orich is implemented in Rust and currently uses only the Rust standard library.
+Dobra is implemented in Rust and currently uses only the Rust standard library.
 
 ```bash
 cargo build --release
@@ -25,14 +27,14 @@ cargo build --release
 The release binary is generated at:
 
 ```bash
-target/release/orich
+target/release/dobra
 ```
 
 ## Quick Start
 
-Create `hello.och`:
+Create `hello.dob`:
 
-```orich
+```dobra
 const name = input.name
 emit "Hello, {name}"
 ```
@@ -40,7 +42,7 @@ emit "Hello, {name}"
 Run it:
 
 ```bash
-orich run hello.och --var name=Gustavo
+dobra run hello.dob --var name=Gustavo
 ```
 
 Output:
@@ -52,17 +54,17 @@ Hello, Gustavo
 ## CLI
 
 ```bash
-orich run file.och
-orich check file.och
-orich fmt file.och
-orich fmt .
-orich fmt --check .
-orich fmt --stdout file.och
-orich eval 'emit "hello"'
-orich tokens file.och --json
-orich ast file.och --json
-orich init
-orich version
+dobra run file.dob
+dobra check file.dob
+dobra fmt file.dob
+dobra fmt .
+dobra fmt --check .
+dobra fmt --stdout file.dob
+dobra eval 'emit "hello"'
+dobra tokens file.dob --json
+dobra ast file.dob --json
+dobra init
+dobra version
 ```
 
 Global flags:
@@ -72,6 +74,7 @@ Global flags:
 --quiet
 --verbose
 --color auto|always|never
+--allow-write
 --help
 --version
 ```
@@ -79,11 +82,12 @@ Global flags:
 ### Run
 
 ```bash
-orich run file.och
-orich run file.och --var name=Ana
-orich run file.och --vars name=Ana env=prod
-orich run file.och --vars config.json
-orich run file.och --out output.txt
+dobra run file.dob
+dobra run file.dob --var name=Ana
+dobra run file.dob --vars name=Ana env=prod
+dobra run file.dob --vars config.json
+dobra run file.dob --out output.txt
+dobra run file.dob --allow-write
 ```
 
 CLI variables are exposed through the readonly `input` object.
@@ -91,24 +95,24 @@ CLI variables are exposed through the readonly `input` object.
 ### Check
 
 ```bash
-orich check file.och
-orich check file.och --json
+dobra check file.dob
+dobra check file.dob --json
 ```
 
 `check` validates lexing and parsing without executing the program.
 
 ### Format
 
-Orich has one canonical style. The formatter decides layout.
+Dobra has one canonical style. The formatter decides layout.
 
 ```bash
-orich fmt file.och
-orich fmt .
-orich fmt --check .
-orich fmt --stdout file.och
+dobra fmt file.dob
+dobra fmt .
+dobra fmt --check .
+dobra fmt --stdout file.dob
 ```
 
-Formatter rules in v0.2:
+Formatter rules:
 
 | Rule | Style |
 |---|---|
@@ -123,14 +127,14 @@ Formatter rules in v0.2:
 
 Example input:
 
-```orich
+```dobra
 const user={name:"Ana",role:"dev"}
 if user.name!=""{emit "hello {user.name}"}
 ```
 
 Formatted output:
 
-```orich
+```dobra
 const user = {
   name: "Ana",
   role: "dev",
@@ -146,32 +150,32 @@ if user.name != "" {
 Create a basic project:
 
 ```bash
-orich init
+dobra init
 ```
 
 Generated layout:
 
 ```text
-orich.toml
+dobra.toml
 src/
-  main.och
+  main.dob
 ```
 
-`orich.toml`:
+`dobra.toml`:
 
 ```toml
-name = "orich-project"
-entry = "src/main.och"
+name = "dobra-project"
+entry = "src/main.dob"
 ```
 
-When a command accepts a file path, omitting the path makes Orich look for `orich.toml`
+When a command accepts a file path, omitting the path makes Dobra look for `dobra.toml`
 and use its `entry` file.
 
 ## Language Basics
 
 ### Variables
 
-```orich
+```dobra
 let name = "Ana"
 const env = "prod"
 
@@ -182,14 +186,14 @@ emit "{name} / {env}"
 
 ### Strings and Interpolation
 
-```orich
+```dobra
 const user = "john"
 emit "Hello, {capitalize(user)}"
 ```
 
 Triple-quoted strings are supported:
 
-```orich
+```dobra
 emit """
 APP_NAME={input.app}
 APP_ENV=prod
@@ -198,7 +202,7 @@ APP_ENV=prod
 
 ### Conditionals
 
-```orich
+```dobra
 if input.env == "prod" {
   emit "Production"
 } else {
@@ -208,13 +212,13 @@ if input.env == "prod" {
 
 ### Loops
 
-```orich
+```dobra
 for user in ["ana", "john", "maria"] {
   emit capitalize(user)
 }
 ```
 
-```orich
+```dobra
 let i = 0
 
 while i < 3 {
@@ -225,7 +229,7 @@ while i < 3 {
 
 ### Functions
 
-```orich
+```dobra
 fn greet(name) {
   return "Hello, {capitalize(name)}"
 }
@@ -235,7 +239,7 @@ emit greet("ana")
 
 ### Lists and Maps
 
-```orich
+```dobra
 const user = {
   name: "Ana",
   roles: ["admin", "dev"],
@@ -250,9 +254,9 @@ Lists, maps, calls, and function parameters can be written across multiple lines
 ### Imports
 
 Imports are relative to the current file and use Dart-style clauses in a smaller form.
-The `.och` extension is optional.
+The `.dob` extension is optional.
 
-```orich
+```dobra
 import './lib/format' as fmt
 
 emit fmt.title
@@ -260,7 +264,7 @@ emit fmt.title
 
 Without `as`, selected top-level bindings are inserted into the current scope:
 
-```orich
+```dobra
 import './lib/constants' show title, version
 
 emit title
@@ -269,30 +273,98 @@ emit version
 
 You can also hide names:
 
-```orich
+```dobra
 import './lib/constants' hide internal_token
 ```
 
-Circular imports are allowed. Orich caches modules by resolved path and links imported
+Circular imports are allowed. Dobra caches modules by resolved path and links imported
 bindings lazily. A cycle only fails if code tries to read a binding before that module has
 initialized it. Imported `let` bindings remain mutable; imported `const` and `fn` bindings are read-only.
 
+## IO
+
+Dobra v0.3 supports real file IO through streams.
+
+```dobra
+const src = open("input.txt", "read")
+const out = open("output.txt", "write")
+
+let line = readln(src)
+while line != null {
+  writeln(out, upper(line))
+  line = readln(src)
+}
+
+close(src)
+close(out)
+```
+
+Short file helpers are built on the same IO model:
+
+```dobra
+const text = read("input.txt")
+write("output.txt", upper(text))
+append("output.txt", "\n")
+```
+
+File writes require explicit permission:
+
+```bash
+dobra run script.dob --allow-write
+```
+
+Without it, Dobra returns `error[E3001]: file write requires --allow-write`.
+
+Standard streams are available as values:
+
+```dobra
+writeln(stdout, "ok")
+writeln(stderr, "error")
+const line = readln(stdin)
+```
+
 ## Standard Library
+
+Text:
 
 | Function | Description |
 |---|---|
-| `uppercase(value)` | Converts text to uppercase |
-| `lowercase(value)` | Converts text to lowercase |
+| `upper(value)` | Converts text to uppercase |
+| `lower(value)` | Converts text to lowercase |
 | `capitalize(value)` | Capitalizes text |
 | `trim(value)` | Trims surrounding whitespace |
 | `replace(value, from, to)` | Replaces text |
 | `split(value, delimiter)` | Splits text into a list |
 | `join(list, delimiter)` | Joins a list into text |
+| `lines(value)` | Splits text into lines |
+| `unlines(list)` | Joins values with newlines |
+| `words(value)` | Splits text by whitespace |
 | `contains(value, needle)` | Checks strings, lists, or map keys |
-| `starts_with(value, prefix)` | Checks a text prefix |
-| `ends_with(value, suffix)` | Checks a text suffix |
+| `starts(value, prefix)` | Checks a text prefix |
+| `ends(value, suffix)` | Checks a text suffix |
 | `indent(text, spaces_or_prefix)` | Prefixes each line |
 | `dedent(text)` | Removes common indentation |
+
+Math:
+
+| Function | Description |
+|---|---|
+| `abs(value)` | Absolute value |
+| `floor(value)` | Rounds down |
+| `ceil(value)` | Rounds up |
+| `round(value)` | Rounds to nearest integer |
+| `sqrt(value)` | Square root |
+| `pow(base, exponent)` | Power |
+| `min(a, b)` | Minimum |
+| `max(a, b)` | Maximum |
+| `clamp(value, min, max)` | Clamps into a range |
+| `sum(list)` | Sums numeric values |
+| `avg(list)` | Averages numeric values |
+
+Data and conversion:
+
+| Function | Description |
+|---|---|
 | `keys(map)` | Returns map keys |
 | `values(map)` | Returns map values |
 | `len(value)` | Returns length of a string, list, or map |
@@ -302,6 +374,14 @@ initialized it. Imported `let` bindings remain mutable; imported `const` and `fn
 | `bool(value)` | Converts to boolean |
 | `range(end)` | Produces integers from `0` to `end - 1` |
 | `range(start, end)` | Produces integers from `start` to `end - 1` |
+| `push(list, value)` | Returns a list with value appended |
+| `pop(list)` | Returns a list without the last value |
+| `first(list)` | Returns first value or `null` |
+| `last(list)` | Returns last value or `null` |
+| `slice(list_or_text, start, end)` | Returns a slice |
+| `reverse(list_or_text)` | Reverses value |
+| `sort(list)` | Sorts values deterministically |
+| `unique(list)` | Removes duplicate values |
 
 ## Reserved Words
 
@@ -336,7 +416,7 @@ type enum struct namespace use
 A local VSCode extension is included at:
 
 ```text
-vscode/orich-language
+vscode/dobra-language
 ```
 
 Install it from VSCode with:
@@ -345,7 +425,7 @@ Install it from VSCode with:
 Developer: Install Extension from Location...
 ```
 
-Then select the `vscode/orich-language` folder.
+Then select the `vscode/dobra-language` folder.
 
 ## Project Layout
 
@@ -355,10 +435,11 @@ src/
   cli.rs        command-line interface
   error.rs      diagnostics and error types
   formatter.rs  canonical formatter
+  io.rs         file and stream runtime support
   lexer.rs      lexer/tokenizer
   lib.rs        public Rust API
   parser.rs     parser
-  project.rs    orich.toml helpers
+  project.rs    dobra.toml helpers
   runtime.rs    evaluator/runtime
   stdlib.rs     standard library
   token.rs      token definitions
