@@ -2,7 +2,7 @@ use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
 use crate::value::Value;
 
 const INDENT: &str = "  ";
-const LINE_WIDTH: usize = 100;
+const LINE_WIDTH: usize = 60;
 
 pub fn format_program(program: &Program) -> String {
     let mut formatter = Formatter::default();
@@ -68,30 +68,27 @@ impl Formatter {
                 mutable,
             } => {
                 self.write_indent();
-                self.out.push_str(if *mutable { "let " } else { "const " });
-                self.out.push_str(name);
-                self.out.push_str(" = ");
-                self.out.push_str(&format_expr(value, self.indent));
+                let prefix = format!("{}{} = ", if *mutable { "let " } else { "const " }, name);
+                self.out.push_str(&prefix);
+                self.out
+                    .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
             }
             Stmt::Assign { name, value } => {
                 self.write_indent();
-                self.out.push_str(name);
-                self.out.push_str(" = ");
-                self.out.push_str(&format_expr(value, self.indent));
+                let prefix = format!("{name} = ");
+                self.out.push_str(&prefix);
+                self.out
+                    .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
             }
             Stmt::Fn { name, params, body } => {
-                self.write_indent();
-                self.out.push_str("fn ");
-                self.out.push_str(name);
-                self.out.push('(');
-                self.out.push_str(&params.join(", "));
-                self.out.push_str(") ");
-                self.write_block(body);
+                self.write_function(name, params, body);
             }
             Stmt::Return(Some(expr)) => {
                 self.write_indent();
-                self.out.push_str("return ");
-                self.out.push_str(&format_expr(expr, self.indent));
+                let prefix = "return ";
+                self.out.push_str(prefix);
+                self.out
+                    .push_str(&format_expr_for_line(expr, self.indent, prefix.len()));
             }
             Stmt::Return(None) => {
                 self.write_indent();
@@ -99,8 +96,10 @@ impl Formatter {
             }
             Stmt::Emit(expr) => {
                 self.write_indent();
-                self.out.push_str("emit ");
-                self.out.push_str(&format_expr(expr, self.indent));
+                let prefix = "emit ";
+                self.out.push_str(prefix);
+                self.out
+                    .push_str(&format_expr_for_line(expr, self.indent, prefix.len()));
             }
             Stmt::If {
                 condition,
@@ -142,6 +141,30 @@ impl Formatter {
                 self.out.push_str(&format_expr(expr, self.indent));
             }
         }
+    }
+
+    fn write_function(&mut self, name: &str, params: &[String], body: &[Stmt]) {
+        self.write_indent();
+        let inline = format!("fn {name}({}) ", params.join(", "));
+        if current_line_width(self.indent) + inline.len() <= LINE_WIDTH {
+            self.out.push_str(&inline);
+            self.write_block(body);
+            return;
+        }
+
+        self.out.push_str("fn ");
+        self.out.push_str(name);
+        self.out.push_str("(\n");
+        self.indent += 1;
+        for param in params {
+            self.write_indent();
+            self.out.push_str(param);
+            self.out.push_str(",\n");
+        }
+        self.indent -= 1;
+        self.write_indent();
+        self.out.push_str(") ");
+        self.write_block(body);
     }
 
     fn write_if(
@@ -209,20 +232,24 @@ fn needs_blank_line(prev: &Stmt, next: &Stmt) -> bool {
 }
 
 fn format_expr(expr: &Expr, indent: usize) -> String {
-    format_expr_prec(expr, 0, indent)
+    format_expr_for_line(expr, indent, 0)
 }
 
-fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize) -> String {
+fn format_expr_for_line(expr: &Expr, indent: usize, prefix_len: usize) -> String {
+    format_expr_prec(expr, 0, indent, available_width(indent, prefix_len))
+}
+
+fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -> String {
     let prec = precedence(expr);
     let rendered = match expr {
-        Expr::Literal(value) => format_literal(value, indent),
+        Expr::Literal(value) => format_literal(value, indent, width),
         Expr::Identifier(name) => name.clone(),
         Expr::Unary { op, expr } => {
             let op = match op {
                 UnaryOp::Negate => "-",
                 UnaryOp::Not => "not ",
             };
-            format!("{}{}", op, format_expr_prec(expr, prec, indent))
+            format!("{}{}", op, format_expr_prec(expr, prec, indent, width))
         }
         Expr::Binary { left, op, right } => {
             let op = match op {
@@ -242,22 +269,26 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize) -> String {
             };
             format!(
                 "{} {op} {}",
-                format_expr_prec(left, prec, indent),
-                format_expr_prec(right, prec + 1, indent)
+                format_expr_prec(left, prec, indent, width),
+                format_expr_prec(right, prec + 1, indent, width)
             )
         }
-        Expr::Call { callee, args } => format_call(callee, args, indent),
+        Expr::Call { callee, args } => format_call(callee, args, indent, width),
         Expr::Get { object, field } => {
-            format!("{}.{}", format_expr_prec(object, prec, indent), field)
+            format!(
+                "{}.{}",
+                format_expr_prec(object, prec, indent, width),
+                field
+            )
         }
         Expr::Index { object, index } => {
             format!(
                 "{}[{}]",
-                format_expr_prec(object, prec, indent),
+                format_expr_prec(object, prec, indent, width),
                 format_expr(index, indent)
             )
         }
-        Expr::List(values) => format_list(values, indent),
+        Expr::List(values) => format_list(values, indent, width),
         Expr::Map(pairs) => format_map(pairs, indent),
     };
     if prec < parent_prec {
@@ -283,7 +314,7 @@ fn precedence(expr: &Expr) -> u8 {
     }
 }
 
-fn format_literal(value: &Value, indent: usize) -> String {
+fn format_literal(value: &Value, indent: usize, width: usize) -> String {
     match value {
         Value::Null => "null".to_string(),
         Value::Bool(value) => value.to_string(),
@@ -295,19 +326,13 @@ fn format_literal(value: &Value, indent: usize) -> String {
                 value.to_string()
             }
         }
-        Value::String(value) => {
-            if value.contains('\n') {
-                format!("\"\"\"{}\"\"\"", value)
-            } else {
-                quote_string(value)
-            }
-        }
+        Value::String(value) => format_string_literal(value, indent, width),
         Value::List(values) => {
             let exprs = values
                 .iter()
                 .map(|value| Expr::Literal(value.clone()))
                 .collect::<Vec<_>>();
-            format_list(&exprs, indent)
+            format_list(&exprs, indent, available_width(indent, 0))
         }
         Value::Map(values) => {
             let pairs = values
@@ -322,14 +347,14 @@ fn format_literal(value: &Value, indent: usize) -> String {
     }
 }
 
-fn format_call(callee: &Expr, args: &[Expr], indent: usize) -> String {
-    let callee = format_expr_prec(callee, 8, indent);
+fn format_call(callee: &Expr, args: &[Expr], indent: usize, width: usize) -> String {
+    let callee = format_expr_prec(callee, 8, indent, width);
     let inline_args = args
         .iter()
-        .map(|arg| format_expr(arg, indent))
+        .map(|arg| format_expr_for_line(arg, indent, 0))
         .collect::<Vec<_>>();
     let inline = format!("{}({})", callee, inline_args.join(", "));
-    if inline.len() <= LINE_WIDTH && args.iter().all(is_simple_expr) {
+    if fits_inline(&inline, width) {
         return inline;
     }
     let mut out = String::new();
@@ -337,7 +362,7 @@ fn format_call(callee: &Expr, args: &[Expr], indent: usize) -> String {
     out.push_str("(\n");
     for arg in args {
         out.push_str(&indent_string(indent + 1));
-        out.push_str(&format_expr(arg, indent + 1));
+        out.push_str(&format_expr_for_line(arg, indent + 1, 1));
         out.push_str(",\n");
     }
     out.push_str(&indent_string(indent));
@@ -345,23 +370,23 @@ fn format_call(callee: &Expr, args: &[Expr], indent: usize) -> String {
     out
 }
 
-fn format_list(values: &[Expr], indent: usize) -> String {
+fn format_list(values: &[Expr], indent: usize, width: usize) -> String {
     if values.is_empty() {
         return "[]".to_string();
     }
     let inline_values = values
         .iter()
-        .map(|value| format_expr(value, indent))
+        .map(|value| format_expr_for_line(value, indent, 0))
         .collect::<Vec<_>>();
     let inline = format!("[{}]", inline_values.join(", "));
-    if inline.len() <= LINE_WIDTH && values.iter().all(is_simple_expr) {
+    if fits_inline(&inline, width) {
         return inline;
     }
     let mut out = String::new();
     out.push_str("[\n");
     for value in values {
         out.push_str(&indent_string(indent + 1));
-        out.push_str(&format_expr(value, indent + 1));
+        out.push_str(&format_expr_for_line(value, indent + 1, 1));
         out.push_str(",\n");
     }
     out.push_str(&indent_string(indent));
@@ -376,15 +401,68 @@ fn format_map(pairs: &[(String, Expr)], indent: usize) -> String {
     let mut out = String::new();
     out.push_str("{\n");
     for (key, value) in pairs {
+        let key = format_map_key(key);
         out.push_str(&indent_string(indent + 1));
-        out.push_str(&format_map_key(key));
+        out.push_str(&key);
         out.push_str(": ");
-        out.push_str(&format_expr(value, indent + 1));
+        out.push_str(&format_expr_for_line(value, indent + 1, key.len() + 3));
         out.push_str(",\n");
     }
     out.push_str(&indent_string(indent));
     out.push('}');
     out
+}
+
+fn format_string_literal(value: &str, indent: usize, width: usize) -> String {
+    if value.contains('\n') {
+        return format!("\"\"\"{}\"\"\"", value);
+    }
+
+    let quoted = quote_string(value);
+    if fits_inline(&quoted, width) {
+        return quoted;
+    }
+
+    let chunks = split_string_literal(value, width.saturating_sub(4).max(1));
+    let mut out = String::new();
+    for (index, chunk) in chunks.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+            out.push_str(&indent_string(indent + 1));
+        }
+        out.push_str(&quote_string(chunk));
+        if index + 1 < chunks.len() {
+            out.push_str(" +");
+        }
+    }
+    out
+}
+
+fn split_string_literal(value: &str, max_chars: usize) -> Vec<String> {
+    if value.is_empty() {
+        return vec![String::new()];
+    }
+
+    let chars = value.chars().collect::<Vec<_>>();
+    let mut chunks = Vec::new();
+    let mut start = 0;
+    while start < chars.len() {
+        let hard_end = (start + max_chars).min(chars.len());
+        let mut end = hard_end;
+        if hard_end < chars.len() {
+            if let Some(space) = chars[start..hard_end]
+                .iter()
+                .rposition(|ch| ch.is_whitespace())
+            {
+                if space > 0 {
+                    end = start + space + 1;
+                }
+            }
+        }
+        chunks.push(chars[start..end].iter().collect());
+        start = end;
+    }
+    chunks
 }
 
 fn format_map_key(key: &str) -> String {
@@ -423,15 +501,18 @@ fn indent_string(level: usize) -> String {
     INDENT.repeat(level)
 }
 
-fn is_simple_expr(expr: &Expr) -> bool {
-    matches!(
-        expr,
-        Expr::Literal(
-            Value::Null | Value::Bool(_) | Value::Int(_) | Value::Float(_) | Value::String(_)
-        ) | Expr::Identifier(_)
-            | Expr::Get { .. }
-            | Expr::Index { .. }
-    )
+fn fits_inline(value: &str, width: usize) -> bool {
+    !value.contains('\n') && value.len() <= width
+}
+
+fn available_width(indent: usize, prefix_len: usize) -> usize {
+    LINE_WIDTH
+        .saturating_sub(current_line_width(indent) + prefix_len)
+        .max(INDENT.len() * 4)
+}
+
+fn current_line_width(indent: usize) -> usize {
+    indent * INDENT.len()
 }
 
 #[cfg(test)]
@@ -447,5 +528,19 @@ mod tests {
         let formatted = format_program(&program);
         assert!(formatted.contains("const user = {"));
         assert!(formatted.contains("if user.name != \"\" {"));
+    }
+
+    #[test]
+    fn keeps_nested_calls_inline_when_they_fit_line_width() {
+        let source = "emit bullet(\"replace\", replace(\"text/math/files\", \"/\", \" -> \"))";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("replace(\"text/math/files\", \"/\", \" -> \"),"));
+        assert!(formatted
+            .lines()
+            .filter(|line| !line.starts_with('#'))
+            .all(|line| line.len() <= LINE_WIDTH));
     }
 }
