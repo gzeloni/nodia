@@ -1,0 +1,5 @@
+fn pair(left, right) {
+  return left + right
+}
+
+emit pair(1)

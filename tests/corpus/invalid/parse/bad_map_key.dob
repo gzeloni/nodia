@@ -1,0 +1,3 @@
+const bad = {
+  1: "number keys are not valid in v0.4",
+}

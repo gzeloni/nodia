@@ -197,6 +197,41 @@ assert_eq "eval command" "a:b" "$actual"
 $BIN version --json | grep '"name":"dobra"' >/dev/null
 printf 'ok version json\n'
 
+
+for file in $(find tests/corpus/valid -name '*.dob' | sort); do
+    $BIN check "$file" >/dev/null
+    $BIN tokens "$file" --json >/dev/null
+    $BIN ast "$file" --json >/dev/null
+done
+printf 'ok corpus valid files\n'
+
+for group in lex parse semantic; do
+    for file in $(find "tests/corpus/invalid/$group" -name '*.dob' | sort); do
+        if $BIN check "$file" > "$TMP_DIR/corpus.out" 2> "$TMP_DIR/corpus.err"; then
+            printf 'FAIL corpus invalid %s %s\nExpected check to fail\n' "$group" "$file" >&2
+            exit 1
+        fi
+    done
+done
+printf 'ok corpus invalid check failures\n'
+
+for file in $(find tests/corpus/invalid/runtime -name '*.dob' | sort); do
+    $BIN check "$file" >/dev/null
+    if $BIN run "$file" > "$TMP_DIR/runtime.out" 2> "$TMP_DIR/runtime.err"; then
+        printf 'FAIL corpus runtime %s\nExpected run to fail\n' "$file" >&2
+        exit 1
+    fi
+done
+printf 'ok corpus runtime failures\n'
+
+$BIN check tests/corpus/invalid/semantic/assign_const.dob --json 2> "$TMP_DIR/semantic.json" || true
+grep '"code":"E4101"' "$TMP_DIR/semantic.json" >/dev/null
+printf 'ok semantic json code\n'
+
+$BIN tokens tests/corpus/valid/expressions.dob --json | grep '"tokens"' >/dev/null
+$BIN ast tests/corpus/valid/expressions.dob --json | grep '"ast"' >/dev/null
+printf 'ok corpus introspection commands\n'
+
 mkdir "$TMP_DIR/project"
 $BIN init "$TMP_DIR/project" >/dev/null
 actual="$(cd "$TMP_DIR/project" && "$OLDPWD/$BIN" run --var name=Project)"

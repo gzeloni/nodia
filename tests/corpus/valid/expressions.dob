@@ -1,0 +1,13 @@
+const arithmetic = 1 + 2 * 3 - 4 / 2 % 2
+const comparison = arithmetic >= 7 and not false
+const grouped = (1 + 2) * (3 + 4)
+const values = [arithmetic, comparison, grouped]
+const data = {
+  arithmetic: arithmetic,
+  comparison: comparison,
+  grouped: grouped,
+}
+
+emit values[0]
+emit data.grouped
+emit data["comparison"]

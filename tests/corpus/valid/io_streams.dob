@@ -1,0 +1,11 @@
+let stream = open("target/corpus.tmp", "write")
+writeln(stream, "first")
+writeln(stream, "second")
+flush(stream)
+close(stream)
+
+let input_stream = open("target/corpus.tmp", "read")
+while not eof(input_stream) {
+  emit readln(input_stream)
+}
+close(input_stream)

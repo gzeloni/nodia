@@ -1,0 +1,11 @@
+# hash comment
+// slash comment
+const single = 'single quoted'
+const double = "double quoted"
+const multi = """
+multiline
+text
+"""
+
+emit "{single} / {double}"
+emit multi
