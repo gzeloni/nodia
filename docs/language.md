@@ -1,6 +1,6 @@
-# Dobra Language v0.3
+# Dobra Language v0.4
 
-This document defines the v0.3 language and tooling contract.
+This document summarizes the v0.4 language and tooling contract. The normative baseline is [specification.md](specification.md).
 
 For the full user reference with command examples and builtin examples, see [reference.md](reference.md).
 
@@ -47,6 +47,7 @@ Formatting is canonical and non-configurable.
 | Blocks | always use `{}` |
 | Maps | non-empty maps are multi-line |
 | Lists/calls | inline when short, multi-line when long |
+| Line width | formatter-controlled lines target 60 characters |
 | Final newline | required |
 
 The formatter is exposed through:
@@ -82,6 +83,18 @@ Rules:
 - `hide` excludes listed names;
 - imported `let` bindings remain mutable;
 - imported `const` and `fn` bindings are read-only.
+
+## Semantic Check
+
+`dobra check` is no longer parse-only in v0.4. It validates imports and performs
+baseline semantic checks before `run` can execute the program.
+
+It rejects undefined variables, duplicate bindings in the same scope, assignment
+to `const`, invalid function/builtin arity, invalid `show` imports, missing fields
+on known maps/namespaces, `return` outside functions, and `break`/`continue`
+outside loops.
+
+The checker is not yet a static type or effect checker.
 
 ## IO
 

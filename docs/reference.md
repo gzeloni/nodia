@@ -1,6 +1,6 @@
-# Dobra Reference v0.3
+# Dobra Reference v0.4
 
-This is the complete user-facing reference for Dobra v0.3. It documents the command line,
+This is the complete user-facing reference for Dobra v0.4. It documents the command line,
 project layout, language syntax, imports, IO, streams, standard library, and common workflows.
 
 Dobra source files use the `.dob` extension.
@@ -45,7 +45,7 @@ target/release/dobra version
 Expected output:
 
 ```text
-dobra 0.3.0
+dobra 0.4.0
 ```
 
 ## Command Line
@@ -167,7 +167,7 @@ dobra run report.dob --stdout
 
 ### `dobra check`
 
-Checks lexing and parsing without executing the program.
+Checks lexing, parsing, imports, and v0.4 semantic rules without executing the program.
 
 ```bash
 dobra check file.dob
@@ -191,8 +191,16 @@ Output:
 {"ok":true,"errors":[]}
 ```
 
-`check` validates syntax only. It does not execute code, evaluate imports, read files, or verify
-runtime errors.
+JSON failure output:
+
+```json
+{"ok":false,"errors":[{"code":"E4101","message":"cannot assign to const 'n'","file":"file.dob","line":2,"column":1}]}
+```
+
+`check` validates syntax and v0.4 semantic rules. It resolves imports for file-backed
+programs, validates selected import names, catches undefined variables, rejects assignment to
+`const`, validates basic arity, checks control-flow placement, and validates known map/namespace
+fields. It does not execute program IO or prove static types/effects.
 
 Example:
 
@@ -202,7 +210,7 @@ import "./missing"
 emit "syntax is valid"
 ```
 
-`dobra check` can pass this file because the import path is resolved only during execution.
+`dobra check` reports missing imports, missing selected exports, and semantic errors before execution.
 
 ### `dobra fmt`
 
@@ -399,7 +407,7 @@ dobra version
 Output:
 
 ```text
-dobra 0.3.0
+dobra 0.4.0
 ```
 
 JSON output:
@@ -477,7 +485,7 @@ Line comments can use `#` or `//`.
 emit "ok"
 ```
 
-Block comments are not part of v0.3.
+Block comments are not part of v0.4.
 
 ### Reserved Words
 
@@ -1110,7 +1118,7 @@ B/A
 
 ## IO And Streams
 
-Dobra v0.3 has real file IO and stream values.
+Dobra v0.4 has real file IO and stream values.
 
 ### Standard Streams
 
@@ -1964,11 +1972,11 @@ n = 2
 Output:
 
 ```text
-error[E2000]: cannot assign to const 'n'
-  at file.dob
+error[E4101]: cannot assign to const 'n'
+  at file.dob:2:1
 ```
 
-IO errors use `E3000` unless the error is write permission related.
+Parse errors use `E1000`, runtime errors use `E2000`, IO errors use `E3000`, and semantic checker errors use `E41xx`. Write permission errors use `E3001`.
 
 Write permission error:
 
@@ -2024,6 +2032,7 @@ Formatting is canonical and non-configurable.
 | Maps | non-empty maps are multi-line |
 | Lists/calls | inline when short, multi-line when long |
 | Final newline | required |
+| Line width | formatter-controlled lines target 60 characters |
 
 The formatter is part of the language contract. Prefer writing clear code and letting `dobra fmt`
 settle layout.

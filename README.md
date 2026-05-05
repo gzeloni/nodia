@@ -9,12 +9,14 @@ Source files use the `.dob` extension.
 
 Complete documentation is available in [docs/reference.md](docs/reference.md).
 
+The formal v0.4 baseline is documented in [docs/specification.md](docs/specification.md).
+
 ## Status
 
-Dobra is experimental. The current implementation is `v0.3`.
+Dobra is experimental. The current implementation is `v0.4`.
 
-The v0.3 focus is real IO, streams, stronger text helpers, mathematical helpers, list/data helpers,
-and the existing v0.2 tooling foundation: formatting, imports, diagnostics, and project support.
+The v0.4 focus is the language baseline: formal specification, public AST schema,
+semantic checking, official corpus, canonical formatting, imports, diagnostics, and the v0.3 IO/text/math foundation.
 
 ## Install From Source
 
@@ -99,7 +101,7 @@ dobra check file.dob
 dobra check file.dob --json
 ```
 
-`check` validates lexing and parsing without executing the program.
+`check` validates lexing, parsing, imports, and v0.4 semantic rules without executing the program.
 
 ### Format
 
@@ -124,6 +126,7 @@ Formatter rules:
 | Maps | multi-line when non-empty |
 | Short lists/calls | inline when they fit |
 | Comments | preserved as statement comments |
+| Line width | formatter-controlled lines target 60 characters |
 
 Example input:
 
@@ -283,7 +286,7 @@ initialized it. Imported `let` bindings remain mutable; imported `const` and `fn
 
 ## IO
 
-Dobra v0.3 supports real file IO through streams.
+Dobra v0.4 supports real file IO through streams.
 
 ```dobra
 const src = open("input.txt", "read")
