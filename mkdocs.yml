@@ -1,0 +1,124 @@
+site_name: Nodia
+site_description: Nodia is a focused language for textual automation, structured output, and data workflows.
+site_url: https://nodia.dev
+repo_name: gzeloni/orich
+repo_url: https://github.com/gzeloni/orich
+edit_uri: ""
+
+docs_dir: docs
+site_dir: site
+
+theme:
+  name: material
+  language: en
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: deep purple
+      accent: indigo
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+    - search.suggest
+    - search.highlight
+    - search.share
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - attr_list
+  - def_list
+  - footnotes
+  - md_in_html
+  - tables
+  - toc:
+      permalink: true
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tilde
+  - pymdownx.keys
+  - pymdownx.smartsymbols
+
+extra:
+  generator: false
+  version:
+    default: "0.6"
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/gzeloni/orich
+
+exclude_docs: |
+  _archive/
+
+nav:
+  - Home: index.md
+  - Getting Started:
+      - Install & Build: getting-started/install.md
+      - First Program: getting-started/first-program.md
+      - Project Layout: getting-started/projects.md
+  - Command Line:
+      - Overview: cli/index.md
+      - run: cli/run.md
+      - check: cli/check.md
+      - eval: cli/eval.md
+      - fmt: cli/fmt.md
+      - tokens & ast: cli/tokens-ast.md
+      - init & version: cli/init-version.md
+  - Language:
+      - Source & Comments: language/source.md
+      - Values & Truthiness: language/values.md
+      - Variables: language/variables.md
+      - Strings & Interpolation: language/strings.md
+      - Operators: language/operators.md
+      - Conditionals: language/conditionals.md
+      - Loops: language/loops.md
+      - Functions: language/functions.md
+      - Lists & Maps: language/collections.md
+      - Emit & Output: language/emit.md
+      - Modules (use): language/modules.md
+      - IO & Streams: language/io.md
+      - Regex DSL: language/regex.md
+  - Standard Library:
+      - Overview: stdlib/index.md
+      - Text: stdlib/text.md
+      - Numbers: stdlib/numbers.md
+      - Collections: stdlib/collections.md
+      - Conversion: stdlib/conversion.md
+      - Regex: stdlib/regex.md
+      - IO: stdlib/io.md
+  - Reference:
+      - Grammar: reference/grammar.md
+      - Operator Precedence: reference/precedence.md
+      - Diagnostics: reference/diagnostics.md
+      - Formatter: reference/formatter.md
+      - AST Schema: reference/ast.md
+  - Examples:
+      - Cookbook: examples/cookbook.md
