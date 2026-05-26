@@ -1510,25 +1510,73 @@ Output:
 
 ```nodia
 emit replace("a/b/c", "/", " -> ")
+emit replace("ana 42 bruno 77", regex {
+  one_or_more digit
+}, "#")
 ```
 
 Output:
 
 ```text
 a -> b -> c
+ana # bruno #
 ```
+
+When `from` is a regex, replacement placeholders use Nodia syntax:
+- `$(0)` for the whole match
+- `$(1)`, `$(2)`, ... for indexed captures
+- `$(name)` for named captures
+- `$$` for a literal dollar sign
+
+```nodia
+emit replace("https://example.com", regex {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}, "<$(scheme):$(host)>")
+```
+
+#### `replace_all(text, from, to)`
+
+Explicit alias of `replace(...)`. It exists to make whole-text replacement intent obvious in scripts.
 
 #### `split(text, sep)`
 
 ```nodia
 emit split("a,b,c", ",")
+emit split("ana   bruno\tcarla", regex {
+  one_or_more whitespace
+})
 ```
 
 Output:
 
 ```text
 [a, b, c]
+[ana, bruno, carla]
 ```
+
+#### `split_regex(text, pattern)`
+
+Explicit alias of `split(...)` when you want a regex-specific name.
 
 #### `join(list, sep)`
 
@@ -1697,6 +1745,12 @@ emit len(find_all("http://a https://b", regex {
   one_or_more letter
 }))
 ```
+
+`replace(...)` and `split(...)` also accept regex values. For regex replacement strings, use:
+- `$(0)` for the whole match
+- `$(1)`, `$(2)`, ... for indexed captures
+- `$(name)` for named captures
+- `$$` for a literal dollar sign
 
 #### `indent(text, spaces_or_prefix)`
 

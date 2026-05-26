@@ -18,24 +18,8 @@ pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
             }
         })?,
         "trim" => unary_string(args, "trim", |s| s.trim().to_string())?,
-        "replace" => {
-            expect_arity(&args, 3, "replace")?;
-            Value::String(
-                args[0]
-                    .to_string()
-                    .replace(&args[1].to_string(), &args[2].to_string()),
-            )
-        }
-        "split" => {
-            expect_arity(&args, 2, "split")?;
-            Value::List(
-                args[0]
-                    .to_string()
-                    .split(&args[1].to_string())
-                    .map(|part| Value::String(part.to_string()))
-                    .collect(),
-            )
-        }
+        "replace" | "replace_all" => replace_text(args, name)?,
+        "split" | "split_regex" => split_text(args, name)?,
         "join" => {
             expect_arity(&args, 2, "join")?;
             let values = expect_list(&args[0], "join", "first")?;
@@ -241,6 +225,30 @@ fn unary_string(
 ) -> DobraResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::String(f(args[0].to_string())))
+}
+
+fn replace_text(args: Vec<Value>, name: &str) -> DobraResult<Value> {
+    expect_arity(&args, 3, name)?;
+    let text = args[0].to_string();
+    let replacement = args[2].to_string();
+    let replaced = match &args[1] {
+        Value::Regex(pattern) => pattern.replace_all(&text, &replacement)?,
+        other => text.replace(&other.to_string(), &replacement),
+    };
+    Ok(Value::String(replaced))
+}
+
+fn split_text(args: Vec<Value>, name: &str) -> DobraResult<Value> {
+    expect_arity(&args, 2, name)?;
+    let text = args[0].to_string();
+    let parts = match &args[1] {
+        Value::Regex(pattern) => pattern.split(&text)?,
+        other => text
+            .split(&other.to_string())
+            .map(|part| part.to_string())
+            .collect(),
+    };
+    Ok(Value::List(parts.into_iter().map(Value::String).collect()))
 }
 
 fn regex_test(args: Vec<Value>) -> DobraResult<Value> {

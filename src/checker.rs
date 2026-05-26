@@ -761,10 +761,10 @@ fn builtin_arity(name: &str) -> Option<Vec<usize>> {
         | "readln" => {
             vec![1]
         }
-        "replace" | "clamp" | "slice" => vec![3],
-        "split" | "join" | "contains" | "starts" | "starts_with" | "ends" | "ends_with"
-        | "indent" | "pow" | "min" | "max" | "push" | "open" | "write" | "writeln" | "append"
-        | "test" | "full_match" | "find" | "find_all" => {
+        "replace" | "replace_all" | "clamp" | "slice" => vec![3],
+        "split" | "split_regex" | "join" | "contains" | "starts" | "starts_with" | "ends"
+        | "ends_with" | "indent" | "pow" | "min" | "max" | "push" | "open" | "write"
+        | "writeln" | "append" | "test" | "full_match" | "find" | "find_all" => {
             vec![2]
         }
         _ => return None,
@@ -823,6 +823,10 @@ emit test("abc", regex { one_or_more letter })
 emit full_match("abc", regex { one_or_more letter })
 emit find("abc", regex { one_or_more letter })
 emit find_all("abc", regex { one_or_more letter })
+emit replace("abc123", regex { one_or_more digit }, '#')
+emit replace_all("abc123", regex { one_or_more digit }, '#')
+emit split("ana   bruno", regex { one_or_more whitespace })
+emit split_regex("ana   bruno", regex { one_or_more whitespace })
 "#;
 
         assert!(check_source(source).is_ok());

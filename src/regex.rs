@@ -419,6 +419,24 @@ impl RuntimeRegex {
         Ok(matches)
     }
 
+    pub fn replace_all(&self, text: &str, replacement: &str) -> DobraResult<String> {
+        let translated = self.translate_replacement(replacement)?;
+        self.engine
+            .try_replacen(text, 0, translated.as_str())
+            .map(|value| value.into_owned())
+            .map_err(regex_engine_error)
+    }
+
+    pub fn split(&self, text: &str) -> DobraResult<Vec<String>> {
+        self.engine
+            .split(text)
+            .map(|part| {
+                part.map(|value| value.to_string())
+                    .map_err(regex_engine_error)
+            })
+            .collect()
+    }
+
     fn capture_to_match(&self, text: &str, captures: &Captures<'_>) -> DobraResult<RegexMatch> {
         let matched = captures
             .get(0)
@@ -439,6 +457,93 @@ impl RuntimeRegex {
             groups,
             named,
         })
+    }
+
+    fn translate_replacement(&self, replacement: &str) -> DobraResult<String> {
+        let mut out = String::new();
+        let chars = replacement.chars().collect::<Vec<_>>();
+        let names = self
+            .engine
+            .capture_names()
+            .flatten()
+            .map(str::to_string)
+            .collect::<HashSet<_>>();
+        let capture_len = self.engine.captures_len();
+
+        let mut index = 0;
+        while index < chars.len() {
+            if chars[index] != '$' {
+                out.push(chars[index]);
+                index += 1;
+                continue;
+            }
+
+            let Some(next) = chars.get(index + 1).copied() else {
+                return Err(DobraError::runtime(
+                    "regex replacement cannot end with '$'; use '$$' for a literal dollar",
+                ));
+            };
+
+            if next == '$' {
+                out.push_str("$$");
+                index += 2;
+                continue;
+            }
+
+            if next != '(' {
+                return Err(DobraError::runtime(
+                    "regex replacement placeholders must use $(0), $(1), $(name), or '$$'",
+                ));
+            }
+
+            let start = index + 2;
+            let mut end = start;
+            while end < chars.len() && chars[end] != ')' {
+                end += 1;
+            }
+            if end == chars.len() {
+                return Err(DobraError::runtime(
+                    "unterminated regex replacement placeholder",
+                ));
+            }
+
+            let token = chars[start..end].iter().collect::<String>();
+            if token.is_empty() {
+                return Err(DobraError::runtime(
+                    "regex replacement placeholder cannot be empty",
+                ));
+            }
+
+            if token.chars().all(|ch| ch.is_ascii_digit()) {
+                let capture = token
+                    .parse::<usize>()
+                    .map_err(|_| DobraError::runtime("invalid regex capture index"))?;
+                if capture >= capture_len {
+                    return Err(DobraError::runtime(format!(
+                        "regex replacement refers to missing capture group {capture}"
+                    )));
+                }
+                out.push('$');
+                out.push_str(&token);
+            } else if replacement_name_is_valid(&token) {
+                if !names.contains(&token) {
+                    return Err(DobraError::runtime(format!(
+                        "regex replacement refers to missing named capture '{token}'"
+                    )));
+                }
+                out.push_str("${");
+                out.push_str(&token);
+                out.push('}');
+            } else {
+                return Err(DobraError::runtime(format!(
+                    "invalid regex replacement placeholder '{token}'"
+                )));
+            }
+
+            index = end + 1;
+        }
+
+        Ok(out)
     }
 }
 
@@ -891,6 +996,15 @@ fn escape_char_set_char(ch: char) -> String {
     }
 }
 
+fn replacement_name_is_valid(name: &str) -> bool {
+    let mut chars = name.chars();
+    match chars.next() {
+        Some(first) if first == '_' || first.is_ascii_alphabetic() => {}
+        _ => return false,
+    }
+    chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
+}
+
 fn char_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].chars().count()
 }
@@ -1004,5 +1118,34 @@ mod tests {
         };
 
         assert!(validate_for_target(&pattern, RegexTarget::Re2).is_err());
+    }
+
+    #[test]
+    fn regex_replace_all_supports_nodia_placeholders() {
+        let regex = compile_text("(?<name>[A-Za-z]+)").unwrap();
+
+        let output = regex.replace_all("ana bob", "<$(name):$(0)>").unwrap();
+
+        assert_eq!(output, "<ana:ana> <bob:bob>");
+    }
+
+    #[test]
+    fn regex_replace_all_rejects_unknown_named_capture() {
+        let regex = compile_text("(?<name>[A-Za-z]+)").unwrap();
+
+        let err = regex.replace_all("ana", "$(missing)").unwrap_err();
+
+        assert!(err
+            .to_string()
+            .contains("regex replacement refers to missing named capture 'missing'"));
+    }
+
+    #[test]
+    fn regex_split_returns_unmatched_segments() {
+        let regex = compile_text("\\s+").unwrap();
+
+        let parts = regex.split("ana   bruno\tcarla").unwrap();
+
+        assert_eq!(parts, vec!["ana", "bruno", "carla"]);
     }
 }

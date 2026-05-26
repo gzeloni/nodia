@@ -1369,4 +1369,63 @@ emit full_match("abc-42", "^[a-z]+-\\d+$")
         let output = crate::run_source(source, BTreeMap::new()).unwrap();
         assert_eq!(output, "true\ntrue");
     }
+
+    #[test]
+    fn regex_replace_and_split_work_through_text_builtins() {
+        let source = r#"val text = "go to https://example.com and http://ana.dev"
+val url = regex {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}
+
+emit replace(text, url, "<$(scheme):$(host)>")
+emit replace_all(text, url, "<$(host)>")
+emit split("ana   bruno\tcarla", regex {
+  one_or_more whitespace
+})
+emit split_regex("ana   bruno\tcarla", regex {
+  one_or_more whitespace
+})
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(
+            output,
+            "go to <https:example.com> and <http:ana.dev>\ngo to <example.com> and <ana.dev>\n[ana, bruno, carla]\n[ana, bruno, carla]"
+        );
+    }
+
+    #[test]
+    fn regex_replace_reports_missing_capture_names() {
+        let source = r#"emit replace("ana", regex {
+  named word {
+    one_or_more letter
+  }
+}, "$(missing)")
+"#;
+
+        let err = crate::run_source(source, BTreeMap::new()).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("regex replacement refers to missing named capture 'missing'"));
+    }
 }

@@ -172,7 +172,17 @@ val hit = find("go to https://example.com now", url)
 emit hit.named.host
 emit test("http://a", url)
 emit full_match("https://example.com", url)
+emit replace("go to https://example.com now", url, "<$(host)>")
+emit split("ana   bruno\tcarla", regex {
+  one_or_more whitespace
+})
 ```
+
+Regex replacements use Nodia placeholders:
+- `$(0)` for the whole match
+- `$(1)`, `$(2)`, ... for indexed captures
+- `$(name)` for named captures
+- `$$` for a literal dollar sign
 
 ### Format
 
@@ -407,8 +417,10 @@ Text:
 | `lower(value)` | Converts text to lowercase |
 | `capitalize(value)` | Capitalizes text |
 | `trim(value)` | Trims surrounding whitespace |
-| `replace(value, from, to)` | Replaces text |
-| `split(value, delimiter)` | Splits text into a list |
+| `replace(value, from, to)` | Replaces text with literal or regex patterns |
+| `replace_all(value, from, to)` | Explicit alias of `replace(...)` |
+| `split(value, delimiter)` | Splits text with a literal or regex delimiter |
+| `split_regex(value, pattern)` | Explicit alias of `split(...)` |
 | `join(list, delimiter)` | Joins a list into text |
 | `lines(value)` | Splits text into lines |
 | `unlines(list)` | Joins values with newlines |
