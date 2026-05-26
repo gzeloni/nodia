@@ -41,10 +41,17 @@ impl Parser {
                 self.advance();
                 Ok(Stmt::Comment(text))
             }
-            TokenKind::Import => self.import_statement(),
-            TokenKind::Let => self.let_statement(true),
-            TokenKind::Const => self.let_statement(false),
-            TokenKind::Fn => self.fn_statement(),
+            TokenKind::Use => self.use_statement(),
+            TokenKind::Var => self.bind_statement(true),
+            TokenKind::Val => self.bind_statement(false),
+            TokenKind::Func => self.func_statement(),
+            TokenKind::LegacyLet
+            | TokenKind::LegacyConst
+            | TokenKind::LegacyFn
+            | TokenKind::LegacyImport
+            | TokenKind::LegacyShow => {
+                Err(self.error_here("legacy keyword was removed in Nodia v0.5"))
+            }
             TokenKind::Return => self.return_statement(),
             TokenKind::Emit => self.emit_statement(),
             TokenKind::If => self.if_statement(),
@@ -69,9 +76,8 @@ impl Parser {
             | TokenKind::Type
             | TokenKind::Enum
             | TokenKind::Struct
-            | TokenKind::Namespace
-            | TokenKind::Use => {
-                Err(self.error_here("keyword is reserved for a future Dobra version"))
+            | TokenKind::Namespace => {
+                Err(self.error_here("keyword is reserved for a future Nodia version"))
             }
             TokenKind::Identifier(name) if self.peek_next_is_equal() => {
                 let name = name.clone();
@@ -85,7 +91,7 @@ impl Parser {
         }
     }
 
-    fn import_statement(&mut self) -> DobraResult<Stmt> {
+    fn use_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         self.skip_separators();
         let token = self.advance().clone();
@@ -93,7 +99,7 @@ impl Parser {
             TokenKind::String(path) => path,
             _ => {
                 return Err(DobraError::new(
-                    "expected string path after import",
+                    "expected string path after use",
                     token.line,
                     token.column,
                 ))
@@ -101,31 +107,31 @@ impl Parser {
         };
 
         let mut alias = None;
-        let mut show = Vec::new();
+        let mut pick = Vec::new();
         let mut hide = Vec::new();
         loop {
             self.skip_separators();
             if self.match_kind(&TokenKind::As) {
                 self.skip_separators();
                 alias = Some(self.expect_identifier("expected alias after 'as'")?);
-            } else if self.match_kind(&TokenKind::Show) {
-                show = self.import_name_list("show")?;
+            } else if self.match_kind(&TokenKind::Pick) {
+                pick = self.use_name_list("pick")?;
             } else if self.match_kind(&TokenKind::Hide) {
-                hide = self.import_name_list("hide")?;
+                hide = self.use_name_list("hide")?;
             } else {
                 break;
             }
         }
 
-        Ok(Stmt::Import {
+        Ok(Stmt::Use {
             path,
             alias,
-            show,
+            pick,
             hide,
         })
     }
 
-    fn import_name_list(&mut self, clause: &str) -> DobraResult<Vec<String>> {
+    fn use_name_list(&mut self, clause: &str) -> DobraResult<Vec<String>> {
         let mut names = Vec::new();
         loop {
             self.skip_separators();
@@ -142,20 +148,20 @@ impl Parser {
         Ok(names)
     }
 
-    fn let_statement(&mut self, mutable: bool) -> DobraResult<Stmt> {
+    fn bind_statement(&mut self, mutable: bool) -> DobraResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected variable name")?;
         self.expect_equal()?;
         self.skip_separators();
         let value = self.expression()?;
-        Ok(Stmt::Let {
+        Ok(Stmt::Bind {
             name,
             value,
             mutable,
         })
     }
 
-    fn fn_statement(&mut self) -> DobraResult<Stmt> {
+    fn func_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
         let name = self.expect_identifier("expected function name")?;
         self.expect(TokenKind::LeftParen, "expected '(' after function name")?;
@@ -177,7 +183,7 @@ impl Parser {
         self.expect(TokenKind::RightParen, "expected ')' after parameters")?;
         self.skip_newlines();
         let body = self.block()?;
-        Ok(Stmt::Fn { name, params, body })
+        Ok(Stmt::Func { name, params, body })
     }
 
     fn return_statement(&mut self) -> DobraResult<Stmt> {
@@ -636,8 +642,8 @@ mod tests {
     use crate::lexer::Lexer;
 
     #[test]
-    fn parses_emit_and_let() {
-        let tokens = Lexer::new("let name = \"Ana\"\nemit \"Hi {name}\"")
+    fn parses_emit_and_bind() {
+        let tokens = Lexer::new("val name = \"Ana\"\nemit \"Hi {name}\"")
             .tokenize()
             .unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
@@ -647,7 +653,7 @@ mod tests {
     #[test]
     fn parses_multiline_maps_lists_and_calls() {
         let source = r#"
-const user = {
+val user = {
   name: "Ana",
   tags: [
     "dev",
@@ -664,4 +670,5 @@ emit join(
         let program = Parser::new(tokens).parse_program().unwrap();
         assert_eq!(program.statements.len(), 2);
     }
+
 }

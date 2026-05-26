@@ -1,26 +1,26 @@
-# Dobra
+# Nodia
 
-Dobra is a small programming language for text automation and structured output generation.
+Nodia is a small programming language for text automation and structured output generation.
 
 It is built for scripts that assemble files, prompts, configuration snippets, reports, changelogs,
 payloads, and other text artifacts without reaching for a full general-purpose language.
 
-Source files use the `.dob` extension.
+Source files use the `.nod` extension.
 
 Complete documentation is available in [docs/reference.md](docs/reference.md).
 
-The formal v0.4 baseline is documented in [docs/specification.md](docs/specification.md).
+The formal v0.5 baseline is documented in [docs/specification.md](docs/specification.md).
 
 ## Status
 
-Dobra is experimental. The current implementation is `v0.4`.
+Nodia is experimental. The current implementation is `v0.5`.
 
-The v0.4 focus is the language baseline: formal specification, public AST schema,
-semantic checking, official corpus, canonical formatting, imports, diagnostics, and the v0.3 IO/text/math foundation.
+The v0.5 focus is the language baseline: canonical syntax, formatting, semantic checking,
+module uses, file IO, and text-oriented scripting.
 
 ## Install From Source
 
-Dobra is implemented in Rust and currently uses only the Rust standard library.
+Nodia is implemented in Rust and currently uses only the Rust standard library.
 
 ```bash
 cargo build --release
@@ -29,22 +29,22 @@ cargo build --release
 The release binary is generated at:
 
 ```bash
-target/release/dobra
+target/release/nodia
 ```
 
 ## Quick Start
 
-Create `hello.dob`:
+Create `hello.nod`:
 
-```dobra
-const name = input.name
+```nodia
+val name = input.name
 emit "Hello, {name}"
 ```
 
 Run it:
 
 ```bash
-dobra run hello.dob --var name=Gustavo
+nodia run hello.nod --var name=Gustavo
 ```
 
 Output:
@@ -56,17 +56,17 @@ Hello, Gustavo
 ## CLI
 
 ```bash
-dobra run file.dob
-dobra check file.dob
-dobra fmt file.dob
-dobra fmt .
-dobra fmt --check .
-dobra fmt --stdout file.dob
-dobra eval 'emit "hello"'
-dobra tokens file.dob --json
-dobra ast file.dob --json
-dobra init
-dobra version
+nodia run file.nod
+nodia check file.nod
+nodia fmt file.nod
+nodia fmt .
+nodia fmt --check .
+nodia fmt --stdout file.nod
+nodia eval 'emit "hello"'
+nodia tokens file.nod --json
+nodia ast file.nod --json
+nodia init
+nodia version
 ```
 
 Global flags:
@@ -84,12 +84,12 @@ Global flags:
 ### Run
 
 ```bash
-dobra run file.dob
-dobra run file.dob --var name=Ana
-dobra run file.dob --vars name=Ana env=prod
-dobra run file.dob --vars config.json
-dobra run file.dob --out output.txt
-dobra run file.dob --allow-write
+nodia run file.nod
+nodia run file.nod --var name=Ana
+nodia run file.nod --vars name=Ana env=prod
+nodia run file.nod --vars config.json
+nodia run file.nod --out output.txt
+nodia run file.nod --allow-write
 ```
 
 CLI variables are exposed through the readonly `input` object.
@@ -97,21 +97,21 @@ CLI variables are exposed through the readonly `input` object.
 ### Check
 
 ```bash
-dobra check file.dob
-dobra check file.dob --json
+nodia check file.nod
+nodia check file.nod --json
 ```
 
-`check` validates lexing, parsing, imports, and v0.4 semantic rules without executing the program.
+`check` validates lexing, parsing, module uses, and the v0.5 semantic baseline without executing the program.
 
 ### Format
 
-Dobra has one canonical style. The formatter decides layout.
+Nodia has one canonical style. The formatter decides layout.
 
 ```bash
-dobra fmt file.dob
-dobra fmt .
-dobra fmt --check .
-dobra fmt --stdout file.dob
+nodia fmt file.nod
+nodia fmt .
+nodia fmt --check .
+nodia fmt --stdout file.nod
 ```
 
 Formatter rules:
@@ -130,15 +130,15 @@ Formatter rules:
 
 Example input:
 
-```dobra
-const user={name:"Ana",role:"dev"}
+```nodia
+val user={name:"Ana",role:"dev"}
 if user.name!=""{emit "hello {user.name}"}
 ```
 
 Formatted output:
 
-```dobra
-const user = {
+```nodia
+val user = {
   name: "Ana",
   role: "dev",
 }
@@ -153,50 +153,50 @@ if user.name != "" {
 Create a basic project:
 
 ```bash
-dobra init
+nodia init
 ```
 
 Generated layout:
 
 ```text
-dobra.toml
+nodia.toml
 src/
-  main.dob
+  main.nod
 ```
 
-`dobra.toml`:
+`nodia.toml`:
 
 ```toml
-name = "dobra-project"
-entry = "src/main.dob"
+name = "nodia-project"
+entry = "src/main.nod"
 ```
 
-When a command accepts a file path, omitting the path makes Dobra look for `dobra.toml`
+When a command accepts a file path, omitting the path makes Nodia look for `nodia.toml`
 and use its `entry` file.
 
 ## Language Basics
 
 ### Variables
 
-```dobra
-let name = "Ana"
-const env = "prod"
+```nodia
+var name = "Ana"
+val env = "prod"
 
 emit "{name} / {env}"
 ```
 
-`let` declares a mutable variable. `const` declares an immutable variable.
+`var` declares a mutable variable. `val` declares an immutable variable.
 
 ### Strings and Interpolation
 
-```dobra
-const user = "john"
+```nodia
+val user = "john"
 emit "Hello, {capitalize(user)}"
 ```
 
 Triple-quoted strings are supported:
 
-```dobra
+```nodia
 emit """
 APP_NAME={input.app}
 APP_ENV=prod
@@ -205,7 +205,7 @@ APP_ENV=prod
 
 ### Conditionals
 
-```dobra
+```nodia
 if input.env == "prod" {
   emit "Production"
 } else {
@@ -215,14 +215,14 @@ if input.env == "prod" {
 
 ### Loops
 
-```dobra
+```nodia
 for user in ["ana", "john", "maria"] {
   emit capitalize(user)
 }
 ```
 
-```dobra
-let i = 0
+```nodia
+var i = 0
 
 while i < 3 {
   emit "i={i}"
@@ -232,8 +232,8 @@ while i < 3 {
 
 ### Functions
 
-```dobra
-fn greet(name) {
+```nodia
+func greet(name) {
   return "Hello, {capitalize(name)}"
 }
 
@@ -242,8 +242,8 @@ emit greet("ana")
 
 ### Lists and Maps
 
-```dobra
-const user = {
+```nodia
+val user = {
   name: "Ana",
   roles: ["admin", "dev"],
 }
@@ -254,21 +254,21 @@ emit user.roles[0]
 
 Lists, maps, calls, and function parameters can be written across multiple lines.
 
-### Imports
+### Uses
 
-Imports are relative to the current file and use Dart-style clauses in a smaller form.
-The `.dob` extension is optional.
+Uses are relative to the current file and use Dart-style clauses in a smaller form.
+The `.nod` extension is optional.
 
-```dobra
-import './lib/format' as fmt
+```nodia
+use './lib/format' as fmt
 
 emit fmt.title
 ```
 
 Without `as`, selected top-level bindings are inserted into the current scope:
 
-```dobra
-import './lib/constants' show title, version
+```nodia
+use './lib/constants' pick title, version
 
 emit title
 emit version
@@ -276,23 +276,23 @@ emit version
 
 You can also hide names:
 
-```dobra
-import './lib/constants' hide internal_token
+```nodia
+use './lib/constants' hide internal_token
 ```
 
-Circular imports are allowed. Dobra caches modules by resolved path and links imported
+Circular uses are allowed. Nodia caches modules by resolved path and links used
 bindings lazily. A cycle only fails if code tries to read a binding before that module has
-initialized it. Imported `let` bindings remain mutable; imported `const` and `fn` bindings are read-only.
+initialized it. Used `var` bindings remain mutable; used `val` and `func` bindings are read-only.
 
 ## IO
 
-Dobra v0.4 supports real file IO through streams.
+Nodia v0.5 supports real file IO through streams.
 
-```dobra
-const src = open("input.txt", "read")
-const out = open("output.txt", "write")
+```nodia
+val src = open("input.txt", "read")
+val out = open("output.txt", "write")
 
-let line = readln(src)
+var line = readln(src)
 while line != null {
   writeln(out, upper(line))
   line = readln(src)
@@ -304,8 +304,8 @@ close(out)
 
 Short file helpers are built on the same IO model:
 
-```dobra
-const text = read("input.txt")
+```nodia
+val text = read("input.txt")
 write("output.txt", upper(text))
 append("output.txt", "\n")
 ```
@@ -313,17 +313,17 @@ append("output.txt", "\n")
 File writes require explicit permission:
 
 ```bash
-dobra run script.dob --allow-write
+nodia run script.nod --allow-write
 ```
 
-Without it, Dobra returns `error[E3001]: file write requires --allow-write`.
+Without it, Nodia returns `error[E3001]: file write requires --allow-write`.
 
 Standard streams are available as values:
 
-```dobra
+```nodia
 writeln(stdout, "ok")
 writeln(stderr, "error")
-const line = readln(stdin)
+val line = readln(stdin)
 ```
 
 ## Standard Library
@@ -389,9 +389,9 @@ Data and conversion:
 ## Reserved Words
 
 ```text
-const let fn return
+val var func return
 if else for in while break continue
-emit import as show hide
+emit use as pick hide
 true false null
 and or not
 ```
@@ -401,7 +401,7 @@ Reserved for future versions:
 ```text
 from match case default
 try catch throw defer
-type enum struct namespace use
+type enum struct namespace
 ```
 
 ## Exit Codes
@@ -419,7 +419,7 @@ type enum struct namespace use
 A local VSCode extension is included at:
 
 ```text
-vscode/dobra-language
+vscode/nodia-language
 ```
 
 Install it from VSCode with:
@@ -428,7 +428,7 @@ Install it from VSCode with:
 Developer: Install Extension from Location...
 ```
 
-Then select the `vscode/dobra-language` folder.
+Then select the `vscode/nodia-language` folder.
 
 ## Project Layout
 
@@ -442,7 +442,7 @@ src/
   lexer.rs      lexer/tokenizer
   lib.rs        public Rust API
   parser.rs     parser
-  project.rs    dobra.toml helpers
+  project.rs    nodia.toml helpers
   runtime.rs    evaluator/runtime
   stdlib.rs     standard library
   token.rs      token definitions

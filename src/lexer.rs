@@ -283,11 +283,11 @@ mod tests {
 
     #[test]
     fn tokenizes_keywords_strings_and_comments() {
-        let tokens = Lexer::new("# hi\nlet name = \"Ana\"\nemit \"Hi {name}\"")
+        let tokens = Lexer::new("# hi\nval name = \"Ana\"\nemit \"Hi {name}\"")
             .tokenize()
             .unwrap();
         assert!(matches!(tokens[0].kind, TokenKind::Comment(_)));
-        assert!(matches!(tokens[2].kind, TokenKind::Let));
+        assert!(matches!(tokens[2].kind, TokenKind::Val));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Emit)));
     }
 }

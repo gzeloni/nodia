@@ -94,16 +94,13 @@ impl Checker {
     }
 
     fn load_module(&mut self, path: &str, base_dir: Option<&Path>) -> DobraResult<ModuleInfo> {
-        let resolved = resolve_import(path, base_dir)?;
+        let resolved = resolve_use(path, base_dir)?;
         if let Some(info) = self.modules.get(&resolved) {
             return Ok(info.clone());
         }
 
         let source = fs::read_to_string(&resolved).map_err(|err| {
-            DobraError::io(format!(
-                "cannot read import '{}': {err}",
-                resolved.display()
-            ))
+            DobraError::io(format!("cannot read use '{}': {err}", resolved.display()))
         })?;
         let tokens = Lexer::new(&source)
             .tokenize()
@@ -175,14 +172,16 @@ impl<'a> State<'a> {
     fn predeclare_top_level(&mut self, program: &Program) -> DobraResult<()> {
         for statement in &program.statements {
             match statement {
-                Stmt::Import {
+                Stmt::Use {
                     path,
                     alias,
-                    show,
+                    pick,
                     hide,
-                } => self.declare_import(path, alias.as_deref(), show, hide)?,
-                Stmt::Let { name, mutable, .. } => self.declare(name, Symbol::unknown(*mutable))?,
-                Stmt::Fn { name, params, .. } => {
+                } => self.declare_use(path, alias.as_deref(), pick, hide)?,
+                Stmt::Bind { name, mutable, .. } => {
+                    self.declare(name, Symbol::unknown(*mutable))?
+                }
+                Stmt::Func { name, params, .. } => {
                     self.declare(name, Symbol::function(params.len(), false))?
                 }
                 _ => {}
@@ -201,18 +200,18 @@ impl<'a> State<'a> {
     fn check_statement(&mut self, statement: &Stmt, mode: ScopeMode) -> DobraResult<()> {
         match statement {
             Stmt::Comment(_) => Ok(()),
-            Stmt::Import {
+            Stmt::Use {
                 path,
                 alias,
-                show,
+                pick,
                 hide,
             } => {
                 if mode != ScopeMode::Top {
-                    self.declare_import(path, alias.as_deref(), show, hide)?;
+                    self.declare_use(path, alias.as_deref(), pick, hide)?;
                 }
                 Ok(())
             }
-            Stmt::Let {
+            Stmt::Bind {
                 name,
                 value,
                 mutable,
@@ -237,14 +236,14 @@ impl<'a> State<'a> {
                 if !symbol.mutable {
                     return Err(self.error_name(
                         "E4101",
-                        format!("cannot assign to const '{name}'"),
+                        format!("cannot assign to val '{name}'"),
                         name,
                     ));
                 }
                 self.check_expr(value)?;
                 self.update_symbol(name, self.symbol_for_expr(value, true))
             }
-            Stmt::Fn { name, params, body } => {
+            Stmt::Func { name, params, body } => {
                 if mode != ScopeMode::Top {
                     self.declare(name, Symbol::function(params.len(), false))?;
                 }
@@ -458,21 +457,21 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    fn declare_import(
+    fn declare_use(
         &mut self,
         path: &str,
         alias: Option<&str>,
-        show: &[String],
+        pick: &[String],
         hide: &[String],
     ) -> DobraResult<()> {
         let module = self.checker.load_module(path, self.base_dir.as_deref())?;
 
         if let Some(alias) = alias {
-            let symbols = self.selected_symbols(&module, show, hide)?;
+            let symbols = self.selected_symbols(&module, pick, hide)?;
             return self.declare(alias, Symbol::namespace(symbols));
         }
 
-        for (name, symbol) in self.selected_symbols(&module, show, hide)? {
+        for (name, symbol) in self.selected_symbols(&module, pick, hide)? {
             self.declare(&name, symbol)?;
         }
         Ok(())
@@ -481,11 +480,11 @@ impl<'a> State<'a> {
     fn selected_symbols(
         &self,
         module: &ModuleInfo,
-        show: &[String],
+        pick: &[String],
         hide: &[String],
     ) -> DobraResult<HashMap<String, Symbol>> {
         let mut selected = HashMap::new();
-        if show.is_empty() {
+        if pick.is_empty() {
             for (name, symbol) in &module.symbols {
                 if !hide.contains(name) {
                     selected.insert(name.clone(), symbol.clone());
@@ -494,11 +493,11 @@ impl<'a> State<'a> {
             return Ok(selected);
         }
 
-        for name in show {
+        for name in pick {
             let Some(symbol) = module.symbols.get(name) else {
                 return Err(self.error_name(
                     "E4104",
-                    format!("import does not export '{name}'"),
+                    format!("use does not expose '{name}'"),
                     name,
                 ));
             };
@@ -667,13 +666,13 @@ impl PositionIndex {
     fn identifier(&self, name: &str) -> Option<(usize, usize)> {
         self.identifiers
             .get(name)
-            .and_then(|positions| positions.last().copied())
+            .and_then(|positions| positions.first().copied())
     }
 
     fn keyword(&self, keyword: &'static str) -> Option<(usize, usize)> {
         self.keywords
             .get(keyword)
-            .and_then(|positions| positions.last().copied())
+            .and_then(|positions| positions.first().copied())
     }
 }
 
@@ -681,14 +680,14 @@ fn declared_exports(program: &Program) -> HashMap<String, Symbol> {
     let mut symbols = HashMap::new();
     for statement in &program.statements {
         match statement {
-            Stmt::Let {
+            Stmt::Bind {
                 name,
                 value,
                 mutable,
             } => {
                 symbols.insert(name.clone(), static_symbol_for_expr(value, *mutable));
             }
-            Stmt::Fn { name, params, .. } => {
+            Stmt::Func { name, params, .. } => {
                 symbols.insert(name.clone(), Symbol::function(params.len(), false));
             }
             _ => {}
@@ -711,7 +710,7 @@ fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     Symbol { mutable, kind }
 }
 
-fn resolve_import(path: &str, base_dir: Option<&Path>) -> DobraResult<PathBuf> {
+fn resolve_use(path: &str, base_dir: Option<&Path>) -> DobraResult<PathBuf> {
     let raw = Path::new(path);
     let joined = if raw.is_absolute() {
         raw.to_path_buf()
@@ -723,8 +722,8 @@ fn resolve_import(path: &str, base_dir: Option<&Path>) -> DobraResult<PathBuf> {
         vec![joined]
     } else {
         vec![
-            joined.with_extension("dob"),
-            joined.join("index.dob"),
+            joined.with_extension("nod"),
+            joined.join("index.nod"),
             joined,
         ]
     };
@@ -733,14 +732,14 @@ fn resolve_import(path: &str, base_dir: Option<&Path>) -> DobraResult<PathBuf> {
         if candidate.exists() {
             return candidate.canonicalize().map_err(|err| {
                 DobraError::io(format!(
-                    "cannot resolve import '{}': {err}",
+                    "cannot resolve use '{}': {err}",
                     candidate.display()
                 ))
             });
         }
     }
 
-    Err(DobraError::io(format!("cannot resolve import '{path}'")))
+    Err(DobraError::io(format!("cannot resolve use '{path}'")))
 }
 
 fn direct_identifier(expr: &Expr) -> Option<&str> {
@@ -754,9 +753,10 @@ fn builtin_arity(name: &str) -> Option<Vec<usize>> {
     let arity = match name {
         "range" | "read" => vec![1, 2],
         "upper" | "uppercase" | "lower" | "lowercase" | "capitalize" | "trim" | "dedent"
-        | "keys" | "values" | "len" | "int" | "float" | "string" | "bool" | "abs" | "floor"
-        | "ceil" | "round" | "sqrt" | "sum" | "avg" | "pop" | "first" | "last" | "reverse"
-        | "sort" | "unique" | "close" | "flush" | "eof" | "readln" => {
+        | "lines" | "unlines" | "words" | "keys" | "values" | "len" | "int" | "float"
+        | "string" | "bool" | "abs" | "floor" | "ceil" | "round" | "sqrt" | "sum" | "avg"
+        | "pop" | "first" | "last" | "reverse" | "sort" | "unique" | "close" | "flush" | "eof"
+        | "readln" => {
             vec![1]
         }
         "replace" | "clamp" | "slice" => vec![3],
@@ -771,9 +771,12 @@ fn builtin_arity(name: &str) -> Option<Vec<usize>> {
 
 fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
     match kind {
-        TokenKind::Let => Some("let"),
-        TokenKind::Const => Some("const"),
-        TokenKind::Fn => Some("fn"),
+        TokenKind::Val => Some("val"),
+        TokenKind::Var => Some("var"),
+        TokenKind::Func => Some("func"),
+        TokenKind::LegacyLet => Some("let"),
+        TokenKind::LegacyConst => Some("const"),
+        TokenKind::LegacyFn => Some("fn"),
         TokenKind::Return => Some("return"),
         TokenKind::Emit => Some("emit"),
         TokenKind::If => Some("if"),
@@ -783,9 +786,11 @@ fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::While => Some("while"),
         TokenKind::Break => Some("break"),
         TokenKind::Continue => Some("continue"),
-        TokenKind::Import => Some("import"),
+        TokenKind::LegacyImport => Some("import"),
+        TokenKind::Use => Some("use"),
         TokenKind::As => Some("as"),
-        TokenKind::Show => Some("show"),
+        TokenKind::Pick => Some("pick"),
+        TokenKind::LegacyShow => Some("show"),
         TokenKind::Hide => Some("hide"),
         _ => None,
     }
@@ -798,4 +803,36 @@ fn semantic(
 ) -> DobraError {
     let (line, column) = position.unwrap_or((0, 0));
     DobraError::semantic_at(message, line, column).with_code(code)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::check_source;
+
+    #[test]
+    fn checker_accepts_text_builtins() {
+        let source = r#"emit len(lines("a
+b"))
+emit unlines(["up", "down"])
+emit len(words("one  two   three"))
+"#;
+
+        assert!(check_source(source).is_ok());
+    }
+
+    #[test]
+    fn checker_reports_first_identifier_occurrence() {
+        let err = check_source("emit missing()\nemit missing()\n").unwrap_err();
+
+        assert_eq!(err.code, "E4100");
+        assert_eq!((err.line, err.column), (1, 6));
+    }
+
+    #[test]
+    fn checker_reports_first_keyword_occurrence() {
+        let err = check_source("return\nreturn\n").unwrap_err();
+
+        assert_eq!(err.code, "E4103");
+        assert_eq!((err.line, err.column), (1, 1));
+    }
 }

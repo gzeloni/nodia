@@ -8,13 +8,13 @@ pub struct Program {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Comment(String),
-    Import {
+    Use {
         path: String,
         alias: Option<String>,
-        show: Vec<String>,
+        pick: Vec<String>,
         hide: Vec<String>,
     },
-    Let {
+    Bind {
         name: String,
         value: Expr,
         mutable: bool,
@@ -23,7 +23,7 @@ pub enum Stmt {
         name: String,
         value: Expr,
     },
-    Fn {
+    Func {
         name: String,
         params: Vec<String>,
         body: Vec<Stmt>,

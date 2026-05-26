@@ -1,5 +1,5 @@
-use dobra::project;
-use dobra::{
+use nodia::project;
+use nodia::{
     check_file, format_source, lex_source, parse_source, run_file_with_options,
     run_source_with_options, RuntimeOptions, Value,
 };
@@ -385,7 +385,7 @@ fn tokens_command(mut args: Vec<String>, options: &mut Options) -> Result<(), Cl
     parse_command_flags(&mut args, options)?;
     let path = args
         .first()
-        .ok_or_else(|| CliError::usage("tokens expects a .dob path"))?;
+        .ok_or_else(|| CliError::usage("tokens expects a .nod path"))?;
     let source = fs::read_to_string(path)
         .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
     let tokens =
@@ -404,7 +404,7 @@ fn ast_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     parse_command_flags(&mut args, options)?;
     let path = args
         .first()
-        .ok_or_else(|| CliError::usage("ast expects a .dob path"))?;
+        .ok_or_else(|| CliError::usage("ast expects a .nod path"))?;
     let source = fs::read_to_string(path)
         .map_err(|err| CliError::io(format!("cannot read '{path}': {err}")))?;
     let program =
@@ -434,7 +434,7 @@ fn init_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliE
             json_escape(&dir.display().to_string())
         );
     } else if !options.quiet {
-        println!("created Dobra project at {}", dir.display());
+        println!("created Nodia project at {}", dir.display());
     }
     Ok(())
 }
@@ -446,11 +446,11 @@ fn version_command(mut args: Vec<String>, options: &mut Options) -> Result<(), C
     }
     if options.json {
         println!(
-            "{{\"name\":\"dobra\",\"version\":\"{}\",\"rust_std_only\":true}}",
+            "{{\"name\":\"nodia\",\"version\":\"{}\",\"rust_std_only\":true}}",
             env!("CARGO_PKG_VERSION")
         );
     } else {
-        println!("dobra {}", env!("CARGO_PKG_VERSION"));
+        println!("nodia {}", env!("CARGO_PKG_VERSION"));
     }
     Ok(())
 }
@@ -468,7 +468,7 @@ fn resolve_entry(path: Option<&str>) -> Result<PathBuf, CliError> {
     let cwd = env::current_dir()
         .map_err(|err| CliError::io(format!("cannot read current dir: {err}")))?;
     let config = project::find_project_config(&cwd)
-        .ok_or_else(|| CliError::usage("missing .dob path and no dobra.toml found"))?;
+        .ok_or_else(|| CliError::usage("missing .nod path and no nodia.toml found"))?;
     let config = project::read_project_config(&config)
         .map_err(|err| CliError::io(format!("cannot read project config: {err}")))?;
     Ok(config.entry)
@@ -492,7 +492,7 @@ fn collect_dob_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliE
             }
             if path.is_dir() {
                 collect_dob_files(&path, files)?;
-            } else if path.extension().is_some_and(|ext| ext == "dob") {
+            } else if path.extension().is_some_and(|ext| ext == "nod") {
                 files.push(path);
             }
         }
@@ -505,11 +505,11 @@ fn collect_dob_files(target: &Path, files: &mut Vec<PathBuf>) -> Result<(), CliE
 }
 
 fn ensure_dob(path: &Path) -> Result<(), CliError> {
-    if path.extension().is_some_and(|ext| ext == "dob") {
+    if path.extension().is_some_and(|ext| ext == "nod") {
         Ok(())
     } else {
         Err(CliError::usage(format!(
-            "invalid file extension for '{}'; expected .dob",
+            "invalid file extension for '{}'; expected .nod",
             path.display()
         )))
     }
@@ -638,7 +638,7 @@ fn unquote(value: &str) -> String {
     }
 }
 
-fn tokens_json(tokens: &[dobra::Token]) -> String {
+fn tokens_json(tokens: &[nodia::Token]) -> String {
     let mut out = String::from("{\"ok\":true,\"tokens\":[");
     for (index, token) in tokens.iter().enumerate() {
         if index > 0 {
@@ -687,7 +687,7 @@ fn json_escape(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Dobra {}\n\nUsage:\n  dobra run [file.dob] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write]\n  dobra check [file.dob] [--json]\n  dobra fmt [file.dob|dir] [--check] [--stdout]\n  dobra eval 'emit \"hello\"'\n  dobra tokens file.dob [--json]\n  dobra ast file.dob [--json]\n  dobra init [dir]\n  dobra version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --allow-write\n  --help\n  --version",
+        "Nodia {}\n\nUsage:\n  nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write]\n  nodia check [file.nod] [--json]\n  nodia fmt [file.nod|dir] [--check] [--stdout]\n  nodia eval 'emit \"hello\"'\n  nodia tokens file.nod [--json]\n  nodia ast file.nod [--json]\n  nodia init [dir]\n  nodia version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --allow-write\n  --help\n  --version",
         env!("CARGO_PKG_VERSION")
     );
 }

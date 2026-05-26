@@ -1,6 +1,6 @@
-# Dobra Language for VSCode
+# Nodia Language for VSCode
 
-Local VSCode language support for `.dob` files.
+Local VSCode language support for `.nod` files.
 
 ## Install Locally
 
@@ -9,12 +9,12 @@ Local VSCode language support for `.dob` files.
 3. Select this folder:
 
 ```text
-vscode/dobra-language
+vscode/nodia-language
 ```
 
 ## Supported
 
-- `.dob` file association
+- `.nod` file association
 - Core and future reserved words
 - Strings and triple strings
 - `{expr}` interpolation inside strings

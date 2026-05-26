@@ -1,23 +1,23 @@
-# Dobra Technical Evolution Roadmap
+# Nodia Technical Evolution Roadmap
 
-This document defines the technical direction for Dobra after v0.3. It is not a
-feature wishlist. It is the engineering path required to evolve Dobra from its
+This document defines the technical direction for Nodia after v0.3. It is not a
+feature wishlist. It is the engineering path required to evolve Nodia from its
 current interpreter-oriented implementation into a statically checked,
 predictable, self-hosted language with a credible path toward high-integrity and
 certifiable software development.
 
-Dobra's long-term objective is to be simple at the source level and rigorous
+Nodia's long-term objective is to be simple at the source level and rigorous
 under the surface. The language should remain approachable to non-specialists,
 but its implementation, semantics, tooling, and runtime model must be designed
 with the discipline expected from serious production languages.
 
-The first major milestone is self-hosting: a Dobra compiler written in Dobra
+The first major milestone is self-hosting: a Nodia compiler written in Nodia
 must be able to compile itself and produce reproducible equivalent artifacts
 across bootstrap stages.
 
 ## 1. Language Thesis
 
-Dobra is a statically checked, safe, high-level language for textual automation,
+Nodia is a statically checked, safe, high-level language for textual automation,
 mathematical work, structured data transformation, tooling, and eventually
 high-integrity software subsets.
 
@@ -35,13 +35,13 @@ The language should optimize for:
 - self-contained static executables;
 - a future certifiable subset suitable for safety-critical domains.
 
-Dobra should not optimize for syntactic cleverness, implicit context, dynamic
+Nodia should not optimize for syntactic cleverness, implicit context, dynamic
 metaprogramming, runtime magic, or compatibility with existing scripting language
 habits when those habits weaken predictability.
 
 ## 2. Non-Negotiable Semantic Properties
 
-Dobra must define all observable behavior. A valid Dobra program may fail with a
+Nodia must define all observable behavior. A valid Nodia program may fail with a
 well-defined diagnostic or runtime error, but it must not enter undefined
 behavior.
 
@@ -62,7 +62,7 @@ Required properties:
 
 ## 3. Memory Model
 
-Dobra should not rely on a tracing garbage collector as a core language
+Nodia should not rely on a tracing garbage collector as a core language
 requirement. The memory model must be deterministic enough to support static
 analysis, predictable resource usage, and high-integrity profiles.
 
@@ -72,7 +72,7 @@ where appropriate.
 
 The user-facing model should remain simple:
 
-```dob
+```nod
 val text = read("input.txt")
 val rows = lines(text)
 val result = transform(rows)
@@ -96,13 +96,13 @@ be statically bounded or proven acceptable.
 
 ## 4. Language Profiles
 
-Dobra should support multiple profiles instead of forcing one execution model for
+Nodia should support multiple profiles instead of forcing one execution model for
 all programs.
 
 | Profile | Purpose | Characteristics |
 |---|---|---|
 | `script` | Everyday automation and REPL usage. | Broad standard library, IO available, dynamic conveniences where still statically checked. |
-| `core` | General Dobra programs. | Static types, modules, effects, deterministic semantics. |
+| `core` | General Nodia programs. | Static types, modules, effects, deterministic semantics. |
 | `safe` | High-assurance application code. | Restricted effects, stronger checks, no uncontrolled allocation or concurrency. |
 | `flight` | Certifiable subset. | Bounded memory, explicit effects, formal contracts, traceable artifacts, restricted runtime. |
 
@@ -112,9 +112,9 @@ profiles unless profile-specific target constraints apply.
 
 ## 5. Syntax Direction
 
-Dobra's current syntax is serviceable, but it carries too many habits from
+Nodia's current syntax is serviceable, but it carries too many habits from
 Python-like languages. Future syntax should preserve approachability while giving
-Dobra its own identity.
+Nodia its own identity.
 
 Preferred direction:
 
@@ -123,10 +123,10 @@ Preferred direction:
 | Immutable binding | `val` |
 | Mutable binding | `var` |
 | Function | `func` |
-| Module import | `use` |
+| Module use | `use` |
 | Namespace alias | `as` |
-| Selective import | `pick` |
-| Exclusion import | `hide` |
+| Selective use | `pick` |
+| Exclusion use | `hide` |
 | Output | `emit` |
 | Pattern branch | `match` / `case` |
 | Optional value | `T?` |
@@ -135,7 +135,7 @@ Preferred direction:
 
 Example target style:
 
-```dob
+```nod
 use "./stats" as stats
 use "./text" pick title, slug
 
@@ -160,7 +160,7 @@ canonically should not be accepted.
 
 ## 6. Type System
 
-Dobra must move from runtime-shaped values toward a static type system with local
+Nodia must move from runtime-shaped values toward a static type system with local
 inference.
 
 Initial type universe:
@@ -191,7 +191,7 @@ Rules:
 
 ## 7. Effects And IO
 
-IO must be real, stream-capable, and statically visible. Dobra should not hide
+IO must be real, stream-capable, and statically visible. Nodia should not hide
 side effects behind ordinary-looking pure functions.
 
 The compiler should eventually track effects such as:
@@ -209,7 +209,7 @@ The compiler should eventually track effects such as:
 
 A possible function signature direction:
 
-```dob
+```nod
 func copy(input: Path, output: Path) -> Result<Int, IoError>
   effects fs.read, fs.write
 end
@@ -221,7 +221,7 @@ interfaces.
 
 ## 8. Error Model
 
-Errors must be typed and explicit. Dobra should avoid unchecked exception-style
+Errors must be typed and explicit. Nodia should avoid unchecked exception-style
 control flow as the primary model.
 
 The error model should support:
@@ -251,18 +251,18 @@ Modules must be deterministic, resilient, and suitable for large projects.
 
 Requirements:
 
-- imports are resolved from the importing file;
-- package imports are resolved through `dobra.toml`;
-- import cycles are allowed only where semantically safe;
+- uses are resolved from the source file containing the use;
+- package uses are resolved through `nodia.toml`;
+- use cycles are allowed only where semantically safe;
 - declaration cycles and initialization cycles are distinct;
-- imported names are explicit;
-- namespace imports are preferred for larger modules;
+- used names are explicit;
+- namespace uses are preferred for larger modules;
 - module initialization order is defined;
 - build graphs are reproducible.
 
 Target syntax:
 
-```dob
+```nod
 use "./parser" as parser
 use "./token" pick Token, TokenKind
 use "./internal" hide debug_only
@@ -299,12 +299,12 @@ The IR must be:
 - independent from parser implementation details;
 - suitable for bytecode generation;
 - suitable for future native code generation;
-- simple enough to be emitted by a compiler written in Dobra.
+- simple enough to be emitted by a compiler written in Nodia.
 
 ## 11. Runtime And Distribution
 
-Dobra should produce self-contained static binaries where supported by the target
-platform. Running a Dobra program should not require a C runtime as an external
+Nodia should produce self-contained static binaries where supported by the target
+platform. Running a Nodia program should not require a C runtime as an external
 language-level dependency.
 
 Runtime responsibilities:
@@ -349,23 +349,23 @@ Required commands:
 
 | Command | Purpose |
 |---|---|
-| `dobra run` | Compile and execute a source file. |
-| `dobra build` | Produce an artifact. |
-| `dobra check` | Parse, resolve, type-check, and effect-check. |
-| `dobra fmt` | Apply canonical formatting. |
-| `dobra test` | Run tests. |
-| `dobra repl` | Start the interactive environment. |
-| `dobra doc` | Generate documentation. |
-| `dobra pkg` | Package management operations. |
-| `dobra lsp` | Language server entrypoint. |
-| `dobra ir` | Emit compiler IR for debugging and tests. |
+| `nodia run` | Compile and execute a source file. |
+| `nodia build` | Produce an artifact. |
+| `nodia check` | Parse, resolve, type-check, and effect-check. |
+| `nodia fmt` | Apply canonical formatting. |
+| `nodia test` | Run tests. |
+| `nodia repl` | Start the interactive environment. |
+| `nodia doc` | Generate documentation. |
+| `nodia pkg` | Package management operations. |
+| `nodia lsp` | Language server entrypoint. |
+| `nodia ir` | Emit compiler IR for debugging and tests. |
 
 The formatter must remain non-configurable. The checker must become fast enough
 to be used continuously by editors.
 
 ## 14. Mathematical Direction
 
-Dobra should become strong in practical mathematics without becoming a large
+Nodia should become strong in practical mathematics without becoming a large
 scientific framework by default.
 
 Core direction:
@@ -385,7 +385,7 @@ readability, deterministic formatting, and defined behavior.
 
 ## 15. Text Direction
 
-Text is a primary domain for Dobra. Unicode behavior must be explicit and stable.
+Text is a primary domain for Nodia. Unicode behavior must be explicit and stable.
 
 Required direction:
 
@@ -401,7 +401,7 @@ Text APIs must be short, technical, and predictable.
 
 ## 16. High-Integrity And Certification Path
 
-Dobra cannot declare itself certified. It can be designed to support certification
+Nodia cannot declare itself certified. It can be designed to support certification
 efforts by producing evidence and by restricting programs to analyzable subsets.
 
 The long-term high-integrity path should align with ideas used by safety-critical
@@ -450,10 +450,10 @@ Exit criterion: all implemented behavior has a documented language-level rule.
 - Introduce the target syntax direction: `val`, `var`, `func`, `use`.
 - Keep compatibility shims for current syntax where reasonable.
 - Define reserved words for the next language era.
-- Remove Python-like decisions that do not fit Dobra's identity.
+- Remove Python-like decisions that do not fit Nodia's identity.
 - Update formatter and diagnostics for the revised syntax.
 
-Exit criterion: new code can be written in the Dobra identity without depending
+Exit criterion: new code can be written in the Nodia identity without depending
 on legacy syntax.
 
 ### v0.6: Static Type System
@@ -480,7 +480,7 @@ Exit criterion: IO-heavy programs can be safe without a global garbage collector
 
 ### v0.8: Module Graph And Package Manifest
 
-- Make `dobra.toml` a real package manifest.
+- Make `nodia.toml` a real package manifest.
 - Implement deterministic module resolution.
 - Separate declaration cycles from initialization cycles.
 - Add package-level build graph validation.
@@ -506,7 +506,7 @@ computes.
 - Support imports, multiline definitions, and diagnostics recovery.
 - Add inspection commands for types, formatting, and IR.
 
-Exit criterion: the REPL behaves like an incremental Dobra project, not a
+Exit criterion: the REPL behaves like an incremental Nodia project, not a
 separate interpreter mode.
 
 ### v0.11: Canonical IR
@@ -515,13 +515,13 @@ separate interpreter mode.
 - Lower typed AST into IR.
 - Add textual IR snapshots.
 - Implement conservative IR validation.
-- Make IR simple enough to generate from Dobra later.
+- Make IR simple enough to generate from Nodia later.
 
 Exit criterion: execution no longer depends directly on AST walking.
 
 ### v0.12: Bytecode And VM
 
-- Define Dobra bytecode.
+- Define Nodia bytecode.
 - Implement a deterministic VM.
 - Compile IR to bytecode.
 - Link modules into bytecode artifacts.
@@ -536,7 +536,7 @@ Exit criterion: bytecode is the primary execution format.
 - Add reproducible artifact hashing.
 - Add release-mode checks for determinism.
 
-Exit criterion: Dobra programs can be distributed without requiring the source
+Exit criterion: Nodia programs can be distributed without requiring the source
 tree or host language toolchain.
 
 ### v0.14: Mathematical Core
@@ -557,7 +557,7 @@ checked.
 - Add structured templates.
 - Add text-focused diagnostics and tests.
 
-Exit criterion: Dobra becomes excellent at text without relying on ad hoc string
+Exit criterion: Nodia becomes excellent at text without relying on ad hoc string
 behavior.
 
 ### v0.16: `safe` Profile
@@ -579,44 +579,44 @@ Exit criterion: a meaningful subset can be audited and reasoned about statically
 - Add traceability metadata.
 - Add deterministic build reports.
 
-Exit criterion: Dobra can produce the kinds of artifacts a high-integrity process
+Exit criterion: Nodia can produce the kinds of artifacts a high-integrity process
 would need, even before full certification maturity.
 
-### v0.18: Compiler In Dobra, Stage 1
+### v0.18: Compiler In Nodia, Stage 1
 
-- Implement lexer in Dobra.
-- Implement parser in Dobra.
-- Define Dobra-native AST structures.
-- Compare Rust compiler AST against Dobra compiler AST.
+- Implement lexer in Nodia.
+- Implement parser in Nodia.
+- Define Nodia-native AST structures.
+- Compare Rust compiler AST against Nodia compiler AST.
 - Run the official corpus through both implementations.
 
-Exit criterion: Dobra can parse itself using code written in Dobra.
+Exit criterion: Nodia can parse itself using code written in Nodia.
 
-### v0.19: Compiler In Dobra, Stage 2
+### v0.19: Compiler In Nodia, Stage 2
 
-- Implement module resolution in Dobra.
-- Implement name resolution in Dobra.
-- Implement type checking in Dobra.
-- Implement effect checking in Dobra.
-- Emit canonical IR from Dobra.
+- Implement module resolution in Nodia.
+- Implement name resolution in Nodia.
+- Implement type checking in Nodia.
+- Implement effect checking in Nodia.
+- Emit canonical IR from Nodia.
 
-Exit criterion: Dobra compiler code can produce the same checked IR as the host
+Exit criterion: Nodia compiler code can produce the same checked IR as the host
 compiler for the official corpus.
 
-### v0.20: Compiler In Dobra, Stage 3
+### v0.20: Compiler In Nodia, Stage 3
 
-- Implement IR validation in Dobra.
-- Implement bytecode generation in Dobra.
-- Implement module linking in Dobra.
-- Build real projects with the Dobra compiler.
+- Implement IR validation in Nodia.
+- Implement bytecode generation in Nodia.
+- Implement module linking in Nodia.
+- Build real projects with the Nodia compiler.
 
-Exit criterion: a compiler written in Dobra can compile Dobra programs to
+Exit criterion: a compiler written in Nodia can compile Nodia programs to
 bytecode.
 
 ### v0.21: Bootstrap
 
-- Use the host compiler to compile the Dobra compiler.
-- Use the resulting compiler to compile the Dobra compiler again.
+- Use the host compiler to compile the Nodia compiler.
+- Use the resulting compiler to compile the Nodia compiler again.
 - Compare stage artifacts.
 - Require deterministic equivalent output.
 - Document the bootstrap chain.
@@ -626,22 +626,22 @@ artifacts.
 
 ### v1.0: First Self-Hosted Release
 
-- Make the Dobra compiler the official compiler implementation.
+- Make the Nodia compiler the official compiler implementation.
 - Keep the previous host compiler as a reference and recovery path.
 - Publish the bootstrap process.
 - Publish language, IR, bytecode, and runtime specifications.
 - Freeze compatibility expectations for the v1 series.
 
-Exit criterion: Dobra is self-hosted and has a stable language contract.
+Exit criterion: Nodia is self-hosted and has a stable language contract.
 
 ## 18. Bootstrap Definition
 
-Dobra reaches the end of its first stage when this chain works reliably:
+Nodia reaches the end of its first stage when this chain works reliably:
 
 ```text
 host compiler
-  -> compiles compiler written in Dobra
-    -> generated compiler compiles compiler written in Dobra
+  -> compiles compiler written in Nodia
+    -> generated compiler compiles compiler written in Nodia
       -> generated compiler artifact is reproducibly equivalent
 ```
 

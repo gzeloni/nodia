@@ -1,8 +1,8 @@
-# Dobra AST Schema v0.4
+# Nodia AST Schema v0.5
 
-This document defines the public AST schema for the Dobra v0.4 baseline. It is a
+This document defines the public AST schema for the Nodia v0.5 baseline. It is a
 human-readable schema derived from the implementation. The AST is not yet a
-stable serialized format, but its shape is part of the v0.4 language baseline.
+stable serialized format, but its shape is part of the v0.5 language baseline.
 
 ## Program
 
@@ -24,39 +24,39 @@ Comment(text: String)
 
 Represents a source line comment without the comment prefix.
 
-### Import
+### Use
 
 ```text
-Import {
+Use {
   path: String,
   alias: Option<String>,
-  show: Vec<String>,
+  pick: Vec<String>,
   hide: Vec<String>
 }
 ```
 
-Represents one import declaration.
+Represents one use declaration.
 
-```dob
-import "./lib" as lib show title hide internal
+```nod
+use "./lib" as lib pick title hide internal
 ```
 
-### Let
+### Bind
 
 ```text
-Let {
+Bind {
   name: String,
   value: Expr,
   mutable: Bool
 }
 ```
 
-Represents both `let` and `const`.
+Represents both `var` and `val`.
 
 | Source | AST field |
 |---|---|
-| `let` | `mutable: true` |
-| `const` | `mutable: false` |
+| `var` | `mutable: true` |
+| `val` | `mutable: false` |
 
 ### Assign
 
@@ -69,17 +69,17 @@ Assign {
 
 Represents assignment to an existing binding.
 
-### Fn
+### Func
 
 ```text
-Fn {
+Func {
   name: String,
   params: Vec<String>,
   body: Vec<Stmt>
 }
 ```
 
-Represents a function declaration.
+Represents a `func` declaration.
 
 ### Return
 
@@ -95,7 +95,7 @@ Return(Option<Expr>)
 Emit(Expr)
 ```
 
-Represents output through the Dobra output channel.
+Represents output through the Nodia output channel.
 
 ### If
 

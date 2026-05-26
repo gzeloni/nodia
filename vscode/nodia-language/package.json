@@ -1,0 +1,36 @@
+{
+  "name": "nodia-language",
+  "displayName": "Nodia Language",
+  "description": "Syntax highlighting and editor configuration for Nodia files.",
+  "version": "0.5.0",
+  "publisher": "nodia",
+  "license": "GPL-3.0-or-later",
+  "engines": {
+    "vscode": "^1.80.0"
+  },
+  "categories": [
+    "Programming Languages"
+  ],
+  "contributes": {
+    "languages": [
+      {
+        "id": "nodia",
+        "aliases": [
+          "Nodia",
+          "nodia"
+        ],
+        "extensions": [
+          ".nod"
+        ],
+        "configuration": "./language-configuration.json"
+      }
+    ],
+    "grammars": [
+      {
+        "language": "nodia",
+        "scopeName": "source.nodia",
+        "path": "./syntaxes/nodia.tmLanguage.json"
+      }
+    ]
+  }
+}

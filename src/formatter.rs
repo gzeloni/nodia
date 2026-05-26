@@ -40,35 +40,35 @@ impl Formatter {
                     self.out.push_str(text.trim());
                 }
             }
-            Stmt::Import {
+            Stmt::Use {
                 path,
                 alias,
-                show,
+                pick,
                 hide,
             } => {
                 self.write_indent();
-                self.out.push_str("import ");
+                self.out.push_str("use ");
                 self.out.push_str(&quote_string(path));
                 if let Some(alias) = alias {
                     self.out.push_str(" as ");
                     self.out.push_str(alias);
                 }
-                if !show.is_empty() {
-                    self.out.push_str(" show ");
-                    self.out.push_str(&show.join(", "));
+                if !pick.is_empty() {
+                    self.out.push_str(" pick ");
+                    self.out.push_str(&pick.join(", "));
                 }
                 if !hide.is_empty() {
                     self.out.push_str(" hide ");
                     self.out.push_str(&hide.join(", "));
                 }
             }
-            Stmt::Let {
+            Stmt::Bind {
                 name,
                 value,
                 mutable,
             } => {
                 self.write_indent();
-                let prefix = format!("{}{} = ", if *mutable { "let " } else { "const " }, name);
+                let prefix = format!("{}{} = ", if *mutable { "var " } else { "val " }, name);
                 self.out.push_str(&prefix);
                 self.out
                     .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
@@ -80,7 +80,7 @@ impl Formatter {
                 self.out
                     .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
             }
-            Stmt::Fn { name, params, body } => {
+            Stmt::Func { name, params, body } => {
                 self.write_function(name, params, body);
             }
             Stmt::Return(Some(expr)) => {
@@ -145,14 +145,14 @@ impl Formatter {
 
     fn write_function(&mut self, name: &str, params: &[String], body: &[Stmt]) {
         self.write_indent();
-        let inline = format!("fn {name}({}) ", params.join(", "));
+        let inline = format!("func {name}({}) ", params.join(", "));
         if current_line_width(self.indent) + inline.len() <= LINE_WIDTH {
             self.out.push_str(&inline);
             self.write_block(body);
             return;
         }
 
-        self.out.push_str("fn ");
+        self.out.push_str("func ");
         self.out.push_str(name);
         self.out.push_str("(\n");
         self.indent += 1;
@@ -224,10 +224,10 @@ fn needs_blank_line(prev: &Stmt, next: &Stmt) -> bool {
     }
     matches!(
         prev,
-        Stmt::Fn { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
+        Stmt::Func { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
     ) || matches!(
         next,
-        Stmt::Fn { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
+        Stmt::Func { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
     )
 }
 
@@ -342,8 +342,8 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
             format_map(&pairs, indent)
         }
         Value::Stream(stream) => stream.to_string(),
-        Value::ImportBinding(_, name) => format!("<import {name}>"),
-        Value::Function(_) => "<fn>".to_string(),
+        Value::UseBinding(_, name) => format!("<use {name}>"),
+        Value::Function(_) => "<func>".to_string(),
     }
 }
 
@@ -412,6 +412,7 @@ fn format_map(pairs: &[(String, Expr)], indent: usize) -> String {
     out.push('}');
     out
 }
+
 
 fn format_string_literal(value: &str, indent: usize, width: usize) -> String {
     if value.contains('\n') {
@@ -522,11 +523,12 @@ mod tests {
 
     #[test]
     fn formats_basic_program() {
-        let source = "const user={name:\"Ana\",role:\"dev\"}\nif user.name!=\"\"{emit \"hello {user.name}\"}";
+        let source =
+            "val user={name:\"Ana\",role:\"dev\"}\nif user.name!=\"\"{emit \"hello {user.name}\"}";
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
         let formatted = format_program(&program);
-        assert!(formatted.contains("const user = {"));
+        assert!(formatted.contains("val user = {"));
         assert!(formatted.contains("if user.name != \"\" {"));
     }
 

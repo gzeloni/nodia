@@ -146,16 +146,16 @@ impl Runtime {
     fn execute(&mut self, statement: &Stmt) -> DobraResult<Flow> {
         match statement {
             Stmt::Comment(_) => Ok(Flow::None),
-            Stmt::Import {
+            Stmt::Use {
                 path,
                 alias,
-                show,
+                pick,
                 hide,
             } => {
-                self.execute_import(path, alias.as_deref(), show, hide)?;
+                self.execute_use(path, alias.as_deref(), pick, hide)?;
                 Ok(Flow::None)
             }
-            Stmt::Let {
+            Stmt::Bind {
                 name,
                 value,
                 mutable,
@@ -169,7 +169,7 @@ impl Runtime {
                 self.assign(name, value)?;
                 Ok(Flow::None)
             }
-            Stmt::Fn { name, params, body } => {
+            Stmt::Func { name, params, body } => {
                 self.define(
                     name,
                     Value::Function(Function {
@@ -259,28 +259,28 @@ impl Runtime {
         }
     }
 
-    fn execute_import(
+    fn execute_use(
         &mut self,
         path: &str,
         alias: Option<&str>,
-        show: &[String],
+        pick: &[String],
         hide: &[String],
     ) -> DobraResult<()> {
-        let resolved = self.resolve_import(path)?;
+        let resolved = self.resolve_use(path)?;
         let module = self.load_module(&resolved)?;
-        let names = self.selected_import_names(&module, show, hide)?;
+        let names = self.selected_use_names(&module, pick, hide)?;
 
         if let Some(alias) = alias {
             let mut namespace = BTreeMap::new();
             for name in names {
-                namespace.insert(name.clone(), Value::ImportBinding(module.clone(), name));
+                namespace.insert(name.clone(), Value::UseBinding(module.clone(), name));
             }
             self.define(alias, Value::Map(namespace), false)
         } else {
             for name in names {
                 self.define(
                     &name,
-                    Value::ImportBinding(module.clone(), name.clone()),
+                    Value::UseBinding(module.clone(), name.clone()),
                     false,
                 )?;
             }
@@ -294,10 +294,7 @@ impl Runtime {
         }
 
         let source = fs::read_to_string(resolved).map_err(|err| {
-            DobraError::io(format!(
-                "cannot read import '{}': {err}",
-                resolved.display()
-            ))
+            DobraError::io(format!("cannot read use '{}': {err}", resolved.display()))
         })?;
         let tokens = Lexer::new(&source)
             .tokenize()
@@ -336,10 +333,10 @@ impl Runtime {
         Ok(module)
     }
 
-    fn selected_import_names(
+    fn selected_use_names(
         &self,
         module: &ModuleRef,
-        show: &[String],
+        pick: &[String],
         hide: &[String],
     ) -> DobraResult<Vec<String>> {
         let module = module.borrow();
@@ -349,25 +346,25 @@ impl Runtime {
             module.declared.clone()
         };
 
-        let mut names = if show.is_empty() {
+        let mut names = if pick.is_empty() {
             all.clone()
         } else {
-            for name in show {
+            for name in pick {
                 if !all.contains(name) {
                     return Err(DobraError::runtime(format!(
-                        "import '{}' does not export '{name}'",
+                        "use '{}' does not expose '{name}'",
                         module.path.display()
                     )));
                 }
             }
-            show.to_vec()
+            pick.to_vec()
         };
 
         names.retain(|name| !hide.contains(name));
         Ok(names)
     }
 
-    fn resolve_import(&self, path: &str) -> DobraResult<PathBuf> {
+    fn resolve_use(&self, path: &str) -> DobraResult<PathBuf> {
         let raw = Path::new(path);
         let joined = if raw.is_absolute() {
             raw.to_path_buf()
@@ -382,8 +379,8 @@ impl Runtime {
             vec![joined]
         } else {
             vec![
-                joined.with_extension("dob"),
-                joined.join("index.dob"),
+                joined.with_extension("nod"),
+                joined.join("index.nod"),
                 joined,
             ]
         };
@@ -392,14 +389,14 @@ impl Runtime {
             if candidate.exists() {
                 return candidate.canonicalize().map_err(|err| {
                     DobraError::io(format!(
-                        "cannot resolve import '{}': {err}",
+                        "cannot resolve use '{}': {err}",
                         candidate.display()
                     ))
                 });
             }
         }
 
-        Err(DobraError::io(format!("cannot resolve import '{path}'")))
+        Err(DobraError::io(format!("cannot resolve use '{path}'")))
     }
 
     fn publish_statement(&mut self, statement: &Stmt) -> DobraResult<()> {
@@ -522,9 +519,9 @@ impl Runtime {
 
     fn resolve_value(&self, value: Value) -> DobraResult<Value> {
         match value {
-            Value::ImportBinding(module, name) => {
+            Value::UseBinding(module, name) => {
                 module.borrow().exports.get(&name).cloned().ok_or_else(|| {
-                    DobraError::runtime(format!("imported binding '{name}' is not initialized yet"))
+                    DobraError::runtime(format!("used binding '{name}' is not initialized yet"))
                 })
             }
             other => Ok(other),
@@ -1022,12 +1019,12 @@ impl Runtime {
     fn assign(&mut self, name: &str, value: Value) -> DobraResult<()> {
         for scope in self.scopes.iter_mut().rev() {
             if let Some(binding) = scope.get_mut(name) {
-                if let Value::ImportBinding(module, export_name) = binding.value.clone() {
-                    return assign_import_binding(module, &export_name, value);
+                if let Value::UseBinding(module, export_name) = binding.value.clone() {
+                    return assign_use_binding(module, &export_name, value);
                 }
                 if !binding.mutable {
                     return Err(DobraError::runtime(format!(
-                        "cannot assign to const '{name}'"
+                        "cannot assign to val '{name}'"
                     )));
                 }
                 binding.value = value;
@@ -1056,8 +1053,8 @@ fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
         .statements
         .iter()
         .filter_map(|statement| match statement {
-            Stmt::Let { name, mutable, .. } => Some((name.clone(), *mutable)),
-            Stmt::Fn { name, .. } => Some((name.clone(), false)),
+            Stmt::Bind { name, mutable, .. } => Some((name.clone(), *mutable)),
+            Stmt::Func { name, .. } => Some((name.clone(), false)),
             _ => None,
         })
         .collect()
@@ -1065,22 +1062,22 @@ fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
 
 fn statement_export_name(statement: &Stmt) -> Option<&str> {
     match statement {
-        Stmt::Let { name, .. } | Stmt::Fn { name, .. } | Stmt::Assign { name, .. } => Some(name),
+        Stmt::Bind { name, .. } | Stmt::Func { name, .. } | Stmt::Assign { name, .. } => Some(name),
         _ => None,
     }
 }
 
-fn assign_import_binding(module: ModuleRef, name: &str, value: Value) -> DobraResult<()> {
+fn assign_use_binding(module: ModuleRef, name: &str, value: Value) -> DobraResult<()> {
     let mut module = module.borrow_mut();
     let mutable = module.mutability.get(name).copied().unwrap_or(false);
     if !mutable {
         return Err(DobraError::runtime(format!(
-            "cannot assign to const '{name}'"
+            "cannot assign to val '{name}'"
         )));
     }
     if !module.exports.contains_key(name) {
         return Err(DobraError::runtime(format!(
-            "imported binding '{name}' is not initialized yet"
+            "used binding '{name}' is not initialized yet"
         )));
     }
     module.exports.insert(name.to_string(), value);
@@ -1123,22 +1120,22 @@ mod tests {
     fn emits_interpolated_input() {
         let mut input = BTreeMap::new();
         input.insert("name".to_string(), Value::String("Ana".to_string()));
-        let output = run_source("let name = input.name\nemit \"Hello, {name}\"", input).unwrap();
+        let output = run_source("val name = input.name\nemit \"Hello, {name}\"", input).unwrap();
         assert_eq!(output, "Hello, Ana");
     }
 
     #[test]
-    fn imported_functions_keep_module_bindings() {
-        let dir = std::env::temp_dir().join(format!("dobra-import-capture-{}", std::process::id()));
+    fn used_functions_keep_module_bindings() {
+        let dir = std::env::temp_dir().join(format!("nodia-use-capture-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let lib = dir.join("lib.dob");
-        let main = dir.join("main.dob");
+        let lib = dir.join("lib.nod");
+        let main = dir.join("main.nod");
         fs::write(
             &lib,
-            "const prefix = \"Hi\"\nfn greet(name) {\n  return \"{prefix}, {name}\"\n}\n",
+            "val prefix = \"Hi\"\nfunc greet(name) {\n  return \"{prefix}, {name}\"\n}\n",
         )
         .unwrap();
-        fs::write(&main, "import './lib' as lib\nemit lib.greet(\"Ana\")\n").unwrap();
+        fs::write(&main, "use './lib' as lib\nemit lib.greet(\"Ana\")\n").unwrap();
 
         let output = crate::run_file(&main, BTreeMap::new()).unwrap();
         assert_eq!(output, "Hi, Ana");
@@ -1146,15 +1143,15 @@ mod tests {
     }
 
     #[test]
-    fn direct_import_of_let_can_be_assigned() {
-        let dir = std::env::temp_dir().join(format!("dobra-import-let-{}", std::process::id()));
+    fn direct_use_of_var_can_be_assigned() {
+        let dir = std::env::temp_dir().join(format!("nodia-use-var-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let bar = dir.join("bar.dob");
-        let main = dir.join("main.dob");
-        fs::write(&bar, "let n = 0\n").unwrap();
+        let bar = dir.join("bar.nod");
+        let main = dir.join("main.nod");
+        fs::write(&bar, "var n = 0\n").unwrap();
         fs::write(
             &main,
-            "import './bar' show n\nwhile n < 3 {\n  emit n\n  n = n + 1\n}\n",
+            "use './bar' pick n\nwhile n < 3 {\n  emit n\n  n = n + 1\n}\n",
         )
         .unwrap();
 
@@ -1164,40 +1161,39 @@ mod tests {
     }
 
     #[test]
-    fn direct_import_of_const_cannot_be_assigned() {
-        let dir = std::env::temp_dir().join(format!("dobra-import-const-{}", std::process::id()));
+    fn direct_use_of_val_cannot_be_assigned() {
+        let dir = std::env::temp_dir().join(format!("nodia-use-val-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let bar = dir.join("bar.dob");
-        let main = dir.join("main.dob");
-        fs::write(&bar, "const n = 0\n").unwrap();
-        fs::write(&main, "import './bar' show n\nn = n + 1\n").unwrap();
+        let bar = dir.join("bar.nod");
+        let main = dir.join("main.nod");
+        fs::write(&bar, "val n = 0\n").unwrap();
+        fs::write(&main, "use './bar' pick n\nn = n + 1\n").unwrap();
 
         let err = crate::run_file(&main, BTreeMap::new()).unwrap_err();
-        assert!(err.to_string().contains("cannot assign to const 'n'"));
+        assert!(err.to_string().contains("cannot assign to val 'n'"));
         let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
-    fn circular_imports_are_cached_and_resolved_lazily() {
-        let dir =
-            std::env::temp_dir().join(format!("dobra-circular-import-{}", std::process::id()));
+    fn circular_uses_are_cached_and_resolved_lazily() {
+        let dir = std::env::temp_dir().join(format!("nodia-circular-use-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
-        let a = dir.join("a.dob");
-        let b = dir.join("b.dob");
-        let main = dir.join("main.dob");
+        let a = dir.join("a.nod");
+        let b = dir.join("b.nod");
+        let main = dir.join("main.nod");
         fs::write(
             &a,
-            "import './b' as b\nconst name = \"A\"\nfn pair() {\n  return \"{name}/{b.name}\"\n}\n",
+            "use './b' as b\nval name = \"A\"\nfunc pair() {\n  return \"{name}/{b.name}\"\n}\n",
         )
         .unwrap();
         fs::write(
             &b,
-            "import './a' as a\nconst name = \"B\"\nfn pair() {\n  return \"{name}/{a.name}\"\n}\n",
+            "use './a' as a\nval name = \"B\"\nfunc pair() {\n  return \"{name}/{a.name}\"\n}\n",
         )
         .unwrap();
         fs::write(
             &main,
-            "import './a' as a\nimport './b' as b\nemit a.pair()\nemit b.pair()\n",
+            "use './a' as a\nuse './b' as b\nemit a.pair()\nemit b.pair()\n",
         )
         .unwrap();
 
@@ -1208,17 +1204,17 @@ mod tests {
 
     #[test]
     fn file_streams_read_and_write_lines() {
-        let dir = std::env::temp_dir().join(format!("dobra-io-streams-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("nodia-io-streams-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let input = dir.join("input.txt");
         let output = dir.join("output.txt");
         fs::write(&input, "ana\nbruno\n").unwrap();
 
         let source = format!(
-            r#"const src = open("{}", "read")
-const out = open("{}", "write")
+            r#"val src = open("{}", "read")
+val out = open("{}", "write")
 
-let line = readln(src)
+var line = readln(src)
 while line != null {{
   writeln(out, upper(line))
   line = readln(src)
@@ -1246,7 +1242,7 @@ emit read("{}")
 
     #[test]
     fn file_writes_require_permission() {
-        let dir = std::env::temp_dir().join(format!("dobra-io-denied-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("nodia-io-denied-{}", std::process::id()));
         fs::create_dir_all(&dir).unwrap();
         let output = dir.join("output.txt");
         let source = format!("write(\"{}\", \"blocked\")", output.display());
@@ -1262,4 +1258,5 @@ emit read("{}")
         assert!(!output.exists());
         let _ = fs::remove_dir_all(dir);
     }
+
 }

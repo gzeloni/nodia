@@ -15,7 +15,7 @@ pub fn find_project_config(start: &Path) -> Option<PathBuf> {
         start
     };
     loop {
-        let candidate = current.join("dobra.toml");
+        let candidate = current.join("nodia.toml");
         if candidate.is_file() {
             return Some(candidate);
         }
@@ -43,8 +43,8 @@ pub fn read_project_config(path: &Path) -> io::Result<ProjectConfig> {
     }
     let base = path.parent().unwrap_or_else(|| Path::new("."));
     Ok(ProjectConfig {
-        name: name.unwrap_or_else(|| "dobra-project".to_string()),
-        entry: base.join(entry.unwrap_or_else(|| PathBuf::from("src/main.dob"))),
+        name: name.unwrap_or_else(|| "nodia-project".to_string()),
+        entry: base.join(entry.unwrap_or_else(|| PathBuf::from("src/main.nod"))),
     })
 }
 
@@ -52,17 +52,17 @@ pub fn init_project(dir: &Path) -> io::Result<()> {
     let src = dir.join("src");
     fs::create_dir_all(&src)?;
 
-    let config = dir.join("dobra.toml");
+    let config = dir.join("nodia.toml");
     if !config.exists() {
         fs::write(
             &config,
-            "name = \"dobra-project\"\nentry = \"src/main.dob\"\n",
+            "name = \"nodia-project\"\nentry = \"src/main.nod\"\n",
         )?;
     }
 
-    let main = src.join("main.dob");
+    let main = src.join("main.nod");
     if !main.exists() {
-        fs::write(&main, "const name = input.name\n\nemit \"Hello, {name}\"\n")?;
+        fs::write(&main, "val name = input.name\n\nemit \"Hello, {name}\"\n")?;
     }
 
     Ok(())

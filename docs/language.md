@@ -1,12 +1,12 @@
-# Dobra Language v0.4
+# Nodia Language v0.5
 
-This document summarizes the v0.4 language and tooling contract. The normative baseline is [specification.md](specification.md).
+This document summarizes the v0.5 language and tooling contract. The normative baseline is [specification.md](specification.md).
 
 For the full user reference with command examples and builtin examples, see [reference.md](reference.md).
 
 ## Purpose
 
-Dobra is a focused language for textual automation, structured output, and mathematical/data
+Nodia is a focused language for textual automation, structured output, and mathematical/data
 workflows. It is not a systems language and it is not trying to become a broad application
 platform.
 
@@ -15,14 +15,14 @@ predictable.
 
 ## Source Files
 
-Dobra source files use the `.dob` extension.
+Nodia source files use the `.nod` extension.
 
 ## Reserved Words
 
 ```text
-const let fn return
+val var func return
 if else for in while break continue
-emit import as show hide
+emit use as pick hide
 true false null
 and or not
 ```
@@ -32,7 +32,7 @@ Reserved for future versions:
 ```text
 from match case default
 try catch throw defer
-type enum struct namespace use
+type enum struct namespace
 ```
 
 ## Formatting
@@ -53,44 +53,44 @@ Formatting is canonical and non-configurable.
 The formatter is exposed through:
 
 ```bash
-dobra fmt file.dob
-dobra fmt .
-dobra fmt --check .
-dobra fmt --stdout file.dob
+nodia fmt file.nod
+nodia fmt .
+nodia fmt --check .
+nodia fmt --stdout file.nod
 ```
 
-## Imports
+## Uses
 
-```dobra
-import "./lib/constants"
-import "./lib/format" as fmt
-import "./lib/tokens" show title, version
-import "./lib/internal" hide secret
+```nodia
+use "./lib/constants"
+use "./lib/format" as fmt
+use "./lib/tokens" pick title, version
+use "./lib/internal" hide secret
 ```
 
 Rules:
 
-- paths are relative to the importing file;
-- `.dob` is optional;
-- directories resolve through `index.dob`;
+- paths are relative to the source file containing the use;
+- `.nod` is optional;
+- directories resolve through `index.nod`;
 - modules are cached by resolved path;
-- circular imports are allowed;
-- imported bindings are linked lazily;
+- circular uses are allowed;
+- used bindings are linked lazily;
 - cycles only fail when code reads a binding before initialization;
-- `as` imports selected bindings into a namespace map;
-- imports without `as` insert selected bindings into the current scope;
-- `show` includes only listed names;
+- `as` uses selected bindings into a namespace map;
+- uses without `as` insert selected bindings into the current scope;
+- `pick` includes only listed names;
 - `hide` excludes listed names;
-- imported `let` bindings remain mutable;
-- imported `const` and `fn` bindings are read-only.
+- used `var` bindings remain mutable;
+- used `val` and `func` bindings are read-only.
 
 ## Semantic Check
 
-`dobra check` is no longer parse-only in v0.4. It validates imports and performs
+`nodia check` validates the v0.5 syntax and semantic baseline. It validates uses and performs
 baseline semantic checks before `run` can execute the program.
 
 It rejects undefined variables, duplicate bindings in the same scope, assignment
-to `const`, invalid function/builtin arity, invalid `show` imports, missing fields
+to `val`, invalid function/builtin arity, invalid `pick` uses, missing fields
 on known maps/namespaces, `return` outside functions, and `break`/`continue`
 outside loops.
 
@@ -100,11 +100,11 @@ The checker is not yet a static type or effect checker.
 
 Streams are runtime values.
 
-```dobra
-const src = open("input.txt", "read")
-const out = open("output.txt", "write")
+```nodia
+val src = open("input.txt", "read")
+val out = open("output.txt", "write")
 
-let line = readln(src)
+var line = readln(src)
 while line != null {
   writeln(out, upper(line))
   line = readln(src)
@@ -133,7 +133,7 @@ Builtins:
 
 Standard streams:
 
-```dobra
+```nodia
 readln(stdin)
 write(stdout, "text")
 writeln(stderr, "error")
@@ -142,7 +142,7 @@ writeln(stderr, "error")
 File writes require explicit permission:
 
 ```bash
-dobra run script.dob --allow-write
+nodia run script.nod --allow-write
 ```
 
 Without permission, file writes fail with `E3001`.
@@ -150,14 +150,14 @@ Without permission, file writes fail with `E3001`.
 ## CLI Contract
 
 ```bash
-dobra run file.dob
-dobra check file.dob
-dobra fmt file.dob
-dobra eval 'emit "hello"'
-dobra tokens file.dob
-dobra ast file.dob
-dobra init
-dobra version
+nodia run file.nod
+nodia check file.nod
+nodia fmt file.nod
+nodia eval 'emit "hello"'
+nodia tokens file.nod
+nodia ast file.nod
+nodia init
+nodia version
 ```
 
 Global flags:

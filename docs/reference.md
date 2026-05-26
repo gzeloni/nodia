@@ -1,9 +1,9 @@
-# Dobra Reference v0.4
+# Nodia Reference v0.5
 
-This is the complete user-facing reference for Dobra v0.4. It documents the command line,
-project layout, language syntax, imports, IO, streams, standard library, and common workflows.
+This is the complete user-facing reference for Nodia v0.5. It documents the command line,
+project layout, language syntax, uses, IO, streams, standard library, and common workflows.
 
-Dobra source files use the `.dob` extension.
+Nodia source files use the `.nod` extension.
 
 ## Table Of Contents
 
@@ -12,7 +12,7 @@ Dobra source files use the `.dob` extension.
 - [Projects](#projects)
 - [Source Files](#source-files)
 - [Language Basics](#language-basics)
-- [Imports](#imports)
+- [Uses](#uses)
 - [IO And Streams](#io-and-streams)
 - [Standard Library](#standard-library)
 - [Diagnostics](#diagnostics)
@@ -22,7 +22,7 @@ Dobra source files use the `.dob` extension.
 
 ## Install And Build
 
-Dobra is implemented in Rust and currently uses only the Rust standard library.
+Nodia is implemented in Rust and currently uses only the Rust standard library.
 
 Build the debug binary:
 
@@ -39,13 +39,13 @@ cargo build --release
 Run the release binary directly:
 
 ```bash
-target/release/dobra version
+target/release/nodia version
 ```
 
 Expected output:
 
 ```text
-dobra 0.4.0
+nodia 0.5.0
 ```
 
 ## Command Line
@@ -53,8 +53,8 @@ dobra 0.4.0
 General shape:
 
 ```bash
-dobra [global-flags] <command> [command-args]
-dobra <command> [command-args] [global-flags]
+nodia [global-flags] <command> [command-args]
+nodia <command> [command-args] [global-flags]
 ```
 
 Global flags are accepted before or after the command for most workflows.
@@ -69,33 +69,33 @@ Global flags are accepted before or after the command for most workflows.
 | `--color auto` | Accepts color mode. Current output is plain text. |
 | `--color always` | Accepts color mode. Current output is plain text. |
 | `--color never` | Accepts color mode. Current output is plain text. |
-| `--allow-write` | Allows Dobra code to write files through IO builtins. |
+| `--allow-write` | Allows Nodia code to write files through IO builtins. |
 | `--help`, `-h` | Prints help. |
 | `--version`, `-V` | Prints version. |
 
-`--allow-write` only controls writes performed by Dobra code, such as `write(path, text)`,
+`--allow-write` only controls writes performed by Nodia code, such as `write(path, text)`,
 `append(path, text)`, or `open(path, "write")`. CLI output redirection with `--out` is a CLI
 feature and does not require `--allow-write`.
 
-### `dobra run`
+### `nodia run`
 
-Executes an Dobra file.
+Executes an Nodia file.
 
 ```bash
-dobra run file.dob
+nodia run file.nod
 ```
 
 Example file:
 
-```dobra
-const name = input.name
+```nodia
+val name = input.name
 emit "Hello, {name}"
 ```
 
 Run with one variable:
 
 ```bash
-dobra run hello.dob --var name=Ana
+nodia run hello.nod --var name=Ana
 ```
 
 Output:
@@ -107,12 +107,12 @@ Hello, Ana
 Run with multiple variables:
 
 ```bash
-dobra run hello.dob --vars name=Ana env=prod owner=gzeloni
+nodia run hello.nod --vars name=Ana env=prod owner=gzeloni
 ```
 
 Variables are exposed through the readonly `input` map:
 
-```dobra
+```nodia
 emit input.name
 emit input.env
 emit input.owner
@@ -121,39 +121,39 @@ emit input.owner
 Repeated `--var` is also valid:
 
 ```bash
-dobra run hello.dob --var name=Ana --var env=prod
+nodia run hello.nod --var name=Ana --var env=prod
 ```
 
 Run source from stdin with `-`:
 
 ```bash
-printf 'emit "hello"\n' | dobra run -
+printf 'emit "hello"\n' | nodia run -
 ```
 
 Write the rendered program output to a file:
 
 ```bash
-dobra run report.dob --out report.txt
-dobra run report.dob --output report.txt
-dobra run report.dob -o report.txt
+nodia run report.nod --out report.txt
+nodia run report.nod --output report.txt
+nodia run report.nod -o report.txt
 ```
 
-If `--out` has no explicit path, Dobra writes beside the source path using `.out`:
+If `--out` has no explicit path, Nodia writes beside the source path using `.out`:
 
 ```bash
-dobra run report.dob --out
+nodia run report.nod --out
 ```
 
 This writes to:
 
 ```text
-report.dob.out
+report.nod.out
 ```
 
 Run a script that writes files through the language:
 
 ```bash
-dobra run transform.dob --allow-write
+nodia run transform.nod --allow-write
 ```
 
 Without `--allow-write`, file-writing builtins fail with `E3001`.
@@ -162,27 +162,27 @@ Without `--allow-write`, file-writing builtins fail with `E3001`.
 behavior when `--out` is not used.
 
 ```bash
-dobra run report.dob --stdout
+nodia run report.nod --stdout
 ```
 
-### `dobra check`
+### `nodia check`
 
-Checks lexing, parsing, imports, and v0.4 semantic rules without executing the program.
+Checks lexing, parsing, uses, and the v0.5 semantic baseline without executing the program.
 
 ```bash
-dobra check file.dob
+nodia check file.nod
 ```
 
 Output:
 
 ```text
-ok file.dob
+ok file.nod
 ```
 
 JSON success output:
 
 ```bash
-dobra check file.dob --json
+nodia check file.nod --json
 ```
 
 Output:
@@ -194,63 +194,63 @@ Output:
 JSON failure output:
 
 ```json
-{"ok":false,"errors":[{"code":"E4101","message":"cannot assign to const 'n'","file":"file.dob","line":2,"column":1}]}
+{"ok":false,"errors":[{"code":"E4101","message":"cannot assign to val 'n'","file":"file.nod","line":2,"column":1}]}
 ```
 
-`check` validates syntax and v0.4 semantic rules. It resolves imports for file-backed
-programs, validates selected import names, catches undefined variables, rejects assignment to
-`const`, validates basic arity, checks control-flow placement, and validates known map/namespace
+`check` validates syntax and the v0.5 semantic baseline. It resolves uses for file-backed
+programs, validates selected use names, catches undefined variables, rejects assignment to
+`val`, validates basic arity, checks control-flow placement, and validates known map/namespace
 fields. It does not execute program IO or prove static types/effects.
 
 Example:
 
-```dobra
-import "./missing"
+```nodia
+use "./missing"
 
 emit "syntax is valid"
 ```
 
-`dobra check` reports missing imports, missing selected exports, and semantic errors before execution.
+`nodia check` reports missing uses, missing selected exports, and semantic errors before execution.
 
-### `dobra fmt`
+### `nodia fmt`
 
-Formats `.dob` files using the canonical style.
+Formats `.nod` files using the canonical style.
 
 Format one file:
 
 ```bash
-dobra fmt file.dob
+nodia fmt file.nod
 ```
 
 Format a directory recursively:
 
 ```bash
-dobra fmt .
+nodia fmt .
 ```
 
 Check without writing changes:
 
 ```bash
-dobra fmt --check .
+nodia fmt --check .
 ```
 
 Print formatted output to stdout:
 
 ```bash
-dobra fmt --stdout file.dob
+nodia fmt --stdout file.nod
 ```
 
 Example input:
 
-```dobra
-const user={name:"Ana",role:"dev"}
+```nodia
+val user={name:"Ana",role:"dev"}
 if user.name!=""{emit "hello {user.name}"}
 ```
 
 Formatted output:
 
-```dobra
-const user = {
+```nodia
+val user = {
   name: "Ana",
   role: "dev",
 }
@@ -260,14 +260,14 @@ if user.name != "" {
 }
 ```
 
-When formatting a directory, Dobra recursively formats `.dob` files and skips `target/`.
+When formatting a directory, Nodia recursively formats `.nod` files and skips `target/`.
 
-### `dobra eval`
+### `nodia eval`
 
 Executes source passed on the command line.
 
 ```bash
-dobra eval 'emit "hello"'
+nodia eval 'emit "hello"'
 ```
 
 Output:
@@ -279,7 +279,7 @@ hello
 Use it for quick expressions or small scripts:
 
 ```bash
-dobra eval 'emit upper("dobra")'
+nodia eval 'emit upper("nodia")'
 ```
 
 Output:
@@ -291,21 +291,21 @@ DOBRA
 `eval` can also write files if `--allow-write` is passed:
 
 ```bash
-dobra eval 'write("out.txt", "ok")' --allow-write
+nodia eval 'write("out.txt", "ok")' --allow-write
 ```
 
-### `dobra tokens`
+### `nodia tokens`
 
 Prints lexer tokens for a file. This is useful for editor tooling and parser debugging.
 
 ```bash
-dobra tokens file.dob
+nodia tokens file.nod
 ```
 
 Example output shape:
 
 ```text
-1:1 Let
+1:1 Val
 1:5 Identifier("name")
 1:10 Equal
 1:12 String("Ana")
@@ -314,27 +314,27 @@ Example output shape:
 JSON output:
 
 ```bash
-dobra tokens file.dob --json
+nodia tokens file.nod --json
 ```
 
 Output shape:
 
 ```json
-{"ok":true,"tokens":[{"kind":"Let","literal":null,"line":1,"column":1}]}
+{"ok":true,"tokens":[{"kind":"Val","literal":null,"line":1,"column":1}]}
 ```
 
-### `dobra ast`
+### `nodia ast`
 
 Prints the parsed AST for a file.
 
 ```bash
-dobra ast file.dob
+nodia ast file.nod
 ```
 
 The default output is Rust debug text. JSON output wraps that debug representation:
 
 ```bash
-dobra ast file.dob --json
+nodia ast file.nod --json
 ```
 
 Output shape:
@@ -345,33 +345,33 @@ Output shape:
 
 The AST command is primarily a tooling/debug command.
 
-### `dobra init`
+### `nodia init`
 
-Creates a minimal Dobra project.
+Creates a minimal Nodia project.
 
 ```bash
-dobra init
+nodia init
 ```
 
 Generated layout:
 
 ```text
-dobra.toml
+nodia.toml
 src/
-  main.dob
+  main.nod
 ```
 
-Generated `dobra.toml`:
+Generated `nodia.toml`:
 
 ```toml
-name = "dobra-project"
-entry = "src/main.dob"
+name = "nodia-project"
+entry = "src/main.nod"
 ```
 
-Generated `src/main.dob`:
+Generated `src/main.nod`:
 
-```dobra
-const name = input.name
+```nodia
+val name = input.name
 
 emit "Hello, {name}"
 ```
@@ -379,15 +379,15 @@ emit "Hello, {name}"
 Create a project in another directory:
 
 ```bash
-dobra init demo
+nodia init demo
 ```
 
-`init` creates missing files but does not overwrite an existing `dobra.toml` or `src/main.dob`.
+`init` creates missing files but does not overwrite an existing `nodia.toml` or `src/main.nod`.
 
 JSON output:
 
 ```bash
-dobra init demo --json
+nodia init demo --json
 ```
 
 Output shape:
@@ -396,80 +396,80 @@ Output shape:
 {"ok":true,"path":"demo"}
 ```
 
-### `dobra version`
+### `nodia version`
 
 Prints the current version.
 
 ```bash
-dobra version
+nodia version
 ```
 
 Output:
 
 ```text
-dobra 0.4.0
+nodia 0.5.0
 ```
 
 JSON output:
 
 ```bash
-dobra version --json
+nodia version --json
 ```
 
 Output:
 
 ```json
-{"name":"dobra","version":"0.3.0","rust_std_only":true}
+{"name":"nodia","version":"0.5.0","rust_std_only":true}
 ```
 
-### `dobra help`
+### `nodia help`
 
 Prints command usage.
 
 ```bash
-dobra help
-dobra --help
-dobra -h
+nodia help
+nodia --help
+nodia -h
 ```
 
 ## Projects
 
-A project is discovered through `dobra.toml`.
+A project is discovered through `nodia.toml`.
 
 ```toml
 name = "my-project"
-entry = "src/main.dob"
+entry = "src/main.nod"
 ```
 
-If a command needs a file and no file is passed, Dobra searches from the current directory upward
-for `dobra.toml` and uses its `entry` path.
+If a command needs a file and no file is passed, Nodia searches from the current directory upward
+for `nodia.toml` and uses its `entry` path.
 
 Example:
 
 ```bash
 mkdir demo
 cd demo
-dobra init
-dobra run --var name=Project
+nodia init
+nodia run --var name=Project
 ```
 
-Because no file path is passed, `dobra run` reads `entry = "src/main.dob"` from `dobra.toml`.
+Because no file path is passed, `nodia run` reads `entry = "src/main.nod"` from `nodia.toml`.
 
-`dobra.toml` currently supports:
+`nodia.toml` currently supports:
 
 | Key | Meaning |
 |---|---|
 | `name` | Project name. |
-| `entry` | Entry `.dob` file used when a command omits a file path. |
+| `entry` | Entry `.nod` file used when a command omits a file path. |
 
 ## Source Files
 
-Source files use `.dob`.
+Source files use `.nod`.
 
 ```text
-main.dob
-lib/text.dob
-showcase/index.dob
+main.nod
+lib/text.nod
+showcase/index.nod
 ```
 
 Statements do not require semicolons. Semicolons are accepted as statement separators, but the
@@ -479,22 +479,22 @@ formatter removes stylistic drift and writes canonical layout.
 
 Line comments can use `#` or `//`.
 
-```dobra
+```nodia
 # preferred for docs-like comments
 // also accepted
 emit "ok"
 ```
 
-Block comments are not part of v0.4.
+Block comments are not part of v0.5.
 
 ### Reserved Words
 
 Current reserved words:
 
 ```text
-const let fn return
+val var func return
 if else for in while break continue
-emit import as show hide
+emit use as pick hide
 true false null
 and or not
 ```
@@ -504,14 +504,14 @@ Reserved for future versions:
 ```text
 from match case default
 try catch throw defer
-type enum struct namespace use
+type enum struct namespace
 ```
 
 ## Language Basics
 
 ### Values
 
-Dobra has these runtime value categories:
+Nodia has these runtime value categories:
 
 | Value | Example |
 |---|---|
@@ -523,7 +523,7 @@ Dobra has these runtime value categories:
 | list | `[1, 2, 3]` |
 | map | `{name: "Ana", role: "dev"}` |
 | stream | `open("file.txt", "read")`, `stdout` |
-| function | `fn greet(name) { ... }` |
+| function | `func greet(name) { ... }` |
 
 ### Truthiness
 
@@ -544,7 +544,7 @@ Values used in `if`, `while`, `and`, `or`, or `not` follow truthiness rules.
 
 Example:
 
-```dobra
+```nodia
 if input.name {
   emit "name exists"
 } else {
@@ -554,32 +554,32 @@ if input.name {
 
 ### Variables
 
-`const` declares a read-only binding.
+`val` declares a read-only binding.
 
-```dobra
-const app = "dobra"
+```nodia
+val app = "nodia"
 emit app
 ```
 
-`let` declares a mutable binding.
+`var` declares a mutable binding.
 
-```dobra
-let count = 0
+```nodia
+var count = 0
 count = count + 1
 emit count
 ```
 
-Assigning to a `const` is a runtime error:
+Assigning to a `val` is a runtime error:
 
-```dobra
-const count = 0
+```nodia
+val count = 0
 count = 1
 ```
 
 Error:
 
 ```text
-error[E2000]: cannot assign to const 'count'
+error[E2000]: cannot assign to val 'count'
 ```
 
 ### CLI Input
@@ -589,12 +589,12 @@ CLI variables are available through `input`.
 Command:
 
 ```bash
-dobra run app.dob --vars app=dobra env=prod
+nodia run app.nod --vars app=nodia env=prod
 ```
 
 File:
 
-```dobra
+```nodia
 emit input.app
 emit input.env
 ```
@@ -602,7 +602,7 @@ emit input.env
 Output:
 
 ```text
-dobra
+nodia
 prod
 ```
 
@@ -612,19 +612,19 @@ strings, integers, floats, booleans, and `null`.
 JSON variables file:
 
 ```json
-{"app":"dobra","limit":3,"enabled":true}
+{"app":"nodia","limit":3,"enabled":true}
 ```
 
 Run:
 
 ```bash
-dobra run app.dob --vars vars.json
+nodia run app.nod --vars vars.json
 ```
 
 YAML variables file support is intentionally flat and simple:
 
 ```yaml
-app: dobra
+app: nodia
 env: prod
 ```
 
@@ -632,19 +632,19 @@ env: prod
 
 Double-quoted strings:
 
-```dobra
+```nodia
 emit "hello"
 ```
 
 Single-quoted strings:
 
-```dobra
+```nodia
 emit 'hello'
 ```
 
 Escapes:
 
-```dobra
+```nodia
 emit "line 1\nline 2"
 emit "tab\tvalue"
 emit "quote: \""
@@ -653,8 +653,8 @@ emit "slash: \\"
 
 Triple-quoted strings:
 
-```dobra
-const config = """
+```nodia
+val config = """
 APP_NAME={input.app}
 APP_ENV={input.env}
 """
@@ -666,16 +666,16 @@ emit config
 
 Strings support `{expr}` interpolation.
 
-```dobra
-const name = "Ana"
+```nodia
+val name = "Ana"
 emit "Hello, {capitalize(name)}"
 ```
 
 Interpolation can contain expressions:
 
-```dobra
-const a = 2
-const b = 3
+```nodia
+val a = 2
+val b = 3
 emit "sum={a + b}"
 ```
 
@@ -687,7 +687,7 @@ sum=5
 
 Escape literal braces with doubled braces:
 
-```dobra
+```nodia
 emit "{{value}}"
 ```
 
@@ -701,7 +701,7 @@ Output:
 
 `emit` appends the value plus a newline to the program output.
 
-```dobra
+```nodia
 emit "one"
 emit "two"
 ```
@@ -720,7 +720,7 @@ two
 
 Arithmetic:
 
-```dobra
+```nodia
 emit 1 + 2
 emit 5 - 3
 emit 4 * 2
@@ -730,7 +730,7 @@ emit 7 % 3
 
 Comparison:
 
-```dobra
+```nodia
 emit 1 < 2
 emit 1 <= 1
 emit 2 > 1
@@ -739,21 +739,21 @@ emit 2 >= 2
 
 Equality:
 
-```dobra
+```nodia
 emit "a" == "a"
 emit "a" != "b"
 ```
 
 Logical operators use words:
 
-```dobra
+```nodia
 emit true and not false
 emit false or true
 ```
 
 Use `not`, not `!`.
 
-```dobra
+```nodia
 if not input.disabled {
   emit "enabled"
 }
@@ -761,7 +761,7 @@ if not input.disabled {
 
 ### Conditionals
 
-```dobra
+```nodia
 if input.env == "prod" {
   emit "Production"
 } else {
@@ -771,7 +771,7 @@ if input.env == "prod" {
 
 `else if` is supported by nesting an `if` after `else`:
 
-```dobra
+```nodia
 if input.env == "prod" {
   emit "prod"
 } else if input.env == "stage" {
@@ -785,7 +785,7 @@ if input.env == "prod" {
 
 For loop over a list:
 
-```dobra
+```nodia
 for name in ["ana", "bruno"] {
   emit capitalize(name)
 }
@@ -793,7 +793,7 @@ for name in ["ana", "bruno"] {
 
 For loop over a string iterates characters:
 
-```dobra
+```nodia
 for ch in "abc" {
   emit ch
 }
@@ -801,8 +801,8 @@ for ch in "abc" {
 
 For loop over a map iterates keys:
 
-```dobra
-const user = {name: "Ana", role: "dev"}
+```nodia
+val user = {name: "Ana", role: "dev"}
 
 for key in user {
   emit "{key}={user[key]}"
@@ -811,8 +811,8 @@ for key in user {
 
 While loop:
 
-```dobra
-let n = 0
+```nodia
+var n = 0
 
 while n < 3 {
   emit n
@@ -822,7 +822,7 @@ while n < 3 {
 
 `break` exits a loop:
 
-```dobra
+```nodia
 for n in range(10) {
   if n == 3 {
     break
@@ -834,7 +834,7 @@ for n in range(10) {
 
 `continue` skips to the next iteration:
 
-```dobra
+```nodia
 for n in range(5) {
   if n == 2 {
     continue
@@ -850,8 +850,8 @@ for n in range(5) {
 
 Define a function:
 
-```dobra
-fn greet(name) {
+```nodia
+func greet(name) {
   return "Hello, {capitalize(name)}"
 }
 
@@ -860,8 +860,8 @@ emit greet("ana")
 
 Functions return `null` when they finish without `return`.
 
-```dobra
-fn noop() {}
+```nodia
+func noop() {}
 
 emit noop()
 ```
@@ -874,8 +874,8 @@ null
 
 Return without a value returns `null`:
 
-```dobra
-fn stop() {
+```nodia
+func stop() {
   return
 }
 ```
@@ -884,15 +884,15 @@ fn stop() {
 
 Inline list:
 
-```dobra
-const tags = ["compiler", "formatter", "streams"]
+```nodia
+val tags = ["compiler", "formatter", "streams"]
 emit tags[0]
 ```
 
 Multiline list:
 
-```dobra
-const tags = [
+```nodia
+val tags = [
   "compiler",
   "formatter",
   "streams",
@@ -901,8 +901,8 @@ const tags = [
 
 List indexing is zero-based. Negative list indexes count from the end:
 
-```dobra
-const tags = ["a", "b", "c"]
+```nodia
+val tags = ["a", "b", "c"]
 emit tags[-1]
 ```
 
@@ -914,8 +914,8 @@ c
 
 Lists are values. List helper functions return new lists instead of mutating in place:
 
-```dobra
-let values = []
+```nodia
+var values = []
 values = push(values, "a")
 values = push(values, "b")
 emit values
@@ -931,14 +931,14 @@ Output:
 
 Inline map:
 
-```dobra
-const user = {name: "Ana", role: "dev"}
+```nodia
+val user = {name: "Ana", role: "dev"}
 ```
 
 Canonical formatted map:
 
-```dobra
-const user = {
+```nodia
+val user = {
   name: "Ana",
   role: "dev",
 }
@@ -946,20 +946,20 @@ const user = {
 
 Field access:
 
-```dobra
+```nodia
 emit user.name
 ```
 
 Index access:
 
-```dobra
+```nodia
 emit user["role"]
 ```
 
 Map keys can be identifiers or strings:
 
-```dobra
-const data = {
+```nodia
+val data = {
   name: "Ana",
   "full name": "Ana Maria",
 }
@@ -971,13 +971,13 @@ emit data["full name"]
 
 Short calls stay inline:
 
-```dobra
+```nodia
 emit join(["a", "b"], ":")
 ```
 
 Long calls are formatted across lines:
 
-```dobra
+```nodia
 emit replace(
   "cobalt/mythril/adamantite",
   "/",
@@ -985,51 +985,51 @@ emit replace(
 )
 ```
 
-Dobra does not use method calls for standard library functions. Prefer function style:
+Nodia does not use method calls for standard library functions. Prefer function style:
 
-```dobra
-const values = push([], "item")
+```nodia
+val values = push([], "item")
 ```
 
-## Imports
+## Uses
 
-Imports are relative to the importing file.
+Uses are relative to the source file containing the use.
 
-```dobra
-import "./lib/constants"
+```nodia
+use "./lib/constants"
 ```
 
-The `.dob` extension is optional:
+The `.nod` extension is optional:
 
-```dobra
-import "./lib/constants"
-import "./lib/constants.dob"
+```nodia
+use "./lib/constants"
+use "./lib/constants.nod"
 ```
 
-Directories resolve through `index.dob`:
+Directories resolve through `index.nod`:
 
 ```text
 lib/
-  index.dob
+  index.nod
 ```
 
-```dobra
-import "./lib" as lib
+```nodia
+use "./lib" as lib
 ```
 
-### Namespace Imports
+### Namespace Uses
 
-```dobra
-import "./lib/meta" as meta
+```nodia
+use "./lib/meta" as meta
 
 emit meta.title
 emit meta.version
 ```
 
-### Direct Imports
+### Direct Uses
 
-```dobra
-import "./lib/meta" show title, version
+```nodia
+use "./lib/meta" pick title, version
 
 emit title
 emit version
@@ -1037,24 +1037,24 @@ emit version
 
 ### Hide Clause
 
-```dobra
-import "./lib/meta" hide internal_token
+```nodia
+use "./lib/meta" hide internal_token
 ```
 
-### Import Mutability
+### Use Mutability
 
-Imported `const` and `fn` bindings are read-only. Imported `let` bindings remain mutable.
+Used `val` and `func` bindings are read-only. Used `var` bindings remain mutable.
 
-`counter.dob`:
+`counter.nod`:
 
-```dobra
-let n = 0
+```nodia
+var n = 0
 ```
 
-`main.dob`:
+`main.nod`:
 
-```dobra
-import "./counter" show n
+```nodia
+use "./counter" pick n
 
 while n < 3 {
   emit n
@@ -1070,40 +1070,40 @@ Output:
 2
 ```
 
-### Circular Imports
+### Circular Uses
 
-Circular imports are allowed. Modules are cached by resolved path and bindings are linked lazily.
+Circular uses are allowed. Modules are cached by resolved path and bindings are linked lazily.
 A cycle fails only if code reads a binding before it has been initialized.
 
-`a.dob`:
+`a.nod`:
 
-```dobra
-import "./b" as b
+```nodia
+use "./b" as b
 
-const name = "A"
+val name = "A"
 
-fn pair() {
+func pair() {
   return "{name}/{b.name}"
 }
 ```
 
-`b.dob`:
+`b.nod`:
 
-```dobra
-import "./a" as a
+```nodia
+use "./a" as a
 
-const name = "B"
+val name = "B"
 
-fn pair() {
+func pair() {
   return "{name}/{a.name}"
 }
 ```
 
-`main.dob`:
+`main.nod`:
 
-```dobra
-import "./a" as a
-import "./b" as b
+```nodia
+use "./a" as a
+use "./b" as b
 
 emit a.pair()
 emit b.pair()
@@ -1118,7 +1118,7 @@ B/A
 
 ## IO And Streams
 
-Dobra v0.4 has real file IO and stream values.
+Nodia v0.5 has real file IO and stream values.
 
 ### Standard Streams
 
@@ -1130,27 +1130,27 @@ Dobra v0.4 has real file IO and stream values.
 
 Example:
 
-```dobra
+```nodia
 writeln(stdout, "What is your name?")
-const name = readln(stdin)
+val name = readln(stdin)
 writeln(stdout, "Hello, {name}")
 ```
 
 ### File Paths
 
-Import paths are relative to the importing source file. File IO paths are resolved by the current
-working directory of the `dobra` process.
+Use paths are relative to the source file containing the use. File IO paths are resolved by the current
+working directory of the `nodia` process.
 
 Example:
 
 ```bash
 cd demo
-dobra run scripts/build.dob --allow-write
+nodia run scripts/build.nod --allow-write
 ```
 
-Inside `build.dob`, this writes `demo/out.txt`:
+Inside `build.nod`, this writes `demo/out.txt`:
 
-```dobra
+```nodia
 write("out.txt", "ok")
 ```
 
@@ -1168,17 +1168,17 @@ Modes:
 
 Read mode:
 
-```dobra
-const file = open("input.txt", "read")
-const text = read(file)
+```nodia
+val file = open("input.txt", "read")
+val text = read(file)
 close(file)
 emit text
 ```
 
 Write mode:
 
-```dobra
-const file = open("output.txt", "write")
+```nodia
+val file = open("output.txt", "write")
 writeln(file, "first")
 writeln(file, "second")
 close(file)
@@ -1187,13 +1187,13 @@ close(file)
 Run with permission:
 
 ```bash
-dobra run write.dob --allow-write
+nodia run write.nod --allow-write
 ```
 
 Append mode:
 
-```dobra
-const log = open("app.log", "append")
+```nodia
+val log = open("app.log", "append")
 writeln(log, "started")
 close(log)
 ```
@@ -1202,8 +1202,8 @@ close(log)
 
 Closes a stream. Closing a file writer also flushes pending writes.
 
-```dobra
-const out = open("out.txt", "write")
+```nodia
+val out = open("out.txt", "write")
 write(out, "ok")
 close(out)
 ```
@@ -1214,8 +1214,8 @@ Closing `stdin`, `stdout`, or `stderr` is accepted as a no-op or flush-equivalen
 
 Flushes pending writes.
 
-```dobra
-const out = open("out.txt", "write")
+```nodia
+val out = open("out.txt", "write")
 write(out, "partial")
 flush(out)
 close(out)
@@ -1227,8 +1227,8 @@ close(out)
 
 Reads a whole file into a string.
 
-```dobra
-const text = read("input.txt")
+```nodia
+val text = read("input.txt")
 emit upper(text)
 ```
 
@@ -1238,9 +1238,9 @@ This does not require `--allow-write`.
 
 Reads the rest of a readable stream.
 
-```dobra
-const src = open("input.txt", "read")
-const text = read(src)
+```nodia
+val src = open("input.txt", "read")
+val text = read(src)
 close(src)
 emit text
 ```
@@ -1249,8 +1249,8 @@ emit text
 
 Reads a chunk from a readable stream. `size` is a non-negative integer byte count.
 
-```dobra
-const src = open("input.txt", "read")
+```nodia
+val src = open("input.txt", "read")
 emit read(src, 8)
 emit read(src, 8)
 close(src)
@@ -1260,10 +1260,10 @@ close(src)
 
 Reads one line and strips the line ending. Returns `null` at EOF.
 
-```dobra
-const src = open("input.txt", "read")
+```nodia
+val src = open("input.txt", "read")
 
-let line = readln(src)
+var line = readln(src)
 while line != null {
   emit line
   line = readln(src)
@@ -1276,22 +1276,22 @@ close(src)
 
 Writes a whole file, replacing any previous content.
 
-```dobra
+```nodia
 write("out.txt", "hello\n")
 ```
 
 Requires:
 
 ```bash
-dobra run script.dob --allow-write
+nodia run script.nod --allow-write
 ```
 
 ### `write(stream, text)`
 
 Writes text to a stream without adding a newline.
 
-```dobra
-const out = open("out.txt", "write")
+```nodia
+val out = open("out.txt", "write")
 write(out, "hello")
 write(out, " world")
 close(out)
@@ -1299,7 +1299,7 @@ close(out)
 
 `write(stdout, text)` writes to the program output:
 
-```dobra
+```nodia
 write(stdout, "hello")
 write(stdout, " world")
 ```
@@ -1308,8 +1308,8 @@ write(stdout, " world")
 
 Writes text and a newline to a stream.
 
-```dobra
-const out = open("out.txt", "write")
+```nodia
+val out = open("out.txt", "write")
 writeln(out, "hello")
 writeln(out, "world")
 close(out)
@@ -1319,7 +1319,7 @@ close(out)
 
 Appends text to a file.
 
-```dobra
+```nodia
 append("app.log", "started\n")
 ```
 
@@ -1330,11 +1330,11 @@ Requires `--allow-write`.
 Returns whether a readable file stream has reached EOF. EOF becomes true after a read operation
 reaches the end.
 
-```dobra
-const src = open("input.txt", "read")
+```nodia
+val src = open("input.txt", "read")
 
 while not eof(src) {
-  const chunk = read(src, 16)
+  val chunk = read(src, 16)
   if chunk != "" {
     emit chunk
   }
@@ -1345,8 +1345,8 @@ close(src)
 
 For line-oriented code, prefer the simpler `readln(stream) != null` style:
 
-```dobra
-let line = readln(src)
+```nodia
+var line = readln(src)
 while line != null {
   emit line
   line = readln(src)
@@ -1365,8 +1365,8 @@ new code should use `upper`, `lower`, `starts`, and `ends`.
 
 #### `upper(text)`
 
-```dobra
-emit upper("dobra")
+```nodia
+emit upper("nodia")
 ```
 
 Output:
@@ -1377,19 +1377,19 @@ DOBRA
 
 #### `lower(text)`
 
-```dobra
+```nodia
 emit lower("DOBRA")
 ```
 
 Output:
 
 ```text
-dobra
+nodia
 ```
 
 #### `capitalize(text)`
 
-```dobra
+```nodia
 emit capitalize("gZELONI")
 ```
 
@@ -1401,7 +1401,7 @@ Gzeloni
 
 #### `trim(text)`
 
-```dobra
+```nodia
 emit "'{trim('  value  ')}'"
 ```
 
@@ -1413,7 +1413,7 @@ Output:
 
 #### `replace(text, from, to)`
 
-```dobra
+```nodia
 emit replace("a/b/c", "/", " -> ")
 ```
 
@@ -1425,7 +1425,7 @@ a -> b -> c
 
 #### `split(text, sep)`
 
-```dobra
+```nodia
 emit split("a,b,c", ",")
 ```
 
@@ -1437,7 +1437,7 @@ Output:
 
 #### `join(list, sep)`
 
-```dobra
+```nodia
 emit join(["a", "b", "c"], "|")
 ```
 
@@ -1449,7 +1449,7 @@ a|b|c
 
 #### `lines(text)`
 
-```dobra
+```nodia
 emit lines("a\nb\nc")
 ```
 
@@ -1461,7 +1461,7 @@ Output:
 
 #### `unlines(list)`
 
-```dobra
+```nodia
 emit unlines(["a", "b", "c"])
 ```
 
@@ -1475,7 +1475,7 @@ c
 
 #### `words(text)`
 
-```dobra
+```nodia
 emit words("terra blade true night edge")
 ```
 
@@ -1489,25 +1489,25 @@ Output:
 
 Strings:
 
-```dobra
+```nodia
 emit contains("adamantite", "mant")
 ```
 
 Lists:
 
-```dobra
+```nodia
 emit contains(["compiler", "streams"], "streams")
 ```
 
 Maps check keys:
 
-```dobra
+```nodia
 emit contains({name: "Ana"}, "name")
 ```
 
 #### `starts(text, prefix)`
 
-```dobra
+```nodia
 emit starts("adamantite", "ada")
 ```
 
@@ -1519,7 +1519,7 @@ true
 
 #### `ends(text, suffix)`
 
-```dobra
+```nodia
 emit ends("adamantite", "ite")
 ```
 
@@ -1533,7 +1533,7 @@ true
 
 Indent with spaces:
 
-```dobra
+```nodia
 emit indent("a\nb", 2)
 ```
 
@@ -1546,7 +1546,7 @@ Output:
 
 Indent with a prefix:
 
-```dobra
+```nodia
 emit indent("a\nb", "> ")
 ```
 
@@ -1559,8 +1559,8 @@ Output:
 
 #### `dedent(text)`
 
-```dobra
-const text = """
+```nodia
+val text = """
     a
     b
 """
@@ -1572,7 +1572,7 @@ emit dedent(text)
 
 #### `int(value)`
 
-```dobra
+```nodia
 emit int("42")
 emit int(3.9)
 ```
@@ -1586,7 +1586,7 @@ Output:
 
 #### `float(value)`
 
-```dobra
+```nodia
 emit float("42")
 ```
 
@@ -1598,7 +1598,7 @@ Output:
 
 #### `abs(n)`
 
-```dobra
+```nodia
 emit abs(-10)
 ```
 
@@ -1610,7 +1610,7 @@ Output:
 
 #### `floor(n)`
 
-```dobra
+```nodia
 emit floor(3.9)
 ```
 
@@ -1622,7 +1622,7 @@ Output:
 
 #### `ceil(n)`
 
-```dobra
+```nodia
 emit ceil(3.1)
 ```
 
@@ -1634,7 +1634,7 @@ Output:
 
 #### `round(n)`
 
-```dobra
+```nodia
 emit round(3.5)
 ```
 
@@ -1646,7 +1646,7 @@ Output:
 
 #### `sqrt(n)`
 
-```dobra
+```nodia
 emit sqrt(9)
 ```
 
@@ -1658,7 +1658,7 @@ Output:
 
 #### `pow(a, b)`
 
-```dobra
+```nodia
 emit pow(2, 8)
 ```
 
@@ -1670,7 +1670,7 @@ Output:
 
 #### `min(a, b)`
 
-```dobra
+```nodia
 emit min(10, 3)
 ```
 
@@ -1682,7 +1682,7 @@ Output:
 
 #### `max(a, b)`
 
-```dobra
+```nodia
 emit max(10, 3)
 ```
 
@@ -1694,7 +1694,7 @@ Output:
 
 #### `clamp(n, min, max)`
 
-```dobra
+```nodia
 emit clamp(12, 0, 10)
 emit clamp(-1, 0, 10)
 emit clamp(5, 0, 10)
@@ -1710,7 +1710,7 @@ Output:
 
 #### `sum(list)`
 
-```dobra
+```nodia
 emit sum([1, 2, 3])
 ```
 
@@ -1722,7 +1722,7 @@ Output:
 
 #### `avg(list)`
 
-```dobra
+```nodia
 emit avg([1, 2, 3])
 emit avg([])
 ```
@@ -1736,7 +1736,7 @@ null
 
 #### `range(end)` and `range(start, end)`
 
-```dobra
+```nodia
 emit range(4)
 emit range(2, 5)
 emit range(5, 2)
@@ -1756,7 +1756,7 @@ The end value is excluded.
 
 #### `len(value)`
 
-```dobra
+```nodia
 emit len("abc")
 emit len([1, 2, 3])
 emit len({name: "Ana"})
@@ -1772,7 +1772,7 @@ Output:
 
 #### `string(value)`
 
-```dobra
+```nodia
 emit string(42)
 emit string(true)
 ```
@@ -1786,7 +1786,7 @@ true
 
 #### `bool(value)`
 
-```dobra
+```nodia
 emit bool(null)
 emit bool(1)
 emit bool("text")
@@ -1802,7 +1802,7 @@ true
 
 #### `keys(map)`
 
-```dobra
+```nodia
 emit keys({name: "Ana", role: "dev"})
 ```
 
@@ -1816,7 +1816,7 @@ Map keys are stored in deterministic sorted order.
 
 #### `values(map)`
 
-```dobra
+```nodia
 emit values({name: "Ana", role: "dev"})
 ```
 
@@ -1828,7 +1828,7 @@ Output:
 
 #### `push(list, value)`
 
-```dobra
+```nodia
 emit push([1, 2], 3)
 ```
 
@@ -1840,7 +1840,7 @@ Output:
 
 #### `pop(list)`
 
-```dobra
+```nodia
 emit pop([1, 2, 3])
 emit pop([])
 ```
@@ -1854,7 +1854,7 @@ Output:
 
 #### `first(list)`
 
-```dobra
+```nodia
 emit first(["a", "b"])
 emit first([])
 ```
@@ -1868,7 +1868,7 @@ null
 
 #### `last(list)`
 
-```dobra
+```nodia
 emit last(["a", "b"])
 emit last([])
 ```
@@ -1884,7 +1884,7 @@ null
 
 Lists:
 
-```dobra
+```nodia
 emit slice(["a", "b", "c", "d"], 1, 3)
 ```
 
@@ -1896,8 +1896,8 @@ Output:
 
 Text:
 
-```dobra
-emit slice("dobra", 1, 4)
+```nodia
+emit slice("nodia", 1, 4)
 ```
 
 Output:
@@ -1908,7 +1908,7 @@ ric
 
 Negative indexes count from the end:
 
-```dobra
+```nodia
 emit slice(["a", "b", "c", "d"], -3, -1)
 ```
 
@@ -1920,7 +1920,7 @@ Output:
 
 #### `reverse(list_or_text)`
 
-```dobra
+```nodia
 emit reverse([1, 2, 3])
 emit reverse("abc")
 ```
@@ -1934,7 +1934,7 @@ cba
 
 #### `sort(list)`
 
-```dobra
+```nodia
 emit sort([3, 1, 2])
 emit sort(["c", "a", "b"])
 ```
@@ -1948,7 +1948,7 @@ Output:
 
 #### `unique(list)`
 
-```dobra
+```nodia
 emit unique(["a", "b", "a", "c", "b"])
 ```
 
@@ -1964,49 +1964,49 @@ Language/runtime errors use exit code `1`.
 
 Example:
 
-```dobra
-const n = 1
+```nodia
+val n = 1
 n = 2
 ```
 
 Output:
 
 ```text
-error[E4101]: cannot assign to const 'n'
-  at file.dob:2:1
+error[E4101]: cannot assign to val 'n'
+  at file.nod:2:1
 ```
 
 Parse errors use `E1000`, runtime errors use `E2000`, IO errors use `E3000`, and semantic checker errors use `E41xx`. Write permission errors use `E3001`.
 
 Write permission error:
 
-```dobra
+```nodia
 write("out.txt", "blocked")
 ```
 
 Command:
 
 ```bash
-dobra run file.dob
+nodia run file.nod
 ```
 
 Output:
 
 ```text
 error[E3001]: file write requires --allow-write
-  at file.dob
+  at file.nod
 ```
 
 JSON error output:
 
 ```bash
-dobra run file.dob --json
+nodia run file.nod --json
 ```
 
 Shape:
 
 ```json
-{"ok":false,"error":{"message":"error[E3001]: file write requires --allow-write\n  at file.dob","exit_code":1}}
+{"ok":false,"error":{"message":"error[E3001]: file write requires --allow-write\n  at file.nod","exit_code":1}}
 ```
 
 Exit codes:
@@ -2034,7 +2034,7 @@ Formatting is canonical and non-configurable.
 | Final newline | required |
 | Line width | formatter-controlled lines target 60 characters |
 
-The formatter is part of the language contract. Prefer writing clear code and letting `dobra fmt`
+The formatter is part of the language contract. Prefer writing clear code and letting `nodia fmt`
 settle layout.
 
 ## VSCode Support
@@ -2042,7 +2042,7 @@ settle layout.
 Local syntax highlighting is available in:
 
 ```text
-vscode/dobra-language
+vscode/nodia-language
 ```
 
 Install from VSCode:
@@ -2051,25 +2051,25 @@ Install from VSCode:
 Developer: Install Extension from Location...
 ```
 
-Select the `vscode/dobra-language` folder.
+Select the `vscode/nodia-language` folder.
 
-The extension supports `.dob` file association, keywords, strings, interpolation, comments,
+The extension supports `.nod` file association, keywords, strings, interpolation, comments,
 numbers, operators, builtins, and language globals.
 
 ## Complete Examples
 
 ### Fibonacci With Lists
 
-```dobra
-fn fibs(count) {
-  let result = []
-  let a = 0
-  let b = 1
+```nodia
+func fibs(count) {
+  var result = []
+  var a = 0
+  var b = 1
 
   for i in range(count) {
     result = push(result, a)
 
-    let next = a + b
+    var next = a + b
     a = b
     b = next
   }
@@ -2092,13 +2092,13 @@ Output:
 
 ### File Transformer
 
-`upper_file.dob`:
+`upper_file.nod`:
 
-```dobra
-const src = open("input.txt", "read")
-const out = open("output.txt", "write")
+```nodia
+val src = open("input.txt", "read")
+val out = open("output.txt", "write")
 
-let line = readln(src)
+var line = readln(src)
 while line != null {
   writeln(out, upper(line))
   line = readln(src)
@@ -2111,35 +2111,35 @@ close(out)
 Run:
 
 ```bash
-dobra run upper_file.dob --allow-write
+nodia run upper_file.nod --allow-write
 ```
 
-### Generated Report With Imports
+### Generated Report With Uses
 
-`report/meta.dob`:
+`report/meta.nod`:
 
-```dobra
-const title = "Build Report"
-const sections = ["summary", "artifacts", "status"]
+```nodia
+val title = "Build Report"
+val sections = ["summary", "artifacts", "status"]
 ```
 
-`report/format.dob`:
+`report/format.nod`:
 
-```dobra
-fn heading(text) {
+```nodia
+func heading(text) {
   return "== {upper(text)} =="
 }
 
-fn bullet(value) {
+func bullet(value) {
   return "- {value}"
 }
 ```
 
-`main.dob`:
+`main.nod`:
 
-```dobra
-import "./report/meta" as meta
-import "./report/format" as fmt
+```nodia
+use "./report/meta" as meta
+use "./report/format" as fmt
 
 emit fmt.heading(meta.title)
 

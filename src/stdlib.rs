@@ -501,7 +501,7 @@ fn value_rank(value: &Value) -> u8 {
         Value::List(_) => 4,
         Value::Map(_) => 5,
         Value::Stream(_) => 6,
-        Value::ImportBinding(_, _) => 7,
+        Value::UseBinding(_, _) => 7,
         Value::Function(_) => 8,
     }
 }

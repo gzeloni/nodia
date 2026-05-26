@@ -1,16 +1,14 @@
-# Dobra Language Specification Baseline v0.4
+# Nodia Language Specification Baseline v0.5
 
-This document defines the v0.4 baseline language contract for Dobra. Its purpose
+This document defines the v0.5 baseline language contract for Nodia. Its purpose
 is to freeze the implemented behavior before the language moves toward the
 static, safe, self-hosted direction described in [roadmap.md](roadmap.md).
 
-The v0.4 baseline is intentionally descriptive: it records what the current
-language accepts and how it behaves. Later versions may revise syntax and
-semantics, but those revisions must be explicit migrations from this baseline.
+The v0.5 baseline is intentionally descriptive: it records the current identity syntax and behavior. Earlier `let`/`const`/`fn`/`import`/`show` syntax is not part of this language version.
 
 ## 1. Scope
 
-Dobra v0.4 is the specification baseline for the existing dynamic implementation.
+Nodia v0.5 is the specification baseline for the existing dynamic implementation.
 It defines:
 
 - source files and lexical grammar;
@@ -19,7 +17,7 @@ It defines:
 - operator precedence;
 - runtime values;
 - binding and mutability rules;
-- module/import behavior;
+- module/use behavior;
 - function behavior;
 - control flow behavior;
 - IO behavior;
@@ -27,19 +25,19 @@ It defines:
 - formatter guarantees;
 - the public AST shape.
 
-Dobra v0.4 does not yet define the future static type system, effect checker,
+Nodia v0.5 does not yet define the future static type system, effect checker,
 ownership model, IR, bytecode, REPL, or certification profiles. Those are roadmap
-requirements, not v0.4 language behavior.
+requirements, not v0.5 language behavior.
 
 ## 2. Source Files
 
-Dobra source files use the `.dob` extension.
+Nodia source files use the `.nod` extension.
 
 A source file is a sequence of statements. Statements are separated by newlines
 or semicolons. Blocks are delimited by braces.
 
-```dob
-const name = "Dobra"
+```nod
+val name = "Nodia"
 emit name
 ```
 
@@ -52,9 +50,9 @@ significant as statement separators.
 
 ### 3.2 Comments
 
-Dobra supports line comments with `#` and `//`.
+Nodia supports line comments with `#` and `//`.
 
-```dob
+```nod
 # comment
 // comment
 ```
@@ -71,38 +69,38 @@ or `_`.
 [A-Za-z_][A-Za-z0-9_]*
 ```
 
-Non-ASCII identifiers are not part of the v0.4 baseline.
+Non-ASCII identifiers are not part of the v0.5 baseline.
 
 ### 3.4 Integer Literals
 
 Integer literals are base-10 signed 64-bit values. The minus sign is parsed as a
 unary operator, not as part of the literal.
 
-```dob
-const count = 42
-const offset = -3
+```nod
+val count = 42
+val offset = -3
 ```
 
 ### 3.5 Float Literals
 
 Float literals are decimal literals containing digits on both sides of `.`.
 
-```dob
-const ratio = 0.5
-const total = 10.0
+```nod
+val ratio = 0.5
+val total = 10.0
 ```
 
-A trailing-dot form such as `10.` is not part of v0.4.
+A trailing-dot form such as `10.` is not part of v0.5.
 
 ### 3.6 String Literals
 
-Dobra supports double-quoted strings, single-quoted strings, and triple-quoted
+Nodia supports double-quoted strings, single-quoted strings, and triple-quoted
 strings.
 
-```dob
-const a = "text"
-const b = 'text'
-const c = """
+```nod
+val a = "text"
+val b = 'text'
+val c = """
 multiline text
 """
 ```
@@ -118,7 +116,7 @@ Escapes in single-line strings:
 | `\'` | single quote |
 | `\\` | backslash |
 
-Unknown escapes resolve to the escaped character itself in v0.4.
+Unknown escapes resolve to the escaped character itself in v0.5.
 
 Triple-quoted strings preserve their contents until the next `"""` delimiter.
 
@@ -127,31 +125,40 @@ Triple-quoted strings preserve their contents until the next `"""` delimiter.
 At runtime, string values are interpolated when evaluated. Interpolation uses
 braced expressions supported by the current runtime evaluator.
 
-```dob
-const name = "Dobra"
+```nod
+val name = "Nodia"
 emit "hello {name}"
 ```
 
-Interpolation is runtime behavior in v0.4, not a separate AST node.
+Interpolation is runtime behavior in v0.5, not a separate AST node.
 
 ## 4. Keywords
 
 Implemented keywords:
 
 ```text
-let const fn return emit
+var val func return emit
 if else for in while break continue
 true false null
 and or not
-import as show hide
+use as pick hide
 ```
+
+Removed legacy keywords:
+
+```text
+let const fn import show
+```
+
+These keywords are intentionally rejected in v0.5. There is no compatibility
+mode for the old surface syntax.
 
 Reserved for future versions:
 
 ```text
 from match case default
 try catch throw defer
-type enum struct namespace use
+type enum struct namespace
 ```
 
 A reserved future keyword cannot be used as an identifier and produces a parse
@@ -159,7 +166,7 @@ error when used as a statement keyword.
 
 ## 5. Grammar
 
-The following grammar is normative for the v0.4 baseline, using an EBNF-like
+The following grammar is normative for the v0.5 baseline, using an EBNF-like
 notation.
 
 ```text
@@ -167,10 +174,10 @@ program        = { statement terminator } EOF ;
 terminator     = newline | semicolon | EOF ;
 
 statement      = comment
-               | import_stmt
-               | let_stmt
-               | const_stmt
-               | fn_stmt
+               | use_stmt
+               | var_stmt
+               | val_stmt
+               | func_stmt
                | return_stmt
                | emit_stmt
                | if_stmt
@@ -181,17 +188,17 @@ statement      = comment
                | assign_stmt
                | expr_stmt ;
 
-import_stmt    = "import" string { import_clause } ;
-import_clause  = "as" identifier
-               | "show" import_names
-               | "hide" import_names ;
-import_names   = identifier { "," identifier } [","] ;
+use_stmt       = "use" string { use_clause } ;
+use_clause     = "as" identifier
+               | "pick" use_names
+               | "hide" use_names ;
+use_names      = identifier { "," identifier } [","] ;
 
-let_stmt       = "let" identifier "=" expression ;
-const_stmt     = "const" identifier "=" expression ;
+var_stmt       = "var" identifier "=" expression ;
+val_stmt       = "val" identifier "=" expression ;
 assign_stmt    = identifier "=" expression ;
 
-fn_stmt        = "fn" identifier "(" [params] ")" block ;
+func_stmt      = "func" identifier "(" [params] ")" block ;
 params         = identifier { "," identifier } [","] ;
 
 return_stmt    = "return" [expression] ;
@@ -249,7 +256,7 @@ Operators are listed from lowest to highest precedence.
 
 ## 7. Runtime Values
 
-Dobra v0.4 has the following runtime values:
+Nodia v0.5 has the following runtime values:
 
 | Value | Description |
 |---|---|
@@ -262,9 +269,9 @@ Dobra v0.4 has the following runtime values:
 | `map` | Ordered string-keyed map. |
 | `stream` | Standard or file-backed stream handle. |
 | `function` | User-defined function. |
-| `import` | Lazy imported binding reference. |
+| `use` | Lazy used binding reference. |
 
-Truthiness in v0.4:
+Truthiness in v0.5:
 
 | Value | False when |
 |---|---|
@@ -277,17 +284,17 @@ Truthiness in v0.4:
 | `map` | empty |
 | `stream` | never |
 | `function` | never |
-| `import` | never |
+| `use` | never |
 
 Future static versions should remove arbitrary truthiness in stricter profiles.
 
 ## 8. Bindings And Mutability
 
-`const` defines an immutable binding. `let` defines a mutable binding.
+`val` defines an immutable binding. `var` defines a mutable binding.
 
-```dob
-const name = "Dobra"
-let count = 0
+```nod
+val name = "Nodia"
+var count = 0
 count = count + 1
 ```
 
@@ -295,25 +302,25 @@ Assignment searches existing scopes and updates the first matching mutable
 binding. Assigning to an immutable binding is a runtime error. Assigning to an
 undefined binding is a runtime error.
 
-Function parameters and loop variables are mutable in v0.4.
+Function parameters and loop variables are mutable in v0.5.
 
 ## 9. Scopes
 
-Dobra v0.4 uses lexical block scopes at runtime.
+Nodia v0.5 uses lexical block scopes at runtime.
 
 - The root scope contains top-level bindings and built-in runtime bindings.
 - Blocks create nested scopes.
 - Functions create local scopes for parameters and body execution.
-- Imported module functions capture exported root bindings from their module.
+- Used module functions capture exported root bindings from their module.
 
-Top-level module declarations are exported when a file is imported.
+Top-level module declarations are exported when a file is used.
 
 ## 10. Functions
 
-Functions are declared with `fn`.
+Functions are declared with `func`.
 
-```dob
-fn add(left, right) {
+```nod
+func add(left, right) {
   return left + right
 }
 ```
@@ -331,9 +338,9 @@ Rules:
 
 ### 11.1 If
 
-`if` evaluates the condition using v0.4 truthiness.
+`if` evaluates the condition using v0.5 truthiness.
 
-```dob
+```nod
 if count > 0 {
   emit "positive"
 } else {
@@ -357,7 +364,7 @@ Other values produce a runtime error.
 
 ### 11.3 While
 
-`while` repeats while the condition is truthy. v0.4 enforces a runtime safety cap
+`while` repeats while the condition is truthy. v0.5 enforces a runtime safety cap
 of 100000 iterations.
 
 ### 11.4 Break And Continue
@@ -375,19 +382,19 @@ at least one operand is a string.
 ### 12.2 Numeric Operators
 
 `-`, `*`, `/`, and `%` operate on numeric values. Numeric conversion behavior is
-runtime-defined in v0.4 and should be tightened in future static versions.
+runtime-defined in v0.5 and should be tightened in future static versions.
 
 ### 12.3 Equality
 
 Equality is structural for `null`, bools, numbers, strings, lists, maps,
-functions, streams, and import bindings as currently represented by the runtime.
+functions, streams, and use bindings as currently represented by the runtime.
 
 ### 12.4 Field Access
 
 Field access works on maps.
 
-```dob
-const user = { name: "Ana" }
+```nod
+val user = { name: "Ana" }
 emit user.name
 ```
 
@@ -397,7 +404,7 @@ Accessing a missing field or a field on a non-map value is a runtime error.
 
 Index access works on lists, strings, and maps.
 
-```dob
+```nod
 emit items[0]
 emit name[1]
 emit user["name"]
@@ -405,38 +412,38 @@ emit user["name"]
 
 Invalid index operations produce runtime errors.
 
-## 13. Modules And Imports
+## 13. Modules And Uses
 
-Imports use string paths.
+`use` declarations use string paths.
 
-```dob
-import "./lib"
-import "./lib" as lib
-import "./lib" show title, version
-import "./lib" hide internal
+```nod
+use "./lib"
+use "./lib" as lib
+use "./lib" pick title, version
+use "./lib" hide internal
 ```
 
 Resolution rules:
 
-- relative paths resolve from the importing file's directory;
+- relative paths resolve from the file containing the `use` declaration;
 - absolute paths are accepted by the runtime;
 - paths with an extension are used directly;
-- paths without an extension try `.dob`, then `index.dob`, then the raw path;
+- paths without an extension try `.nod`, then `index.nod`, then the raw path;
 - resolved modules are cached by canonical path;
-- circular imports are allowed structurally;
-- reading an imported binding before initialization is a runtime error.
+- circular uses are allowed structurally;
+- reading a used binding before initialization is a runtime error.
 
-Import selection:
+Use selection:
 
-- `as name` imports selected bindings into a namespace map;
-- no alias imports selected bindings directly into the current scope;
-- `show` restricts selected names;
+- `as name` uses selected bindings into a namespace map;
+- no alias uses selected bindings directly into the current scope;
+- `pick` restricts selected names;
 - `hide` removes selected names;
-- requesting a missing `show` name is a runtime error.
+- requesting a missing `pick` name is a semantic/runtime error.
 
 ## 14. IO And Streams
 
-Dobra v0.4 supports real file and standard stream IO through builtins.
+Nodia v0.5 supports real file and standard stream IO through builtins.
 
 Standard stream bindings:
 
@@ -465,16 +472,16 @@ IO builtins:
 
 File writes require the runtime option exposed by the CLI as `--allow-write`.
 
-In v0.4, IO is runtime-enforced. Future versions must make IO an explicit static
+In v0.5, IO is runtime-enforced. Future versions must make IO an explicit static
 effect.
 
 ## 15. Diagnostics
 
-Dobra errors have a stable shape:
+Nodia errors have a stable shape:
 
 ```text
 error[E1000]: message
-  at file.dob:line:column
+  at file.nod:line:column
 ```
 
 Error classes:
@@ -489,7 +496,7 @@ Error classes:
 | `E4101` | assignment to immutable binding |
 | `E4102` | duplicate binding or parameter |
 | `E4103` | invalid control-flow placement |
-| `E4104` | invalid import selection |
+| `E4104` | invalid use selection |
 | `E4105` | missing known field |
 | `E4106` | invalid interpolation |
 | `E4107` | invalid arity |
@@ -501,23 +508,23 @@ compiler errors into more precise code ranges.
 
 ## 15.1 Semantic Checks
 
-Dobra v0.4 performs semantic checks before `check` succeeds and before `run`
+Nodia v0.5 performs semantic checks before `check` succeeds and before `run`
 executes a program. These checks are intentionally limited, but they make the
 language stricter than the v0.3 parse-only model.
 
-The v0.4 checker rejects:
+The v0.5 checker rejects:
 
 - undefined variables;
-- assignment to immutable `const` bindings;
+- assignment to immutable `val` bindings;
 - duplicate bindings in the same scope;
 - `return` outside a function;
 - `break` or `continue` outside a loop;
 - invalid arity for known user functions and builtins;
-- missing fields on known imported namespaces and literal maps;
-- imports that select missing names through `show`;
+- missing fields on known used namespaces and literal maps;
+- uses that select missing names through `pick`;
 - invalid expressions inside string interpolation.
 
-The checker is semantic, not yet static-typed. It tracks declarations, imports, function arity,
+The checker is semantic, not yet static-typed. It tracks declarations, uses, function arity,
 known namespace fields, and literal map shapes. It does not prove numeric types,
 collection element types, effect safety, ownership, or allocation behavior.
 
@@ -525,7 +532,7 @@ collection element types, effect safety, ownership, or allocation behavior.
 
 Formatting is canonical and non-configurable.
 
-Current v0.4 formatter rules:
+Current v0.5 formatter rules:
 
 | Rule | Contract |
 |---|---|
@@ -545,31 +552,31 @@ has canonical formatting.
 
 ## 17. CLI Contract
 
-The v0.4 baseline recognizes these commands:
+The v0.5 baseline recognizes these commands:
 
 | Command | Purpose |
 |---|---|
-| `dobra run` | Execute a `.dob` file or stdin source. |
-| `dobra check` | Lex, parse, and run v0.4 semantic checks. |
-| `dobra fmt` | Format `.dob` files. |
-| `dobra eval` | Execute source passed as CLI text. |
-| `dobra tokens` | Emit token stream. |
-| `dobra ast` | Emit parsed AST. |
-| `dobra init` | Create a project scaffold. |
-| `dobra version` | Print version metadata. |
+| `nodia run` | Execute a `.nod` file or stdin source. |
+| `nodia check` | Lex, parse, and run v0.5 semantic checks. |
+| `nodia fmt` | Format `.nod` files. |
+| `nodia eval` | Execute source passed as CLI text. |
+| `nodia tokens` | Emit token stream. |
+| `nodia ast` | Emit parsed AST. |
+| `nodia init` | Create a project scaffold. |
+| `nodia version` | Print version metadata. |
 
-`check` performs v0.4 semantic checks. It is not yet a static type or effect checker.
+`check` performs v0.5 semantic checks. It is not yet a static type or effect checker.
 
 ## 18. Baseline Stability Rule
 
-Any language change after v0.4 must answer these questions:
+Any language change after v0.5 must answer these questions:
 
 1. Does the grammar change?
 2. Does the AST schema change?
 3. Does formatter output change?
 4. Does runtime behavior change?
 5. Does the corpus need new valid or invalid examples?
-6. Does the change move Dobra toward the roadmap principles?
+6. Does the change move Nodia toward the roadmap principles?
 
 If a change cannot be represented in the specification, AST schema, formatter,
 and corpus, it is not ready to enter the language.
