@@ -7,6 +7,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 
 pub type ModuleRef = Rc<RefCell<Module>>;
+pub type BindingRef = Rc<RefCell<SharedBinding>>;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamId {
@@ -25,6 +26,12 @@ pub struct Module {
     pub loaded: bool,
 }
 
+#[derive(Clone)]
+pub struct SharedBinding {
+    pub value: Value,
+    pub mutable: bool,
+}
+
 #[derive(Debug, Clone)]
 pub enum Value {
     Null,
@@ -40,11 +47,11 @@ pub enum Value {
     Function(Function),
 }
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone)]
 pub struct Function {
     pub params: Vec<String>,
     pub body: Vec<Stmt>,
-    pub captures: BTreeMap<String, Value>,
+    pub captures: BTreeMap<String, BindingRef>,
 }
 
 impl Value {
@@ -99,6 +106,32 @@ impl PartialEq for Value {
             }
             _ => false,
         }
+    }
+}
+
+impl PartialEq for Function {
+    fn eq(&self, other: &Self) -> bool {
+        self.params == other.params && self.body == other.body
+    }
+}
+
+impl fmt::Debug for Function {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let captures = self.captures.keys().cloned().collect::<Vec<_>>();
+        f.debug_struct("Function")
+            .field("params", &self.params)
+            .field("body", &self.body)
+            .field("captures", &captures)
+            .finish()
+    }
+}
+
+impl fmt::Debug for SharedBinding {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("SharedBinding")
+            .field("mutable", &self.mutable)
+            .field("value_type", &self.value.type_name())
+            .finish()
     }
 }
 

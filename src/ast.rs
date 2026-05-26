@@ -21,7 +21,7 @@ pub enum Stmt {
         mutable: bool,
     },
     Assign {
-        name: String,
+        target: AssignTarget,
         value: Expr,
     },
     Func {
@@ -37,7 +37,7 @@ pub enum Stmt {
         else_branch: Vec<Stmt>,
     },
     For {
-        name: String,
+        binding: ForBinding,
         iterable: Expr,
         body: Vec<Stmt>,
     },
@@ -48,6 +48,25 @@ pub enum Stmt {
     Break,
     Continue,
     Expr(Expr),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum AssignTarget {
+    Identifier(String),
+    Get {
+        object: Box<AssignTarget>,
+        field: String,
+    },
+    Index {
+        object: Box<AssignTarget>,
+        index: Expr,
+    },
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ForBinding {
+    Single(String),
+    Pair { key: String, value: String },
 }
 
 #[derive(Debug, Clone, PartialEq)]

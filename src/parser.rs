@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
+use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp};
 use crate::error::{DobraError, DobraResult};
 use crate::regex::{
     RegexAnchor, RegexCharSet, RegexCharSetItem, RegexClass, RegexFlag, RegexGroupKind,
@@ -84,15 +84,7 @@ impl Parser {
             | TokenKind::Namespace => {
                 Err(self.error_here("keyword is reserved for a future Nodia version"))
             }
-            TokenKind::Identifier(name) if self.peek_next_is_equal() => {
-                let name = name.clone();
-                self.advance();
-                self.expect_equal()?;
-                self.skip_separators();
-                let value = self.expression()?;
-                Ok(Stmt::Assign { name, value })
-            }
-            _ => Ok(Stmt::Expr(self.expression()?)),
+            _ => self.expression_or_assignment_statement(),
         }
     }
 
@@ -235,14 +227,14 @@ impl Parser {
 
     fn for_statement(&mut self) -> DobraResult<Stmt> {
         self.advance();
-        let name = self.expect_identifier("expected loop variable")?;
+        let binding = self.for_binding()?;
         self.expect(TokenKind::In, "expected 'in' after loop variable")?;
         self.skip_separators();
         let iterable = self.expression()?;
         self.skip_newlines();
         let body = self.block()?;
         Ok(Stmt::For {
-            name,
+            binding,
             iterable,
             body,
         })
@@ -267,6 +259,37 @@ impl Parser {
         }
         self.expect(TokenKind::RightBrace, "expected '}' after block")?;
         Ok(statements)
+    }
+
+    fn expression_or_assignment_statement(&mut self) -> DobraResult<Stmt> {
+        let expr = self.expression()?;
+        if !self.match_kind(&TokenKind::Equal) {
+            return Ok(Stmt::Expr(expr));
+        }
+        self.skip_separators();
+        let value = self.expression()?;
+        let target = self.assign_target_from_expr(expr).map_err(|message| {
+            DobraError::new(message, self.previous().line, self.previous().column)
+        })?;
+        Ok(Stmt::Assign { target, value })
+    }
+
+    fn for_binding(&mut self) -> DobraResult<ForBinding> {
+        if !self.match_kind(&TokenKind::LeftParen) {
+            return self
+                .expect_identifier("expected loop variable")
+                .map(ForBinding::Single);
+        }
+
+        self.skip_separators();
+        let key = self.expect_identifier("expected loop variable")?;
+        self.skip_separators();
+        self.expect(TokenKind::Comma, "expected ',' in loop binding")?;
+        self.skip_separators();
+        let value = self.expect_identifier("expected loop variable")?;
+        self.skip_separators();
+        self.expect(TokenKind::RightParen, "expected ')' after loop binding")?;
+        Ok(ForBinding::Pair { key, value })
     }
 
     fn expression(&mut self) -> DobraResult<Expr> {
@@ -438,7 +461,7 @@ impl Parser {
                     args,
                 };
             } else if self.match_kind(&TokenKind::Dot) {
-                let field = self.expect_identifier("expected field name after '.'")?;
+                let field = self.expect_name_like("expected field name after '.'")?;
                 expr = Expr::Get {
                     object: Box::new(expr),
                     field,
@@ -513,15 +536,14 @@ impl Parser {
         if !self.check(&TokenKind::RightBrace) {
             loop {
                 let key = match self.advance().kind.clone() {
-                    TokenKind::Identifier(name) => name,
                     TokenKind::String(name) => name,
-                    other => {
-                        return Err(DobraError::new(
-                            format!("expected map key, got {other:?}"),
+                    kind => self.name_like_from_kind(&kind).ok_or_else(|| {
+                        DobraError::new(
+                            format!("expected map key, got {kind:?}"),
                             self.previous().line,
                             self.previous().column,
-                        ))
-                    }
+                        )
+                    })?,
                 };
                 self.skip_separators();
                 self.expect(TokenKind::Colon, "expected ':' after map key")?;
@@ -672,7 +694,7 @@ impl Parser {
             "group" | "capture" => self.regex_group(RegexGroupKind::Capture),
             "non_capture" => self.regex_group(RegexGroupKind::NonCapture),
             "named" => {
-                let name = self.expect_identifier("expected group name after named")?;
+                let name = self.expect_name_like("expected group name after named")?;
                 self.regex_group(RegexGroupKind::Named(name))
             }
             "atomic" => self.regex_group(RegexGroupKind::Atomic),
@@ -684,7 +706,7 @@ impl Parser {
             "preceded_by" => self.regex_lookaround(RegexLookaroundKind::PrecededBy),
             "not_preceded_by" => self.regex_lookaround(RegexLookaroundKind::NotPrecededBy),
             "same_as" => Ok(RegexNode::Reference(RegexReference::Named(
-                self.expect_identifier("expected named group after same_as")?,
+                self.expect_name_like("expected named group after same_as")?,
             ))),
             "same_as_group" => Ok(RegexNode::Reference(RegexReference::Group(
                 self.regex_expect_usize("expected group index after same_as_group")?,
@@ -980,11 +1002,79 @@ impl Parser {
         }
     }
 
+    fn assign_target_from_expr(&self, expr: Expr) -> Result<AssignTarget, &'static str> {
+        match expr {
+            Expr::Identifier(name) => Ok(AssignTarget::Identifier(name)),
+            Expr::Get { object, field } => Ok(AssignTarget::Get {
+                object: Box::new(self.assign_target_from_expr(*object)?),
+                field,
+            }),
+            Expr::Index { object, index } => Ok(AssignTarget::Index {
+                object: Box::new(self.assign_target_from_expr(*object)?),
+                index: *index,
+            }),
+            _ => Err("invalid assignment target"),
+        }
+    }
+
     fn expect_identifier(&mut self, message: &str) -> DobraResult<String> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => Ok(name),
             _ => Err(DobraError::new(message, token.line, token.column)),
+        }
+    }
+
+    fn expect_name_like(&mut self, message: &str) -> DobraResult<String> {
+        let token = self.advance().clone();
+        self.name_like_from_kind(&token.kind)
+            .ok_or_else(|| DobraError::new(message, token.line, token.column))
+    }
+
+    fn name_like_from_kind(&self, kind: &TokenKind) -> Option<String> {
+        match kind {
+            TokenKind::Identifier(name) => Some(name.clone()),
+            TokenKind::Val => Some("val".to_string()),
+            TokenKind::Var => Some("var".to_string()),
+            TokenKind::Func => Some("func".to_string()),
+            TokenKind::LegacyLet => Some("let".to_string()),
+            TokenKind::LegacyConst => Some("const".to_string()),
+            TokenKind::LegacyFn => Some("fn".to_string()),
+            TokenKind::Return => Some("return".to_string()),
+            TokenKind::Emit => Some("emit".to_string()),
+            TokenKind::If => Some("if".to_string()),
+            TokenKind::Else => Some("else".to_string()),
+            TokenKind::For => Some("for".to_string()),
+            TokenKind::In => Some("in".to_string()),
+            TokenKind::While => Some("while".to_string()),
+            TokenKind::Break => Some("break".to_string()),
+            TokenKind::Continue => Some("continue".to_string()),
+            TokenKind::True => Some("true".to_string()),
+            TokenKind::False => Some("false".to_string()),
+            TokenKind::Null => Some("null".to_string()),
+            TokenKind::And => Some("and".to_string()),
+            TokenKind::Or => Some("or".to_string()),
+            TokenKind::Not => Some("not".to_string()),
+            TokenKind::LegacyImport => Some("import".to_string()),
+            TokenKind::From => Some("from".to_string()),
+            TokenKind::As => Some("as".to_string()),
+            TokenKind::Pick => Some("pick".to_string()),
+            TokenKind::LegacyShow => Some("show".to_string()),
+            TokenKind::Hide => Some("hide".to_string()),
+            TokenKind::Match => Some("match".to_string()),
+            TokenKind::Case => Some("case".to_string()),
+            TokenKind::Default => Some("default".to_string()),
+            TokenKind::Try => Some("try".to_string()),
+            TokenKind::Catch => Some("catch".to_string()),
+            TokenKind::Throw => Some("throw".to_string()),
+            TokenKind::Defer => Some("defer".to_string()),
+            TokenKind::Type => Some("type".to_string()),
+            TokenKind::Enum => Some("enum".to_string()),
+            TokenKind::Struct => Some("struct".to_string()),
+            TokenKind::Namespace => Some("namespace".to_string()),
+            TokenKind::Use => Some("use".to_string()),
+            TokenKind::Regex => Some("regex".to_string()),
+            _ => None,
         }
     }
 
@@ -1012,12 +1102,6 @@ impl Parser {
 
     fn check(&self, kind: &TokenKind) -> bool {
         std::mem::discriminant(&self.peek().kind) == std::mem::discriminant(kind)
-    }
-
-    fn peek_next_is_equal(&self) -> bool {
-        self.tokens
-            .get(self.pos + 1)
-            .is_some_and(|token| matches!(token.kind, TokenKind::Equal))
     }
 
     fn consume_statement_end(&mut self) {
@@ -1150,5 +1234,42 @@ val pat = regex {
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
         assert_eq!(program.statements.len(), 1);
+    }
+
+    #[test]
+    fn parses_composite_assignment_and_map_pair_loop() {
+        let source = r#"
+var counts = {}
+counts["ana"] = 1
+for (key, value) in counts {
+  emit "{key}={value}"
+}
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        assert_eq!(program.statements.len(), 3);
+    }
+
+    #[test]
+    fn parses_keyword_map_keys_and_named_groups() {
+        let source = r#"
+val m = {from: "x", val: "y"}
+val pat = regex {
+  named val {
+    one_or_more letter
+  }
+  same_as val
+}
+val hit = find("42", regex {
+  named val {
+    one_or_more digit
+  }
+})
+emit m.from
+emit hit.named.val
+"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        assert_eq!(program.statements.len(), 5);
     }
 }

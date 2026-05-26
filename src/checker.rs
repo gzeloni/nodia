@@ -1,4 +1,4 @@
-use crate::ast::{Expr, Program, Stmt};
+use crate::ast::{AssignTarget, Expr, ForBinding, Program, Stmt};
 use crate::error::{DobraError, DobraResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -226,23 +226,10 @@ impl<'a> State<'a> {
                 }
                 Ok(())
             }
-            Stmt::Assign { name, value } => {
-                let Some(symbol) = self.lookup(name) else {
-                    return Err(self.error_name(
-                        "E4100",
-                        format!("undefined variable '{name}'"),
-                        name,
-                    ));
-                };
-                if !symbol.mutable {
-                    return Err(self.error_name(
-                        "E4101",
-                        format!("cannot assign to val '{name}'"),
-                        name,
-                    ));
-                }
+            Stmt::Assign { target, value } => {
+                self.check_assign_target(target, true)?;
                 self.check_expr(value)?;
-                self.update_symbol(name, self.symbol_for_expr(value, true))
+                self.apply_assignment_symbol(target, value)
             }
             Stmt::Func { name, params, body } => {
                 if mode != ScopeMode::Top {
@@ -270,14 +257,20 @@ impl<'a> State<'a> {
                 self.check_block(else_branch)
             }
             Stmt::For {
-                name,
+                binding,
                 iterable,
                 body,
             } => {
                 self.check_expr(iterable)?;
                 self.loop_depth += 1;
                 self.push_scope();
-                self.declare(name, Symbol::unknown(true))?;
+                match binding {
+                    ForBinding::Single(name) => self.declare(name, Symbol::unknown(true))?,
+                    ForBinding::Pair { key, value } => {
+                        self.declare(key, Symbol::unknown(true))?;
+                        self.declare(value, Symbol::unknown(true))?;
+                    }
+                }
                 let result = self.check_block(body);
                 self.pop_scope();
                 self.loop_depth -= 1;
@@ -426,6 +419,143 @@ impl<'a> State<'a> {
         }
 
         self.check_expr(callee)
+    }
+
+    fn check_assign_target(
+        &mut self,
+        target: &AssignTarget,
+        final_step: bool,
+    ) -> DobraResult<Option<Symbol>> {
+        match target {
+            AssignTarget::Identifier(name) => {
+                let Some(symbol) = self.lookup(name).cloned() else {
+                    return Err(self.error_name(
+                        "E4100",
+                        format!("undefined variable '{name}'"),
+                        name,
+                    ));
+                };
+                if !symbol.mutable
+                    && (final_step || !matches!(symbol.kind, SymbolKind::Namespace(_)))
+                {
+                    return Err(self.error_name(
+                        "E4101",
+                        format!("cannot assign to val '{name}'"),
+                        name,
+                    ));
+                }
+                Ok(Some(symbol))
+            }
+            AssignTarget::Get { object, field } => {
+                let object_symbol = self.check_assign_target(object, false)?;
+                match object_symbol.map(|symbol| symbol.kind) {
+                    Some(SymbolKind::Namespace(fields)) => {
+                        let Some(field_symbol) = fields.get(field).cloned() else {
+                            return Err(self.error_name(
+                                "E4105",
+                                format!("field '{field}' not found"),
+                                field,
+                            ));
+                        };
+                        if !field_symbol.mutable {
+                            return Err(self.error_name(
+                                "E4101",
+                                format!("cannot assign to val '{field}'"),
+                                field,
+                            ));
+                        }
+                        Ok(Some(field_symbol))
+                    }
+                    Some(SymbolKind::Map(fields)) => {
+                        if final_step {
+                            Ok(fields.get(field).cloned())
+                        } else {
+                            let Some(field_symbol) = fields.get(field).cloned() else {
+                                return Err(self.error_name(
+                                    "E4105",
+                                    format!("field '{field}' not found"),
+                                    field,
+                                ));
+                            };
+                            Ok(Some(field_symbol))
+                        }
+                    }
+                    Some(SymbolKind::Unknown | SymbolKind::Function { .. }) | None => Ok(None),
+                }
+            }
+            AssignTarget::Index { object, index } => {
+                self.check_expr(index)?;
+                self.check_assign_target(object, false)?;
+                Ok(None)
+            }
+        }
+    }
+
+    fn apply_assignment_symbol(&mut self, target: &AssignTarget, value: &Expr) -> DobraResult<()> {
+        let Some(root_name) = assign_target_root_name(target) else {
+            return Ok(());
+        };
+        let Some(root_symbol) = self.lookup(root_name).cloned() else {
+            return Err(self.error_name(
+                "E4100",
+                format!("undefined variable '{root_name}'"),
+                root_name,
+            ));
+        };
+        let value_symbol = self.symbol_for_expr(value, false);
+        let steps = assignment_symbol_steps(target);
+        let updated = self.update_symbol_after_assignment(root_symbol, &steps, value_symbol);
+        self.update_symbol(root_name, updated)
+    }
+
+    fn update_symbol_after_assignment(
+        &self,
+        symbol: Symbol,
+        steps: &[AssignmentSymbolStep],
+        value_symbol: Symbol,
+    ) -> Symbol {
+        if steps.is_empty() {
+            return Symbol {
+                mutable: symbol.mutable,
+                kind: value_symbol.kind,
+            };
+        }
+
+        match &steps[0] {
+            AssignmentSymbolStep::UnknownIndex => symbol,
+            AssignmentSymbolStep::Field(field) => {
+                self.update_symbol_field(symbol, field, &steps[1..], value_symbol)
+            }
+        }
+    }
+
+    fn update_symbol_field(
+        &self,
+        symbol: Symbol,
+        field: &str,
+        rest: &[AssignmentSymbolStep],
+        value_symbol: Symbol,
+    ) -> Symbol {
+        let mutable = symbol.mutable;
+        let kind = match symbol.kind {
+            SymbolKind::Map(mut fields) => {
+                let current = fields
+                    .remove(field)
+                    .unwrap_or_else(|| Symbol::unknown(false));
+                let updated = self.update_symbol_after_assignment(current, rest, value_symbol);
+                fields.insert(field.to_string(), updated);
+                SymbolKind::Map(fields)
+            }
+            SymbolKind::Namespace(mut fields) => {
+                if let Some(current) = fields.remove(field) {
+                    let updated = self.update_symbol_after_assignment(current, rest, value_symbol);
+                    fields.insert(field.to_string(), updated);
+                }
+                SymbolKind::Namespace(fields)
+            }
+            other => other,
+        };
+        Symbol { mutable, kind }
     }
 
     fn check_interpolations(&mut self, raw: &str) -> DobraResult<()> {
@@ -755,10 +885,10 @@ fn builtin_arity(name: &str) -> Option<Vec<usize>> {
     let arity = match name {
         "range" | "read" => vec![1, 2],
         "upper" | "uppercase" | "lower" | "lowercase" | "capitalize" | "trim" | "dedent"
-        | "lines" | "unlines" | "words" | "keys" | "values" | "len" | "int" | "float"
-        | "string" | "bool" | "abs" | "floor" | "ceil" | "round" | "sqrt" | "sum" | "avg"
-        | "pop" | "first" | "last" | "reverse" | "sort" | "unique" | "close" | "flush" | "eof"
-        | "readln" => {
+        | "lines" | "unlines" | "words" | "keys" | "values" | "entries" | "len" | "int"
+        | "float" | "string" | "bool" | "abs" | "floor" | "ceil" | "round" | "sqrt" | "sum"
+        | "avg" | "pop" | "first" | "last" | "reverse" | "sort" | "unique" | "close" | "flush"
+        | "eof" | "readln" => {
             vec![1]
         }
         "replace" | "replace_all" | "clamp" | "slice" => vec![3],
@@ -809,6 +939,52 @@ fn semantic(
     DobraError::semantic_at(message, line, column).with_code(code)
 }
 
+#[derive(Clone)]
+enum AssignmentSymbolStep {
+    Field(String),
+    UnknownIndex,
+}
+
+fn assign_target_root_name(target: &AssignTarget) -> Option<&str> {
+    match target {
+        AssignTarget::Identifier(name) => Some(name),
+        AssignTarget::Get { object, .. } | AssignTarget::Index { object, .. } => {
+            assign_target_root_name(object)
+        }
+    }
+}
+
+fn assignment_symbol_steps(target: &AssignTarget) -> Vec<AssignmentSymbolStep> {
+    let mut steps = Vec::new();
+    collect_assignment_symbol_steps(target, &mut steps);
+    steps
+}
+
+fn collect_assignment_symbol_steps(target: &AssignTarget, steps: &mut Vec<AssignmentSymbolStep>) {
+    match target {
+        AssignTarget::Identifier(_) => {}
+        AssignTarget::Get { object, field } => {
+            collect_assignment_symbol_steps(object, steps);
+            steps.push(AssignmentSymbolStep::Field(field.clone()));
+        }
+        AssignTarget::Index { object, index } => {
+            collect_assignment_symbol_steps(object, steps);
+            if let Some(key) = static_map_key(index) {
+                steps.push(AssignmentSymbolStep::Field(key));
+            } else {
+                steps.push(AssignmentSymbolStep::UnknownIndex);
+            }
+        }
+    }
+}
+
+fn static_map_key(index: &Expr) -> Option<String> {
+    match index {
+        Expr::Literal(value) => Some(value.to_string()),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use crate::check_source;
@@ -838,6 +1014,24 @@ emit split_regex("ana   bruno", regex { one_or_more whitespace })
 
         assert_eq!(err.code, "E4100");
         assert_eq!((err.line, err.column), (1, 6));
+    }
+
+    #[test]
+    fn checker_accepts_map_field_assignment_that_builds_shape() {
+        let source = r#"var user = {}
+user.name = "Ana"
+emit user.name
+"#;
+
+        assert!(check_source(source).is_ok());
+    }
+
+    #[test]
+    fn checker_rejects_nested_assignment_through_val_root() {
+        let err = check_source("val user = {}\nuser.name = \"Ana\"\n").unwrap_err();
+
+        assert_eq!(err.code, "E4101");
+        assert_eq!((err.line, err.column), (1, 5));
     }
 
     #[test]

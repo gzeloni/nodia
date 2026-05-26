@@ -1,11 +1,11 @@
-use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
+use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp};
 use crate::error::{DobraError, DobraResult};
 use crate::io::{self as fsio, IoRegistry};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::regex;
 use crate::stdlib;
-use crate::value::{Function, Module, ModuleRef, StreamId, Value};
+use crate::value::{BindingRef, Function, Module, ModuleRef, SharedBinding, StreamId, Value};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -21,12 +21,6 @@ pub struct RuntimeOptions {
     pub allow_write: bool,
 }
 
-#[derive(Clone)]
-struct Binding {
-    value: Value,
-    mutable: bool,
-}
-
 enum Flow {
     None,
     Return(Value),
@@ -34,8 +28,14 @@ enum Flow {
     Continue,
 }
 
+#[derive(Clone)]
+enum TargetStep {
+    Field(String),
+    Index(Value),
+}
+
 pub struct Runtime {
-    scopes: Vec<HashMap<String, Binding>>,
+    scopes: Vec<HashMap<String, BindingRef>>,
     output: String,
     input: BTreeMap<String, Value>,
     base_dir: Option<PathBuf>,
@@ -80,31 +80,19 @@ impl Runtime {
         let mut root = HashMap::new();
         root.insert(
             "input".to_string(),
-            Binding {
-                value: Value::Map(input.clone()),
-                mutable: false,
-            },
+            binding_ref(Value::Map(input.clone()), false),
         );
         root.insert(
             "stdin".to_string(),
-            Binding {
-                value: Value::Stream(StreamId::Stdin),
-                mutable: false,
-            },
+            binding_ref(Value::Stream(StreamId::Stdin), false),
         );
         root.insert(
             "stdout".to_string(),
-            Binding {
-                value: Value::Stream(StreamId::Stdout),
-                mutable: false,
-            },
+            binding_ref(Value::Stream(StreamId::Stdout), false),
         );
         root.insert(
             "stderr".to_string(),
-            Binding {
-                value: Value::Stream(StreamId::Stderr),
-                mutable: false,
-            },
+            binding_ref(Value::Stream(StreamId::Stderr), false),
         );
         Self {
             scopes: vec![root],
@@ -165,21 +153,13 @@ impl Runtime {
                 self.define(name, value, *mutable)?;
                 Ok(Flow::None)
             }
-            Stmt::Assign { name, value } => {
+            Stmt::Assign { target, value } => {
                 let value = self.eval(value)?;
-                self.assign(name, value)?;
+                self.assign_target(target, value)?;
                 Ok(Flow::None)
             }
             Stmt::Func { name, params, body } => {
-                self.define(
-                    name,
-                    Value::Function(Function {
-                        params: params.clone(),
-                        body: body.clone(),
-                        captures: BTreeMap::new(),
-                    }),
-                    false,
-                )?;
+                self.define(name, self.function_value(name, params, body), false)?;
                 Ok(Flow::None)
             }
             Stmt::Return(value) => Ok(Flow::Return(match value {
@@ -204,28 +184,17 @@ impl Runtime {
                 }
             }
             Stmt::For {
-                name,
+                binding,
                 iterable,
                 body,
             } => {
                 let iterable = self.eval(iterable)?;
-                let values = match iterable {
-                    Value::List(values) => values,
-                    Value::String(value) => value
-                        .chars()
-                        .map(|ch| Value::String(ch.to_string()))
-                        .collect(),
-                    Value::Map(value) => value.keys().cloned().map(Value::String).collect(),
-                    other => {
-                        return Err(DobraError::runtime(format!(
-                            "cannot iterate over {}",
-                            other.type_name()
-                        )))
-                    }
-                };
-                for value in values {
+                let pairs = self.iterable_values(binding, iterable)?;
+                for values in pairs {
                     self.scopes.push(HashMap::new());
-                    self.define(name, value, true)?;
+                    for (name, value) in values {
+                        self.define(&name, value, true)?;
+                    }
                     let flow = self.execute_block(body)?;
                     self.scopes.pop();
                     match flow {
@@ -440,21 +409,47 @@ impl Runtime {
     fn prepare_export(&self, value: Value) -> Value {
         match value {
             Value::Function(mut function) => {
-                function.captures = self.capture_bindings();
+                function.captures = self.capture_root_bindings();
                 Value::Function(function)
             }
             other => other,
         }
     }
 
-    fn capture_bindings(&self) -> BTreeMap<String, Value> {
+    fn capture_root_bindings(&self) -> BTreeMap<String, BindingRef> {
         self.scopes
             .first()
             .into_iter()
             .flat_map(|scope| scope.iter())
             .filter(|(name, _)| name.as_str() != "input")
-            .map(|(name, binding)| (name.clone(), binding.value.clone()))
+            .map(|(name, binding)| (name.clone(), binding.clone()))
             .collect()
+    }
+
+    fn capture_visible_bindings(&self) -> BTreeMap<String, BindingRef> {
+        let mut captures = BTreeMap::new();
+        for scope in self.scopes.iter().rev() {
+            for (name, binding) in scope {
+                captures
+                    .entry(name.clone())
+                    .or_insert_with(|| binding.clone());
+            }
+        }
+        captures
+    }
+
+    fn function_value(&self, name: &str, params: &[String], body: &[Stmt]) -> Value {
+        let mut captures = self.capture_visible_bindings();
+        let self_binding = binding_ref(Value::Null, false);
+        captures.insert(name.to_string(), self_binding.clone());
+
+        let function = Value::Function(Function {
+            params: params.to_vec(),
+            body: body.to_vec(),
+            captures,
+        });
+        self_binding.borrow_mut().value = function.clone();
+        function
     }
 
     fn eval(&mut self, expr: &Expr) -> DobraResult<Value> {
@@ -554,7 +549,7 @@ impl Runtime {
             BinaryOp::Add => self.add(left, right),
             BinaryOp::Subtract => self.numeric(left, right, |a, b| a - b),
             BinaryOp::Multiply => self.numeric(left, right, |a, b| a * b),
-            BinaryOp::Divide => self.numeric(left, right, |a, b| a / b),
+            BinaryOp::Divide => self.divide(left, right),
             BinaryOp::Modulo => self.numeric(left, right, |a, b| a % b),
             BinaryOp::Equal => Ok(Value::Bool(left == right)),
             BinaryOp::NotEqual => Ok(Value::Bool(left != right)),
@@ -593,7 +588,7 @@ impl Runtime {
                 }
                 let has_captures = !function.captures.is_empty();
                 if has_captures {
-                    self.scopes.push(binding_scope(&function.captures, false));
+                    self.scopes.push(binding_scope(&function.captures));
                 }
                 self.scopes.push(HashMap::new());
                 for (name, value) in function.params.iter().zip(arg_values) {
@@ -882,6 +877,10 @@ impl Runtime {
         }
     }
 
+    fn divide(&self, left: Value, right: Value) -> DobraResult<Value> {
+        Ok(Value::Float(to_number(&left)? / to_number(&right)?))
+    }
+
     fn numeric(
         &self,
         left: Value,
@@ -1014,13 +1013,14 @@ impl Runtime {
                 "'{name}' is already defined in this scope"
             )));
         }
-        scope.insert(name.to_string(), Binding { value, mutable });
+        scope.insert(name.to_string(), binding_ref(value, mutable));
         Ok(())
     }
 
     fn assign(&mut self, name: &str, value: Value) -> DobraResult<()> {
-        for scope in self.scopes.iter_mut().rev() {
-            if let Some(binding) = scope.get_mut(name) {
+        for scope in self.scopes.iter().rev() {
+            if let Some(binding) = scope.get(name) {
+                let mut binding = binding.borrow_mut();
                 if let Value::UseBinding(module, export_name) = binding.value.clone() {
                     return assign_use_binding(module, &export_name, value);
                 }
@@ -1036,17 +1036,240 @@ impl Runtime {
         Err(DobraError::runtime(format!("undefined variable '{name}'")))
     }
 
+    fn assign_target(&mut self, target: &AssignTarget, value: Value) -> DobraResult<()> {
+        let (root, steps) = self.resolve_target(target)?;
+        let current = self
+            .get(&root)
+            .ok_or_else(|| DobraError::runtime(format!("undefined variable '{root}'")))?;
+        if let Some(updated) = self.update_value_path(current, &steps, value)? {
+            self.assign(&root, updated)?;
+        }
+        Ok(())
+    }
+
+    fn resolve_target(&mut self, target: &AssignTarget) -> DobraResult<(String, Vec<TargetStep>)> {
+        match target {
+            AssignTarget::Identifier(name) => Ok((name.clone(), Vec::new())),
+            AssignTarget::Get { object, field } => {
+                let (root, mut steps) = self.resolve_target(object)?;
+                steps.push(TargetStep::Field(field.clone()));
+                Ok((root, steps))
+            }
+            AssignTarget::Index { object, index } => {
+                let (root, mut steps) = self.resolve_target(object)?;
+                steps.push(TargetStep::Index(self.eval(index)?));
+                Ok((root, steps))
+            }
+        }
+    }
+
+    fn update_value_path(
+        &mut self,
+        current: Value,
+        steps: &[TargetStep],
+        new_value: Value,
+    ) -> DobraResult<Option<Value>> {
+        if let Value::UseBinding(module, name) = current.clone() {
+            if steps.is_empty() {
+                assign_use_binding(module, &name, new_value)?;
+                return Ok(None);
+            }
+            let resolved = self.resolve_value(current)?;
+            if let Some(updated) = self.update_value_path(resolved, steps, new_value)? {
+                assign_use_binding(module, &name, updated)?;
+            }
+            return Ok(None);
+        }
+
+        if steps.is_empty() {
+            return Ok(Some(new_value));
+        }
+
+        let (step, rest) = (&steps[0], &steps[1..]);
+        match (current, step) {
+            (Value::Map(mut map), TargetStep::Field(field)) => {
+                if rest.is_empty() {
+                    map.insert(field.clone(), new_value);
+                    return Ok(Some(Value::Map(map)));
+                }
+                let child = map
+                    .get(field)
+                    .cloned()
+                    .ok_or_else(|| DobraError::runtime(format!("field '{field}' not found")))?;
+                match self.update_value_path(child, rest, new_value)? {
+                    Some(updated) => {
+                        map.insert(field.clone(), updated);
+                        Ok(Some(Value::Map(map)))
+                    }
+                    None => Ok(None),
+                }
+            }
+            (Value::Map(mut map), TargetStep::Index(index)) => {
+                let key = index.to_string();
+                if rest.is_empty() {
+                    map.insert(key, new_value);
+                    return Ok(Some(Value::Map(map)));
+                }
+                let child = map
+                    .get(&key)
+                    .cloned()
+                    .ok_or_else(|| DobraError::runtime(format!("key '{key}' not found")))?;
+                match self.update_value_path(child, rest, new_value)? {
+                    Some(updated) => {
+                        map.insert(key, updated);
+                        Ok(Some(Value::Map(map)))
+                    }
+                    None => Ok(None),
+                }
+            }
+            (Value::List(mut values), TargetStep::Index(index)) => {
+                let index = self.normalize_list_index(values.len(), index)?;
+                if rest.is_empty() {
+                    values[index] = new_value;
+                    return Ok(Some(Value::List(values)));
+                }
+                let child = values[index].clone();
+                match self.update_value_path(child, rest, new_value)? {
+                    Some(updated) => {
+                        values[index] = updated;
+                        Ok(Some(Value::List(values)))
+                    }
+                    None => Ok(None),
+                }
+            }
+            (Value::String(_), TargetStep::Index(_)) => {
+                Err(DobraError::runtime("cannot assign through string index"))
+            }
+            (other, TargetStep::Field(_)) => Err(DobraError::runtime(format!(
+                "cannot assign field on {}",
+                other.type_name()
+            ))),
+            (other, TargetStep::Index(_)) => Err(DobraError::runtime(format!(
+                "cannot index {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn normalize_list_index(&self, len: usize, index: &Value) -> DobraResult<usize> {
+        let index = match index {
+            Value::Int(value) => *value,
+            other => {
+                return Err(DobraError::runtime(format!(
+                    "list index must be int, got {}",
+                    other.type_name()
+                )))
+            }
+        };
+        let normalized = if index < 0 { len as i64 + index } else { index };
+        if normalized < 0 || normalized as usize >= len {
+            return Err(DobraError::runtime("list index out of bounds"));
+        }
+        Ok(normalized as usize)
+    }
+
+    fn iterable_values(
+        &self,
+        binding: &ForBinding,
+        iterable: Value,
+    ) -> DobraResult<Vec<Vec<(String, Value)>>> {
+        match binding {
+            ForBinding::Single(name) => Ok(self
+                .iterable_single_values(iterable)?
+                .into_iter()
+                .map(|value| vec![(name.clone(), value)])
+                .collect()),
+            ForBinding::Pair { key, value } => self.iterable_pair_values(iterable, key, value),
+        }
+    }
+
+    fn iterable_single_values(&self, iterable: Value) -> DobraResult<Vec<Value>> {
+        match iterable {
+            Value::List(values) => Ok(values),
+            Value::String(value) => Ok(value
+                .chars()
+                .map(|ch| Value::String(ch.to_string()))
+                .collect()),
+            Value::Map(value) => Ok(value.keys().cloned().map(Value::String).collect()),
+            other => Err(DobraError::runtime(format!(
+                "cannot iterate over {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn iterable_pair_values(
+        &self,
+        iterable: Value,
+        key_name: &str,
+        value_name: &str,
+    ) -> DobraResult<Vec<Vec<(String, Value)>>> {
+        match iterable {
+            Value::Map(values) => Ok(values
+                .into_iter()
+                .map(|(key, value)| {
+                    vec![
+                        (key_name.to_string(), Value::String(key)),
+                        (value_name.to_string(), value),
+                    ]
+                })
+                .collect()),
+            Value::List(values) => values
+                .into_iter()
+                .map(|value| {
+                    let (key, value) = self.destructure_pair(value)?;
+                    Ok(vec![
+                        (key_name.to_string(), key),
+                        (value_name.to_string(), value),
+                    ])
+                })
+                .collect(),
+            other => Err(DobraError::runtime(format!(
+                "cannot destructure iteration over {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn destructure_pair(&self, value: Value) -> DobraResult<(Value, Value)> {
+        match value {
+            Value::List(values) => match values.as_slice() {
+                [key, value] => Ok((key.clone(), value.clone())),
+                _ => Err(DobraError::runtime(
+                    "pair iteration expects list items with exactly 2 values",
+                )),
+            },
+            Value::Map(values) => {
+                let key = values.get("key").cloned();
+                let value = values.get("value").cloned();
+                match (key, value) {
+                    (Some(key), Some(value)) => Ok((key, value)),
+                    _ => Err(DobraError::runtime(
+                        "pair iteration expects map items with 'key' and 'value'",
+                    )),
+                }
+            }
+            other => Err(DobraError::runtime(format!(
+                "cannot destructure pair from {}",
+                other.type_name()
+            ))),
+        }
+    }
+
     fn get(&self, name: &str) -> Option<Value> {
-        self.scopes
-            .iter()
-            .rev()
-            .find_map(|scope| scope.get(name).map(|binding| binding.value.clone()))
+        self.scopes.iter().rev().find_map(|scope| {
+            scope
+                .get(name)
+                .map(|binding| binding.borrow().value.clone())
+        })
     }
 
     fn root_get(&self, name: &str) -> Option<Value> {
-        self.scopes
-            .first()
-            .and_then(|scope| scope.get(name).map(|binding| binding.value.clone()))
+        self.scopes.first().and_then(|scope| {
+            scope
+                .get(name)
+                .map(|binding| binding.borrow().value.clone())
+        })
     }
 }
 
@@ -1064,8 +1287,18 @@ fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
 
 fn statement_export_name(statement: &Stmt) -> Option<&str> {
     match statement {
-        Stmt::Bind { name, .. } | Stmt::Func { name, .. } | Stmt::Assign { name, .. } => Some(name),
+        Stmt::Bind { name, .. } | Stmt::Func { name, .. } => Some(name),
+        Stmt::Assign { target, .. } => assignment_target_root_name(target),
         _ => None,
+    }
+}
+
+fn assignment_target_root_name(target: &AssignTarget) -> Option<&str> {
+    match target {
+        AssignTarget::Identifier(name) => Some(name),
+        AssignTarget::Get { object, .. } | AssignTarget::Index { object, .. } => {
+            assignment_target_root_name(object)
+        }
     }
 }
 
@@ -1086,18 +1319,14 @@ fn assign_use_binding(module: ModuleRef, name: &str, value: Value) -> DobraResul
     Ok(())
 }
 
-fn binding_scope(values: &BTreeMap<String, Value>, mutable: bool) -> HashMap<String, Binding> {
+fn binding_ref(value: Value, mutable: bool) -> BindingRef {
+    Rc::new(RefCell::new(SharedBinding { value, mutable }))
+}
+
+fn binding_scope(values: &BTreeMap<String, BindingRef>) -> HashMap<String, BindingRef> {
     values
         .iter()
-        .map(|(name, value)| {
-            (
-                name.clone(),
-                Binding {
-                    value: value.clone(),
-                    mutable,
-                },
-            )
-        })
+        .map(|(name, value)| (name.clone(), value.clone()))
         .collect()
 }
 
@@ -1124,6 +1353,144 @@ mod tests {
         input.insert("name".to_string(), Value::String("Ana".to_string()));
         let output = run_source("val name = input.name\nemit \"Hello, {name}\"", input).unwrap();
         assert_eq!(output, "Hello, Ana");
+    }
+
+    #[test]
+    fn division_always_returns_float() {
+        let output = run_source("emit 9 / 3\nemit 10 / 3\n", BTreeMap::new()).unwrap();
+        assert_eq!(output, "3.0\n3.3333333333333335");
+    }
+
+    #[test]
+    fn nested_functions_capture_outer_bindings() {
+        let source = r#"func foo(a) {
+  func bar() {
+    return a + 1
+  }
+  return bar()
+}
+
+emit foo(4)
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "5");
+    }
+
+    #[test]
+    fn returned_nested_functions_keep_captured_bindings() {
+        let source = r#"func make_greeter(prefix) {
+  func greet(name) {
+    return "{prefix}, {name}"
+  }
+  return greet
+}
+
+val greet = make_greeter("Hi")
+emit greet("Ana")
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "Hi, Ana");
+    }
+
+    #[test]
+    fn returned_nested_functions_keep_self_recursion() {
+        let source = r#"func make_fact() {
+  func fact(n) {
+    if n <= 1 {
+      return 1
+    }
+    return n * fact(n - 1)
+  }
+  return fact
+}
+
+val fact = make_fact()
+emit fact(5)
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "120");
+    }
+
+    #[test]
+    fn captured_var_counter_persists_across_calls() {
+        let source = r#"func counter() {
+  var n = 0
+  func tick() {
+    n = n + 1
+    return n
+  }
+  return tick
+}
+
+val t = counter()
+emit t()
+emit t()
+emit t()
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "1\n2\n3");
+    }
+
+    #[test]
+    fn captured_var_map_state_persists_across_calls() {
+        let source = r#"func counter() {
+  var state = {n: 0}
+  func tick() {
+    state.n = state.n + 1
+    return state.n
+  }
+  return tick
+}
+
+val t = counter()
+emit t()
+emit t()
+emit t()
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "1\n2\n3");
+    }
+
+    #[test]
+    fn map_assignment_and_pair_iteration_work() {
+        let source = r#"var counts = {}
+counts["ana"] = 2
+counts.bruno = 3
+
+for (name, total) in counts {
+  emit "{name}={total}"
+}
+
+for (name, total) in entries(counts) {
+  emit "{name}:{total}"
+}
+"#;
+
+        let output = run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "ana=2\nbruno=3\nana:2\nbruno:3");
+    }
+
+    #[test]
+    fn nested_assignment_updates_used_module_maps() {
+        let dir = std::env::temp_dir().join(format!("nodia-use-map-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let lib = dir.join("lib.nod");
+        let main = dir.join("main.nod");
+        fs::write(&lib, "var counts = {}\n").unwrap();
+        fs::write(
+            &main,
+            "use './lib' as lib\nlib.counts.ana = 2\nlib.counts[\"bruno\"] = 3\nemit lib.counts.ana\nemit lib.counts.bruno\n",
+        )
+        .unwrap();
+
+        let output = crate::run_file(&main, BTreeMap::new()).unwrap();
+        assert_eq!(output, "2\n3");
+        let _ = fs::remove_dir_all(dir);
     }
 
     #[test]
@@ -1368,6 +1735,44 @@ emit full_match("abc-42", "^[a-z]+-\\d+$")
 
         let output = crate::run_source(source, BTreeMap::new()).unwrap();
         assert_eq!(output, "true\ntrue");
+    }
+
+    #[test]
+    fn text_builtins_polymorphize_regex_needles() {
+        let source = r#"emit contains("abc42def", regex { one_or_more digit })
+emit starts("42x", regex { one_or_more digit })
+emit ends("x42", regex { one_or_more digit })
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "true\ntrue\ntrue");
+    }
+
+    #[test]
+    fn keyword_names_work_in_map_keys_and_named_groups() {
+        let source = r#"val m = {from: "x", val: "y"}
+val mirror = regex {
+  named val {
+    one_or_more letter
+  }
+  "-"
+  same_as val
+}
+val digits = regex {
+  named val {
+    one_or_more digit
+  }
+}
+val hit = find("42", digits)
+
+emit m.from
+emit m.val
+emit hit.named.val
+emit replace("ana-ana", mirror, "[$(val)]")
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "x\ny\n42\n[ana]");
     }
 
     #[test]

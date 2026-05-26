@@ -1,4 +1,4 @@
-use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
+use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp};
 use crate::regex::{
     RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
     RegexQuantifierMode, RegexReference,
@@ -77,9 +77,9 @@ impl Formatter {
                 self.out
                     .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
             }
-            Stmt::Assign { name, value } => {
+            Stmt::Assign { target, value } => {
                 self.write_indent();
-                let prefix = format!("{name} = ");
+                let prefix = format!("{} = ", format_assign_target(target, self.indent));
                 self.out.push_str(&prefix);
                 self.out
                     .push_str(&format_expr_for_line(value, self.indent, prefix.len()));
@@ -113,13 +113,13 @@ impl Formatter {
                 self.write_if(condition, then_branch, else_branch, true);
             }
             Stmt::For {
-                name,
+                binding,
                 iterable,
                 body,
             } => {
                 self.write_indent();
                 self.out.push_str("for ");
-                self.out.push_str(name);
+                self.out.push_str(&format_for_binding(binding));
                 self.out.push_str(" in ");
                 self.out.push_str(&format_expr(iterable, self.indent));
                 self.out.push(' ');
@@ -237,6 +237,29 @@ fn needs_blank_line(prev: &Stmt, next: &Stmt) -> bool {
 
 fn format_expr(expr: &Expr, indent: usize) -> String {
     format_expr_for_line(expr, indent, 0)
+}
+
+fn format_assign_target(target: &AssignTarget, indent: usize) -> String {
+    match target {
+        AssignTarget::Identifier(name) => name.clone(),
+        AssignTarget::Get { object, field } => {
+            format!("{}.{}", format_assign_target(object, indent), field)
+        }
+        AssignTarget::Index { object, index } => {
+            format!(
+                "{}[{}]",
+                format_assign_target(object, indent),
+                format_expr(index, indent)
+            )
+        }
+    }
+}
+
+fn format_for_binding(binding: &ForBinding) -> String {
+    match binding {
+        ForBinding::Single(name) => name.clone(),
+        ForBinding::Pair { key, value } => format!("({key}, {value})"),
+    }
 }
 
 fn format_expr_for_line(expr: &Expr, indent: usize, prefix_len: usize) -> String {
@@ -793,5 +816,19 @@ mod tests {
         assert!(formatted.contains("\"abc\""));
         assert!(formatted.contains("one_or_more any_codepoint"));
         assert!(formatted.contains("char_set {"));
+    }
+
+    #[test]
+    fn preserves_keyword_field_access() {
+        let source = r#"val m={from:"x",val:"y"}
+val hit=find("42",regex{named val{one_or_more digit}})
+emit m.from
+emit hit.named.val"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("emit m.from"));
+        assert!(formatted.contains("emit hit.named.val"));
     }
 }
