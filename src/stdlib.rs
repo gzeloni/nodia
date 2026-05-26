@@ -69,7 +69,7 @@ pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
         "contains" => {
             expect_arity(&args, 2, "contains")?;
             Value::Bool(match &args[0] {
-                Value::String(value) => value.contains(&args[1].to_string()),
+                Value::String(value) => contains_text(value, &args[1])?,
                 Value::List(values) => values.contains(&args[1]),
                 Value::Map(values) => values.contains_key(&args[1].to_string()),
                 other => {
@@ -82,11 +82,11 @@ pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
         }
         "starts" | "starts_with" => {
             expect_arity(&args, 2, name)?;
-            Value::Bool(args[0].to_string().starts_with(&args[1].to_string()))
+            Value::Bool(text_starts_with(&args[0].to_string(), &args[1])?)
         }
         "ends" | "ends_with" => {
             expect_arity(&args, 2, name)?;
-            Value::Bool(args[0].to_string().ends_with(&args[1].to_string()))
+            Value::Bool(text_ends_with(&args[0].to_string(), &args[1])?)
         }
         "indent" => indent(args)?,
         "dedent" => {
@@ -112,6 +112,26 @@ pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
                 )));
             };
             Value::List(values.values().cloned().collect())
+        }
+        "entries" => {
+            expect_arity(&args, 1, "entries")?;
+            let Value::Map(values) = &args[0] else {
+                return Err(DobraError::runtime(format!(
+                    "entries() expects map, got {}",
+                    args[0].type_name()
+                )));
+            };
+            Value::List(
+                values
+                    .iter()
+                    .map(|(key, value)| {
+                        let mut entry = BTreeMap::new();
+                        entry.insert("key".to_string(), Value::String(key.clone()));
+                        entry.insert("value".to_string(), value.clone());
+                        Value::Map(entry)
+                    })
+                    .collect(),
+            )
         }
         "len" => {
             expect_arity(&args, 1, "len")?;
@@ -284,6 +304,35 @@ fn regex_find_all(args: Vec<Value>) -> DobraResult<Value> {
             .map(regex_match_value)
             .collect(),
     ))
+}
+
+fn contains_text(text: &str, needle: &Value) -> DobraResult<bool> {
+    match needle {
+        Value::Regex(pattern) => pattern.is_match(text),
+        other => Ok(text.contains(&other.to_string())),
+    }
+}
+
+fn text_starts_with(text: &str, prefix: &Value) -> DobraResult<bool> {
+    match prefix {
+        Value::Regex(pattern) => Ok(pattern
+            .find(text)?
+            .is_some_and(|matched| matched.start == 0)),
+        other => Ok(text.starts_with(&other.to_string())),
+    }
+}
+
+fn text_ends_with(text: &str, suffix: &Value) -> DobraResult<bool> {
+    match suffix {
+        Value::Regex(pattern) => {
+            let end = text.chars().count();
+            Ok(pattern
+                .find_all(text)?
+                .into_iter()
+                .any(|matched| matched.end == end))
+        }
+        other => Ok(text.ends_with(&other.to_string())),
+    }
 }
 
 fn expect_regex(value: &Value, name: &str, position: &str) -> DobraResult<RuntimeRegex> {

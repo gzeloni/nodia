@@ -453,6 +453,7 @@ Data and conversion:
 |---|---|
 | `keys(map)` | Returns map keys |
 | `values(map)` | Returns map values |
+| `entries(map)` | Returns `{key, value}` entries |
 | `len(value)` | Returns length of a string, list, or map |
 | `int(value)` | Converts to integer |
 | `float(value)` | Converts to float |

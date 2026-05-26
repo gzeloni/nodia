@@ -563,7 +563,8 @@ impl fmt::Debug for RuntimeRegex {
 
 pub fn validate(pattern: &RegexPattern) -> DobraResult<()> {
     validate_flags(&pattern.flags, "regex")?;
-    validate_sequence(&pattern.body)
+    let mut named_groups = HashSet::new();
+    validate_sequence(&pattern.body, &mut named_groups)
 }
 
 pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraResult<()> {
@@ -614,20 +615,20 @@ pub fn compile_text(rendered: &str) -> DobraResult<RuntimeRegex> {
     })
 }
 
-fn validate_sequence(items: &[RegexNode]) -> DobraResult<()> {
+fn validate_sequence(items: &[RegexNode], named_groups: &mut HashSet<String>) -> DobraResult<()> {
     for item in items {
-        validate_node(item)?;
+        validate_node(item, named_groups)?;
     }
     Ok(())
 }
 
-fn validate_node(node: &RegexNode) -> DobraResult<()> {
+fn validate_node(node: &RegexNode, named_groups: &mut HashSet<String>) -> DobraResult<()> {
     match node {
         RegexNode::Sequence(items) => {
             if items.is_empty() {
                 return Err(regex_error("regex block target cannot be empty"));
             }
-            validate_sequence(items)
+            validate_sequence(items, named_groups)
         }
         RegexNode::Literal(_)
         | RegexNode::Raw(_)
@@ -637,19 +638,28 @@ fn validate_node(node: &RegexNode) -> DobraResult<()> {
         | RegexNode::AnyCodepoint => Ok(()),
         RegexNode::Reference(reference) => validate_reference(reference),
         RegexNode::Quantifier { target, kind, .. } => {
-            validate_node(target)?;
+            validate_node(target, named_groups)?;
             validate_quantifier(*kind)?;
             validate_repeat_target(target)
         }
+        RegexNode::Group {
+            kind: RegexGroupKind::Named(name),
+            body,
+        } => {
+            if !named_groups.insert(name.clone()) {
+                return Err(regex_error(format!("duplicate named capture '{name}'")));
+            }
+            validate_sequence(body, named_groups)
+        }
         RegexNode::Group { body, .. } | RegexNode::Lookaround { body, .. } => {
-            validate_sequence(body)
+            validate_sequence(body, named_groups)
         }
         RegexNode::Alternation(branches) => {
             if branches.is_empty() {
                 return Err(regex_error("either block requires at least one branch"));
             }
             for branch in branches {
-                validate_sequence(branch)?;
+                validate_sequence(branch, named_groups)?;
             }
             Ok(())
         }
@@ -660,7 +670,7 @@ fn validate_node(node: &RegexNode) -> DobraResult<()> {
             body,
         } => {
             validate_flag_delta(enable, disable)?;
-            validate_sequence(body)
+            validate_sequence(body, named_groups)
         }
     }
 }
@@ -1147,5 +1157,27 @@ mod tests {
         let parts = regex.split("ana   bruno\tcarla").unwrap();
 
         assert_eq!(parts, vec!["ana", "bruno", "carla"]);
+    }
+
+    #[test]
+    fn duplicate_named_groups_are_rejected() {
+        let pattern = RegexPattern {
+            flags: Vec::new(),
+            body: vec![
+                RegexNode::Group {
+                    kind: RegexGroupKind::Named("x".to_string()),
+                    body: vec![RegexNode::Literal("a".to_string())],
+                },
+                RegexNode::Group {
+                    kind: RegexGroupKind::Named("x".to_string()),
+                    body: vec![RegexNode::Literal("b".to_string())],
+                },
+            ],
+        };
+
+        let err = validate(&pattern).unwrap_err();
+
+        assert_eq!(err.code, "E4200");
+        assert!(err.message.contains("duplicate named capture 'x'"));
     }
 }
