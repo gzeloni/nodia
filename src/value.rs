@@ -1,4 +1,5 @@
 use crate::ast::Stmt;
+use crate::regex::RuntimeRegex;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -33,6 +34,7 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    Regex(RuntimeRegex),
     Stream(StreamId),
     UseBinding(ModuleRef, String),
     Function(Function),
@@ -55,6 +57,7 @@ impl Value {
             Value::String(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
+            Value::Regex(_) => true,
             Value::Stream(_) => true,
             Value::UseBinding(_, _) => true,
             Value::Function(_) => true,
@@ -70,6 +73,7 @@ impl Value {
             Value::String(_) => "string",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::Regex(_) => "regex",
             Value::Stream(_) => "stream",
             Value::UseBinding(_, _) => "use",
             Value::Function(_) => "function",
@@ -87,6 +91,7 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Regex(a), Value::Regex(b)) => a == b,
             (Value::Stream(a), Value::Stream(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a == b,
             (Value::UseBinding(a_module, a_name), Value::UseBinding(b_module, b_name)) => {
@@ -131,6 +136,7 @@ impl fmt::Display for Value {
                 }
                 write!(f, "}}")
             }
+            Value::Regex(regex) => write!(f, "{}", regex.rendered()),
             Value::Stream(stream) => write!(f, "{stream}"),
             Value::UseBinding(_, name) => write!(f, "<use {name}>"),
             Value::Function(_) => write!(f, "<func>"),

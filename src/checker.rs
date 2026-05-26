@@ -2,6 +2,7 @@ use crate::ast::{Expr, Program, Stmt};
 use crate::error::{DobraError, DobraResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::regex;
 use crate::token::{Token, TokenKind};
 use std::collections::{HashMap, HashSet};
 use std::fs;
@@ -339,6 +340,7 @@ impl<'a> State<'a> {
                 }
                 Ok(())
             }
+            Expr::Regex(pattern) => regex::validate(pattern),
             Expr::Identifier(name) => {
                 if self.lookup(name).is_some() {
                     Ok(())
@@ -761,7 +763,8 @@ fn builtin_arity(name: &str) -> Option<Vec<usize>> {
         }
         "replace" | "clamp" | "slice" => vec![3],
         "split" | "join" | "contains" | "starts" | "starts_with" | "ends" | "ends_with"
-        | "indent" | "pow" | "min" | "max" | "push" | "open" | "write" | "writeln" | "append" => {
+        | "indent" | "pow" | "min" | "max" | "push" | "open" | "write" | "writeln" | "append"
+        | "test" | "full_match" | "find" | "find_all" => {
             vec![2]
         }
         _ => return None,
@@ -788,6 +791,7 @@ fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::Continue => Some("continue"),
         TokenKind::LegacyImport => Some("import"),
         TokenKind::Use => Some("use"),
+        TokenKind::Regex => Some("regex"),
         TokenKind::As => Some("as"),
         TokenKind::Pick => Some("pick"),
         TokenKind::LegacyShow => Some("show"),
@@ -815,6 +819,10 @@ mod tests {
 b"))
 emit unlines(["up", "down"])
 emit len(words("one  two   three"))
+emit test("abc", regex { one_or_more letter })
+emit full_match("abc", regex { one_or_more letter })
+emit find("abc", regex { one_or_more letter })
+emit find_all("abc", regex { one_or_more letter })
 "#;
 
         assert!(check_source(source).is_ok());

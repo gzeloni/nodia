@@ -10,13 +10,13 @@ Source files use the `.nod` extension.
 Complete documentation is available in [docs/reference.md](docs/reference.md).
 
 The formal v0.5 baseline is documented in [docs/specification.md](docs/specification.md).
+The current implementation adds the v0.6 regex DSL on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current implementation is `v0.5`.
+Nodia is experimental. The current implementation is `v0.6`.
 
-The v0.5 focus is the language baseline: canonical syntax, formatting, semantic checking,
-module uses, file IO, and text-oriented scripting.
+The v0.6 focus is text work: the v0.5 identity surface remains intact, and the first new native syntax layer is `regex { ... }`, a readable DSL that evaluates to regex values and can render to classic regex text.
 
 ## Install From Source
 
@@ -101,7 +101,78 @@ nodia check file.nod
 nodia check file.nod --json
 ```
 
-`check` validates lexing, parsing, module uses, and the v0.5 semantic baseline without executing the program.
+`check` validates lexing, parsing, module uses, regex DSL structure, and the v0.5 semantic baseline without executing the program.
+
+## Regex DSL
+
+Nodia v0.6 adds a native `regex { ... }` expression. It evaluates to a regex value in the runtime. When emitted, interpolated, or converted with `string(...)`, it renders to classic regex text.
+
+```nodia
+val date = regex(case_insensitive) {
+  start
+  named year {
+    exactly 4 digit
+  }
+  "-"
+  exactly 2 digit
+  "-"
+  exactly 2 digit
+  end
+}
+
+emit date
+```
+
+Output:
+
+```text
+(?i)^(?<year>\d{4})-\d{2}-\d{2}$
+```
+
+The v0.6 regex AST now separates:
+- literals
+- anchors
+- character classes
+- `any_char` and `any_codepoint`
+- groups and lookarounds
+- references
+- quantifier kind and quantifier mode
+- global and scoped flags
+
+The syntax accepts both compact sugar and explicit forms such as `literal("abc")`, `char(".")`, `with_flags(...) { ... }`, and `without_flags(...) { ... }`.
+
+Regex execution uses function style:
+
+```nodia
+val url = regex(case_insensitive) {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}
+
+val hit = find("go to https://example.com now", url)
+emit hit.named.host
+emit test("http://a", url)
+emit full_match("https://example.com", url)
+```
 
 ### Format
 

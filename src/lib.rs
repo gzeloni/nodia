@@ -6,6 +6,7 @@ pub mod io;
 pub mod lexer;
 pub mod parser;
 pub mod project;
+pub mod regex;
 pub mod runtime;
 pub mod stdlib;
 pub mod token;

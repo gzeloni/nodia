@@ -54,6 +54,7 @@ pub enum TokenKind {
     Struct,
     Namespace,
     Use,
+    Regex,
     Identifier(String),
     Int(i64),
     Float(f64),
@@ -127,6 +128,7 @@ impl TokenKind {
             TokenKind::Struct => "Struct",
             TokenKind::Namespace => "Namespace",
             TokenKind::Use => "Use",
+            TokenKind::Regex => "Regex",
             TokenKind::Identifier(_) => "Identifier",
             TokenKind::Int(_) => "Int",
             TokenKind::Float(_) => "Float",
@@ -222,6 +224,7 @@ pub fn keyword_kind(text: &str) -> Option<TokenKind> {
         "struct" => TokenKind::Struct,
         "namespace" => TokenKind::Namespace,
         "use" => TokenKind::Use,
+        "regex" => TokenKind::Regex,
         _ => return None,
     })
 }

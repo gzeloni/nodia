@@ -3,6 +3,7 @@ use crate::error::{DobraError, DobraResult};
 use crate::io::{self as fsio, IoRegistry};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
+use crate::regex;
 use crate::stdlib;
 use crate::value::{Function, Module, ModuleRef, StreamId, Value};
 use std::cell::RefCell;
@@ -460,6 +461,7 @@ impl Runtime {
         match expr {
             Expr::Literal(Value::String(value)) => Ok(Value::String(self.interpolate(value)?)),
             Expr::Literal(value) => self.resolve_value(value.clone()),
+            Expr::Regex(pattern) => regex::compile(pattern).map(Value::Regex),
             Expr::Identifier(name) => {
                 let value = self
                     .get(name)
@@ -1259,4 +1261,112 @@ emit read("{}")
         let _ = fs::remove_dir_all(dir);
     }
 
+    #[test]
+    fn regex_expression_renders_to_classic_regex_text() {
+        let source = r#"emit regex(case_insensitive, multiline) {
+  start
+  named year {
+    exactly 4 digit
+  }
+  "-"
+  one_or_more char_set {
+    range "a" to "z"
+    digit
+  }
+  followed_by {
+    ".log"
+  }
+  end
+}"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, r"(?im)^(?<year>\d{4})-[a-z0-9]+(?=\.log)$");
+    }
+
+    #[test]
+    fn explicit_regex_forms_render_correctly() {
+        let source = r#"emit regex {
+  with_flags(case_insensitive) {
+    literal("abc")
+  }
+  one_or_more any_codepoint
+  char_set {
+    char(".")
+    digit
+  }
+}"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, r"(?i:abc)[\s\S]+[.0-9]");
+    }
+
+    #[test]
+    fn regex_builtins_execute_against_regex_values() {
+        let source = r#"val pat = regex(case_insensitive) {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}
+
+val first = find("go to https://example.com now", pat)
+emit test("go to https://example.com now", pat)
+emit full_match("https://example.com", pat)
+emit first.text
+emit first.named.scheme
+emit first.named.host
+emit first.start
+emit first.end
+emit len(find_all("http://a https://b", pat))
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(
+            output,
+            "true\ntrue\nhttps://example.com\nhttps\nexample.com\n6\n25\n2"
+        );
+    }
+
+    #[test]
+    fn regex_find_reports_char_offsets() {
+        let source = r#"val hit = find("é ana", regex {
+  named word {
+    one_or_more letter
+  }
+})
+
+emit hit.start
+emit hit.end
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "2\n5");
+    }
+
+    #[test]
+    fn regex_builtins_accept_string_patterns() {
+        let source = r#"emit test("abc-42", "^[a-z]+-\\d+$")
+emit full_match("abc-42", "^[a-z]+-\\d+$")
+"#;
+
+        let output = crate::run_source(source, BTreeMap::new()).unwrap();
+        assert_eq!(output, "true\ntrue");
+    }
 }

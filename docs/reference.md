@@ -1,7 +1,8 @@
-# Nodia Reference v0.5
+# Nodia Reference v0.6
 
-This is the complete user-facing reference for Nodia v0.5. It documents the command line,
+This is the complete user-facing reference for Nodia v0.6. It documents the command line,
 project layout, language syntax, uses, IO, streams, standard library, and common workflows.
+The v0.6 implementation extends the v0.5 baseline with a native regex DSL.
 
 Nodia source files use the `.nod` extension.
 
@@ -12,6 +13,7 @@ Nodia source files use the `.nod` extension.
 - [Projects](#projects)
 - [Source Files](#source-files)
 - [Language Basics](#language-basics)
+- [Regex DSL](#regex-dsl)
 - [Uses](#uses)
 - [IO And Streams](#io-and-streams)
 - [Standard Library](#standard-library)
@@ -45,7 +47,7 @@ target/release/nodia version
 Expected output:
 
 ```text
-nodia 0.5.0
+nodia 0.6.0
 ```
 
 ## Command Line
@@ -167,7 +169,7 @@ nodia run report.nod --stdout
 
 ### `nodia check`
 
-Checks lexing, parsing, uses, and the v0.5 semantic baseline without executing the program.
+Checks lexing, parsing, uses, regex DSL structure, and the v0.5 semantic baseline without executing the program.
 
 ```bash
 nodia check file.nod
@@ -197,7 +199,7 @@ JSON failure output:
 {"ok":false,"errors":[{"code":"E4101","message":"cannot assign to val 'n'","file":"file.nod","line":2,"column":1}]}
 ```
 
-`check` validates syntax and the v0.5 semantic baseline. It resolves uses for file-backed
+`check` validates syntax, regex DSL structure, and the v0.5 semantic baseline. It resolves uses for file-backed
 programs, validates selected use names, catches undefined variables, rejects assignment to
 `val`, validates basic arity, checks control-flow placement, and validates known map/namespace
 fields. It does not execute program IO or prove static types/effects.
@@ -407,7 +409,7 @@ nodia version
 Output:
 
 ```text
-nodia 0.5.0
+nodia 0.6.0
 ```
 
 JSON output:
@@ -419,7 +421,7 @@ nodia version --json
 Output:
 
 ```json
-{"name":"nodia","version":"0.5.0","rust_std_only":true}
+{"name":"nodia","version":"0.6.0","rust_std_only":true}
 ```
 
 ### `nodia help`
@@ -991,6 +993,99 @@ Nodia does not use method calls for standard library functions. Prefer function 
 val values = push([], "item")
 ```
 
+## Regex DSL
+
+Nodia v0.6 adds `regex { ... }` as a native expression. It evaluates to a regex value in the runtime. When emitted, interpolated, or converted with `string(...)`, it renders to classic regex text.
+
+Example:
+
+```nodia
+val date = regex(case_insensitive) {
+  start
+  named year {
+    exactly 4 digit
+  }
+  "-"
+  exactly 2 digit
+  "-"
+  exactly 2 digit
+  end
+}
+
+emit date
+```
+
+Output:
+
+```text
+(?i)^(?<year>\d{4})-\d{2}-\d{2}$
+```
+
+The first v0.6 regex surface supports:
+
+- readable tokens such as `digit`, `whitespace`, `word_boundary`, and `any_char`
+- `any_codepoint` for an explicit "match including newlines" node
+- quantifiers such as `optional`, `one_or_more`, `exactly`, `at_least`, and `between`
+- groups such as `group`, `non_capture`, `named`, and `atomic`
+- alternation with `either { branch { ... } }`
+- character sets with `char_set`, `not_char_set`, and `range`
+- lookarounds with `followed_by`, `not_followed_by`, `preceded_by`, and `not_preceded_by`
+- backreferences with `same_as` and `same_as_group`
+- scoped flag blocks with `with_flags(...) { ... }` and `without_flags(...) { ... }`
+- explicit literal helpers such as `literal("...")` and `char("x")`
+- `raw_regex "..."` as an escape hatch
+
+Regex execution uses function style, not methods:
+
+```nodia
+val url = regex(case_insensitive) {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}
+
+val hit = find("go to https://example.com now", url)
+emit hit.named.host
+emit test("http://a", url)
+emit full_match("https://example.com", url)
+emit len(find_all("http://a https://b", url))
+```
+
+`find(text, pattern)` returns `null` when there is no match. When a match exists, it returns a map with this shape:
+
+```nodia
+{
+  text: "https://example.com",
+  start: 6,
+  end: 25,
+  groups: ["https", "example.com"],
+  named: {
+    scheme: "https",
+    host: "example.com",
+  },
+}
+```
+
+`start` and `end` use character offsets, so they align with Nodia string indexing and `slice(...)`.
+
 ## Uses
 
 Uses are relative to the source file containing the use.
@@ -1527,6 +1622,80 @@ Output:
 
 ```text
 true
+```
+
+### Regex Builtins
+
+#### `test(text, pattern)`
+
+Returns `true` when the pattern matches anywhere inside `text`.
+
+```nodia
+emit test("go to https://example.com now", regex {
+  "https://"
+  one_or_more letter
+})
+```
+
+#### `full_match(text, pattern)`
+
+Returns `true` only when the entire text matches the pattern.
+
+```nodia
+emit full_match("abc-42", "^[a-z]+-\\d+$")
+```
+
+#### `find(text, pattern)`
+
+Returns the first match as a map, or `null` when nothing matches.
+
+```nodia
+val hit = find("go to https://example.com now", regex {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+})
+
+emit hit.named.host
+emit hit.start
+emit hit.end
+```
+
+#### `find_all(text, pattern)`
+
+Returns a list of all non-overlapping matches.
+
+```nodia
+emit len(find_all("http://a https://b", regex {
+  either {
+    branch {
+      "http"
+    }
+    branch {
+      "https"
+    }
+  }
+  "://"
+  one_or_more letter
+}))
 ```
 
 #### `indent(text, spaces_or_prefix)`

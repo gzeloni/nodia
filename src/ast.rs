@@ -1,3 +1,4 @@
+use crate::regex::RegexPattern;
 use crate::value::Value;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -52,6 +53,7 @@ pub enum Stmt {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Value),
+    Regex(RegexPattern),
     Identifier(String),
     Unary {
         op: UnaryOp,

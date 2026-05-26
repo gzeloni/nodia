@@ -1,4 +1,8 @@
 use crate::ast::{BinaryOp, Expr, Program, Stmt, UnaryOp};
+use crate::regex::{
+    RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
+    RegexQuantifierMode, RegexReference,
+};
 use crate::value::Value;
 
 const INDENT: &str = "  ";
@@ -243,6 +247,7 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -
     let prec = precedence(expr);
     let rendered = match expr {
         Expr::Literal(value) => format_literal(value, indent, width),
+        Expr::Regex(pattern) => format_regex(pattern, indent),
         Expr::Identifier(name) => name.clone(),
         Expr::Unary { op, expr } => {
             let op = match op {
@@ -341,6 +346,7 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
+        Value::Regex(regex) => format_string_literal(regex.rendered(), indent, width),
         Value::Stream(stream) => stream.to_string(),
         Value::UseBinding(_, name) => format!("<use {name}>"),
         Value::Function(_) => "<func>".to_string(),
@@ -413,6 +419,223 @@ fn format_map(pairs: &[(String, Expr)], indent: usize) -> String {
     out
 }
 
+fn format_regex(pattern: &RegexPattern, indent: usize) -> String {
+    let mut out = String::from("regex");
+    if !pattern.flags.is_empty() {
+        out.push('(');
+        for (index, flag) in pattern.flags.iter().enumerate() {
+            if index > 0 {
+                out.push_str(", ");
+            }
+            out.push_str(flag.name());
+        }
+        out.push(')');
+    }
+    if pattern.body.is_empty() {
+        out.push_str(" {}");
+        return out;
+    }
+    out.push_str(" {\n");
+    out.push_str(&format_regex_items(&pattern.body, indent + 1));
+    out.push('\n');
+    out.push_str(&indent_string(indent));
+    out.push('}');
+    out
+}
+
+fn format_regex_items(items: &[RegexNode], indent: usize) -> String {
+    let mut out = String::new();
+    for (index, item) in items.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        out.push_str(&indent_string(indent));
+        out.push_str(&format_regex_node(item, indent));
+    }
+    out
+}
+
+fn format_regex_node(node: &RegexNode, indent: usize) -> String {
+    match node {
+        RegexNode::Sequence(items) => format_regex_sequence_block(items, indent),
+        RegexNode::Literal(value) => quote_string(value),
+        RegexNode::Raw(value) => format!("raw_regex {}", quote_string(value)),
+        RegexNode::Anchor(anchor) => anchor.name().to_string(),
+        RegexNode::Class(class) => class.name().to_string(),
+        RegexNode::AnyChar => "any_char".to_string(),
+        RegexNode::AnyCodepoint => "any_codepoint".to_string(),
+        RegexNode::Quantifier { target, kind, mode } => {
+            let mut prefix = kind.format_keyword();
+            if *mode != RegexQuantifierMode::Greedy {
+                prefix.push(' ');
+                prefix.push_str(mode.name());
+            }
+            match &**target {
+                RegexNode::Sequence(items) => {
+                    let mut out = prefix;
+                    if items.is_empty() {
+                        out.push_str(" {}");
+                        return out;
+                    }
+                    out.push_str(" {\n");
+                    out.push_str(&format_regex_items(items, indent + 1));
+                    out.push('\n');
+                    out.push_str(&indent_string(indent));
+                    out.push('}');
+                    out
+                }
+                _ => format!("{prefix} {}", format_regex_node(target, indent)),
+            }
+        }
+        RegexNode::Group { kind, body } => match kind {
+            RegexGroupKind::Capture => format_regex_named_block("group", body, indent),
+            RegexGroupKind::NonCapture => format_regex_named_block("non_capture", body, indent),
+            RegexGroupKind::Named(name) => {
+                format_regex_named_block(&format!("named {name}"), body, indent)
+            }
+            RegexGroupKind::Atomic => format_regex_named_block("atomic", body, indent),
+        },
+        RegexNode::Alternation(branches) => {
+            let mut out = String::from("either");
+            if branches.is_empty() {
+                out.push_str(" {}");
+                return out;
+            }
+            out.push_str(" {\n");
+            for (index, branch) in branches.iter().enumerate() {
+                if index > 0 {
+                    out.push('\n');
+                }
+                out.push_str(&indent_string(indent + 1));
+                out.push_str(&format_regex_named_block("branch", branch, indent + 1));
+            }
+            out.push('\n');
+            out.push_str(&indent_string(indent));
+            out.push('}');
+            out
+        }
+        RegexNode::CharSet(set) => format_regex_char_set(set, indent),
+        RegexNode::Lookaround { kind, body } => format_regex_named_block(kind.name(), body, indent),
+        RegexNode::Reference(RegexReference::Named(name)) => format!("same_as {name}"),
+        RegexNode::Reference(RegexReference::Group(index)) => format!("same_as_group {index}"),
+        RegexNode::ScopedFlags {
+            enable,
+            disable,
+            body,
+        } => format_regex_scoped_flags(enable, disable, body, indent),
+    }
+}
+
+fn format_regex_char_set(set: &RegexCharSet, indent: usize) -> String {
+    let header = if set.negated {
+        "not_char_set"
+    } else {
+        "char_set"
+    };
+    let mut out = String::from(header);
+    if set.items.is_empty() {
+        out.push_str(" {}");
+        return out;
+    }
+    out.push_str(" {\n");
+    for (index, item) in set.items.iter().enumerate() {
+        if index > 0 {
+            out.push('\n');
+        }
+        out.push_str(&indent_string(indent + 1));
+        out.push_str(&format_regex_char_set_item(item));
+    }
+    out.push('\n');
+    out.push_str(&indent_string(indent));
+    out.push('}');
+    out
+}
+
+fn format_regex_scoped_flags(
+    enable: &[RegexFlag],
+    disable: &[RegexFlag],
+    body: &[RegexNode],
+    indent: usize,
+) -> String {
+    if !enable.is_empty() && disable.is_empty() {
+        return format_regex_named_block(
+            &format!("with_flags({})", format_regex_flag_list(enable)),
+            body,
+            indent,
+        );
+    }
+    if enable.is_empty() && !disable.is_empty() {
+        return format_regex_named_block(
+            &format!("without_flags({})", format_regex_flag_list(disable)),
+            body,
+            indent,
+        );
+    }
+
+    let nested = RegexNode::ScopedFlags {
+        enable: Vec::new(),
+        disable: disable.to_vec(),
+        body: body.to_vec(),
+    };
+    let mut out = format!("with_flags({}) {{\n", format_regex_flag_list(enable));
+    out.push_str(&indent_string(indent + 1));
+    out.push_str(&format_regex_node(&nested, indent + 1));
+    out.push('\n');
+    out.push_str(&indent_string(indent));
+    out.push('}');
+    out
+}
+
+fn format_regex_named_block(header: &str, items: &[RegexNode], indent: usize) -> String {
+    let mut out = String::from(header);
+    if items.is_empty() {
+        out.push_str(" {}");
+        return out;
+    }
+    out.push_str(" {\n");
+    out.push_str(&format_regex_items(items, indent + 1));
+    out.push('\n');
+    out.push_str(&indent_string(indent));
+    out.push('}');
+    out
+}
+
+fn format_regex_sequence_block(items: &[RegexNode], indent: usize) -> String {
+    let mut out = String::new();
+    if items.is_empty() {
+        out.push_str("{}");
+        return out;
+    }
+    out.push_str("{\n");
+    out.push_str(&format_regex_items(items, indent + 1));
+    out.push('\n');
+    out.push_str(&indent_string(indent));
+    out.push('}');
+    out
+}
+
+fn format_regex_char_set_item(item: &RegexCharSetItem) -> String {
+    match item {
+        RegexCharSetItem::Char(ch) => quote_string(&ch.to_string()),
+        RegexCharSetItem::Class(class) => class.name().to_string(),
+        RegexCharSetItem::Raw(value) => format!("raw_regex {}", quote_string(value)),
+        RegexCharSetItem::Range(start, end) => {
+            format!(
+                "range {} to {}",
+                quote_string(&start.to_string()),
+                quote_string(&end.to_string())
+            )
+        }
+    }
+}
+
+fn format_regex_flag_list(flags: &[RegexFlag]) -> String {
+    flags
+        .iter()
+        .map(|flag| flag.name())
+        .collect::<Vec<_>>()
+        .join(", ")
+}
 
 fn format_string_literal(value: &str, indent: usize, width: usize) -> String {
     if value.contains('\n') {
@@ -544,5 +767,31 @@ mod tests {
             .lines()
             .filter(|line| !line.starts_with('#'))
             .all(|line| line.len() <= LINE_WIDTH));
+    }
+
+    #[test]
+    fn formats_regex_blocks_canonically() {
+        let source = r#"val date=regex(case_insensitive){start named year{exactly 4 digit}"-"exactly 2 digit end}"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("val date = regex(case_insensitive) {"));
+        assert!(formatted.contains("  named year {"));
+        assert!(formatted.contains("    exactly 4 digit"));
+        assert!(formatted.contains("  exactly 2 digit"));
+    }
+
+    #[test]
+    fn formats_scoped_flags_and_any_codepoint() {
+        let source = r#"emit regex{with_flags(case_insensitive){literal("abc")}one_or_more any_codepoint char_set{char(".")digit}}"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("with_flags(case_insensitive) {"));
+        assert!(formatted.contains("\"abc\""));
+        assert!(formatted.contains("one_or_more any_codepoint"));
+        assert!(formatted.contains("char_set {"));
     }
 }

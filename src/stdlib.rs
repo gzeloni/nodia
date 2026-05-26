@@ -1,6 +1,8 @@
 use crate::error::{DobraError, DobraResult};
+use crate::regex::{self, RegexMatch, RuntimeRegex};
 use crate::value::Value;
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
     let result = match name {
@@ -76,6 +78,10 @@ pub fn call(name: &str, args: Vec<Value>) -> DobraResult<Option<Value>> {
                     .collect(),
             )
         }
+        "test" => regex_test(args)?,
+        "full_match" => regex_full_match(args)?,
+        "find" => regex_find(args)?,
+        "find_all" => regex_find_all(args)?,
         "contains" => {
             expect_arity(&args, 2, "contains")?;
             Value::Bool(match &args[0] {
@@ -235,6 +241,83 @@ fn unary_string(
 ) -> DobraResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::String(f(args[0].to_string())))
+}
+
+fn regex_test(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 2, "test")?;
+    let pattern = expect_regex(&args[1], "test", "second")?;
+    Ok(Value::Bool(pattern.is_match(&args[0].to_string())?))
+}
+
+fn regex_full_match(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 2, "full_match")?;
+    let pattern = expect_regex(&args[1], "full_match", "second")?;
+    Ok(Value::Bool(pattern.is_full_match(&args[0].to_string())?))
+}
+
+fn regex_find(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 2, "find")?;
+    let text = args[0].to_string();
+    let pattern = expect_regex(&args[1], "find", "second")?;
+    Ok(pattern
+        .find(&text)?
+        .map(regex_match_value)
+        .unwrap_or(Value::Null))
+}
+
+fn regex_find_all(args: Vec<Value>) -> DobraResult<Value> {
+    expect_arity(&args, 2, "find_all")?;
+    let text = args[0].to_string();
+    let pattern = expect_regex(&args[1], "find_all", "second")?;
+    Ok(Value::List(
+        pattern
+            .find_all(&text)?
+            .into_iter()
+            .map(regex_match_value)
+            .collect(),
+    ))
+}
+
+fn expect_regex(value: &Value, name: &str, position: &str) -> DobraResult<RuntimeRegex> {
+    match value {
+        Value::Regex(pattern) => Ok(pattern.clone()),
+        Value::String(pattern) => regex::compile_text(pattern),
+        other => Err(DobraError::runtime(format!(
+            "{name}() expects regex or string as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn regex_match_value(matched: RegexMatch) -> Value {
+    let mut named = BTreeMap::new();
+    for (name, value) in matched.named {
+        named.insert(name, option_string_value(value));
+    }
+
+    let mut fields = BTreeMap::new();
+    fields.insert("text".to_string(), Value::String(matched.text));
+    fields.insert("start".to_string(), Value::Int(matched.start as i64));
+    fields.insert("end".to_string(), Value::Int(matched.end as i64));
+    fields.insert(
+        "groups".to_string(),
+        Value::List(
+            matched
+                .groups
+                .into_iter()
+                .map(option_string_value)
+                .collect(),
+        ),
+    );
+    fields.insert("named".to_string(), Value::Map(named));
+    Value::Map(fields)
+}
+
+fn option_string_value(value: Option<String>) -> Value {
+    match value {
+        Some(value) => Value::String(value),
+        None => Value::Null,
+    }
 }
 
 fn indent(args: Vec<Value>) -> DobraResult<Value> {
@@ -500,8 +583,9 @@ fn value_rank(value: &Value) -> u8 {
         Value::String(_) => 3,
         Value::List(_) => 4,
         Value::Map(_) => 5,
-        Value::Stream(_) => 6,
-        Value::UseBinding(_, _) => 7,
-        Value::Function(_) => 8,
+        Value::Regex(_) => 6,
+        Value::Stream(_) => 7,
+        Value::UseBinding(_, _) => 8,
+        Value::Function(_) => 9,
     }
 }
