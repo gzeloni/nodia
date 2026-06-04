@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.6.0` release binary.
+and run. Each example has been verified with the `0.6.2` release binary.
 
 ## 1. Hello, World
 
@@ -88,11 +88,7 @@ val text = "ana bruno ana carla bruno ana"
 
 var counts = {}
 for tok in words(text) {
-  if contains(counts, tok) {
-    counts[tok] = counts[tok] + 1
-  } else {
-    counts[tok] = 1
-  }
+  counts[tok] = get(counts, tok, 0) + 1
 }
 
 for (key, count) in counts {
@@ -107,9 +103,9 @@ bruno=2
 carla=1
 ```
 
-This relies on three features that landed together: mutable `var` map
-bindings, index assignment (`counts[tok] = ...`), and pair iteration
-(`for (key, count) in counts`).
+This uses `get(..., default)` to remove the manual missing-key branch, while
+still relying on mutable `var` map bindings, index assignment, and pair
+iteration.
 
 ## 6. Extract URLs With Regex
 
@@ -163,10 +159,48 @@ ana # bruno # carla #
 ```
 
 ```text
-[, usr, local, bin]
+["", "usr", "local", "bin"]
 ```
 
-## 9. Read A File, Uppercase, Write Out
+## 9. Parse JSON And Emit Structured Fields
+
+```bash
+./target/release/nodia eval '
+use json
+
+val doc = json.read("""
+{"name":"Ana","meta":{"count":2},"flags":[true,false]}
+""")
+emit doc.name
+emit doc.meta.count
+emit doc.flags
+'
+```
+
+```text
+Ana
+2
+[true, false]
+```
+
+## 10. Read CSV With Headers
+
+```bash
+./target/release/nodia eval '
+use csv
+
+val rows = csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
+emit rows[0].name
+emit rows[1]
+'
+```
+
+```text
+Ana
+{name: "Bia, Jr", role: "ops"}
+```
+
+## 11. Read A File, Uppercase, Write Out
 
 `upper_file.nod`:
 
@@ -188,7 +222,7 @@ close(out)
 ./target/release/nodia run upper_file.nod --allow-write
 ```
 
-## 10. Generated Report With Modules
+## 12. Generated Report With Modules
 
 `report/meta.nod`:
 
@@ -229,7 +263,26 @@ for section in meta.sections {
 - status
 ```
 
-## 11. Validate A Date Format
+## 13. Date Arithmetic And ISO Formatting
+
+```bash
+./target/release/nodia eval '
+val base = parse_datetime("2024-01-31T23:00:00Z")
+val next = add_duration(base, duration({hours: 2, minutes: 30}))
+
+emit isoformat(add_months(date(2024, 1, 31), 1))
+emit isoformat(next)
+emit strftime(next, "%F %T %:z")
+'
+```
+
+```text
+2024-02-29
+2024-02-01T01:30:00Z
+2024-02-01 01:30:00 Z
+```
+
+## 13. Validate A Date Format
 
 ```bash
 ./target/release/nodia eval '
@@ -253,7 +306,7 @@ true
 false
 ```
 
-## 12. Stats Summary
+## 14. Stats Summary
 
 ```bash
 ./target/release/nodia eval '
@@ -276,7 +329,7 @@ min=1
 max=9
 ```
 
-## 13. Stream-Style Stdout And Stderr
+## 15. Stream-Style Stdout And Stderr
 
 ```bash
 ./target/release/nodia eval '
@@ -298,7 +351,7 @@ stderr:
 info: started
 ```
 
-## 14. Detect Duplicate Adjacent Words
+## 16. Detect Duplicate Adjacent Words
 
 ```bash
 ./target/release/nodia eval '
@@ -320,7 +373,7 @@ true
 false
 ```
 
-## 15. Template Replacement
+## 17. Template Replacement
 
 ```bash
 ./target/release/nodia eval '
@@ -336,3 +389,79 @@ user=ana env=prod
 For literals like `<user>` Nodia interpolation is inert. If you must use
 `{name}` style placeholders, escape the braces in the source template with
 `{{name}}` — but `replace` is usually cleaner for external templates.
+
+## 18. Format Numeric Columns
+
+```bash
+./target/release/nodia eval '
+emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
+emit fixed(3.14159, 3)
+'
+```
+
+```text
+00007 3.50 ok    
+3.142
+```
+
+## 19. Read Script Args And Env
+
+```bash
+HOME=/tmp ./target/release/nodia eval '
+emit args
+emit env("HOME")
+' --allow-env -- one two
+```
+
+```text
+["one", "two"]
+/tmp
+```
+
+## 20. Execute A Subprocess
+
+```bash
+./target/release/nodia eval '
+val result = exec("/bin/sh", [
+  "-c",
+  "printf out; printf err 1>&2; exit 7",
+])
+emit result.stdout
+emit result.stderr
+emit result.status
+' --allow-process
+```
+
+```text
+out
+err
+7
+```
+
+## 21. Transform A List With Higher-Order Helpers
+
+```bash
+./target/release/nodia eval '
+func double(x) {
+  return x * 2
+}
+
+func odd(x) {
+  return x % 2 != 0
+}
+
+func add(acc, x) {
+  return acc + x
+}
+
+emit map(double, [1, 2, 3])
+emit filter(odd, [1, 2, 3, 4])
+emit reduce(add, 0, [1, 2, 3, 4])
+'
+```
+
+```text
+[2, 4, 6]
+[1, 3]
+10
+```

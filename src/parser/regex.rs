@@ -1,0 +1,444 @@
+use super::*;
+
+impl Parser {
+    pub(super) fn regex_literal(&mut self) -> DobraResult<Expr> {
+        let flags = if self.match_kind(&TokenKind::LeftParen) {
+            self.regex_flags()?
+        } else {
+            Vec::new()
+        };
+        self.skip_separators();
+        let items =
+            self.regex_braced_sequence("expected '{' after regex", "expected '}' after regex")?;
+        Ok(Expr::Regex(RegexPattern { flags, body: items }))
+    }
+
+    pub(super) fn regex_flags(&mut self) -> DobraResult<Vec<RegexFlag>> {
+        let mut flags = Vec::new();
+        self.skip_separators();
+        if !self.check(&TokenKind::RightParen) {
+            loop {
+                let token = self.advance().clone();
+                let name = match token.kind {
+                    TokenKind::Identifier(name) => name,
+                    _ => {
+                        return Err(DobraError::new(
+                            "expected regex flag name",
+                            token.line,
+                            token.column,
+                        ))
+                    }
+                };
+                let Some(flag) = RegexFlag::from_name(&name) else {
+                    return Err(DobraError::new(
+                        format!("unknown regex flag '{name}'"),
+                        token.line,
+                        token.column,
+                    ));
+                };
+                flags.push(flag);
+                self.skip_separators();
+                if !self.match_kind(&TokenKind::Comma) {
+                    break;
+                }
+                self.skip_separators();
+                if self.check(&TokenKind::RightParen) {
+                    break;
+                }
+            }
+        }
+        self.expect(TokenKind::RightParen, "expected ')' after regex flags")?;
+        Ok(flags)
+    }
+
+    pub(super) fn regex_braced_sequence(
+        &mut self,
+        start_message: &str,
+        end_message: &str,
+    ) -> DobraResult<Vec<RegexNode>> {
+        self.expect(TokenKind::LeftBrace, start_message)?;
+        let items = self.regex_sequence()?;
+        self.expect(TokenKind::RightBrace, end_message)?;
+        Ok(items)
+    }
+
+    pub(super) fn regex_sequence(&mut self) -> DobraResult<Vec<RegexNode>> {
+        let mut items = Vec::new();
+        self.skip_separators();
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            items.push(self.regex_item()?);
+            self.skip_separators();
+        }
+        Ok(items)
+    }
+
+    pub(super) fn regex_item(&mut self) -> DobraResult<RegexNode> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(value) | TokenKind::RawString(value) => Ok(RegexNode::Literal(value)),
+            TokenKind::Identifier(name) => {
+                self.regex_identifier_item(name, token.line, token.column)
+            }
+            _ => Err(DobraError::new(
+                "expected regex item",
+                token.line,
+                token.column,
+            )),
+        }
+    }
+
+    pub(super) fn regex_identifier_item(
+        &mut self,
+        name: String,
+        line: usize,
+        column: usize,
+    ) -> DobraResult<RegexNode> {
+        if let Some(anchor) = RegexAnchor::from_name(&name) {
+            return Ok(RegexNode::Anchor(anchor));
+        }
+        if let Some(class) = RegexClass::from_name(&name) {
+            return Ok(RegexNode::Class(class));
+        }
+
+        match name.as_str() {
+            "any_char" => Ok(RegexNode::AnyChar),
+            "any_codepoint" => Ok(RegexNode::AnyCodepoint),
+            "literal" => Ok(RegexNode::Literal(self.regex_parenthesized_string(
+                "expected '(' after literal",
+                "expected string inside literal()",
+                "expected ')' after literal()",
+            )?)),
+            "raw_regex" => Ok(RegexNode::Raw(
+                self.regex_expect_string("expected string after raw_regex")?,
+            )),
+            "optional" => self.regex_quantified(RegexQuantifierKind::Optional),
+            "zero_or_more" => self.regex_quantified(RegexQuantifierKind::ZeroOrMore),
+            "one_or_more" => self.regex_quantified(RegexQuantifierKind::OneOrMore),
+            "exactly" => {
+                let count = self.regex_expect_usize("expected integer after exactly")?;
+                self.regex_quantified(RegexQuantifierKind::Exactly(count))
+            }
+            "at_least" => {
+                let count = self.regex_expect_usize("expected integer after at_least")?;
+                self.regex_quantified(RegexQuantifierKind::AtLeast(count))
+            }
+            "between" => {
+                let min = self.regex_expect_usize("expected minimum after between")?;
+                self.expect(TokenKind::And, "expected 'and' in between quantifier")?;
+                let max = self.regex_expect_usize("expected maximum after 'and'")?;
+                self.regex_quantified(RegexQuantifierKind::Between(min, max))
+            }
+            "group" | "capture" => self.regex_group(RegexGroupKind::Capture),
+            "non_capture" => self.regex_group(RegexGroupKind::NonCapture),
+            "named" => {
+                let name = self.expect_name_like("expected group name after named")?;
+                self.regex_group(RegexGroupKind::Named(name))
+            }
+            "atomic" => self.regex_group(RegexGroupKind::Atomic),
+            "either" => self.regex_either(),
+            "char_set" => self.regex_char_set(false),
+            "not_char_set" => self.regex_char_set(true),
+            "followed_by" => self.regex_lookaround(RegexLookaroundKind::FollowedBy),
+            "not_followed_by" => self.regex_lookaround(RegexLookaroundKind::NotFollowedBy),
+            "preceded_by" => self.regex_lookaround(RegexLookaroundKind::PrecededBy),
+            "not_preceded_by" => self.regex_lookaround(RegexLookaroundKind::NotPrecededBy),
+            "same_as" => Ok(RegexNode::Reference(RegexReference::Named(
+                self.expect_name_like("expected named group after same_as")?,
+            ))),
+            "same_as_group" => Ok(RegexNode::Reference(RegexReference::Group(
+                self.regex_expect_usize("expected group index after same_as_group")?,
+            ))),
+            "with_flags" => self.regex_scoped_flags(true),
+            "without_flags" => self.regex_scoped_flags(false),
+            "branch" => Err(DobraError::new(
+                "branch is only valid inside either",
+                line,
+                column,
+            )),
+            "range" => Err(DobraError::new(
+                "range is only valid inside char_set",
+                line,
+                column,
+            )),
+            "lazy" | "possessive" => Err(DobraError::new(
+                "repeat mode must follow a quantifier",
+                line,
+                column,
+            )),
+            "char" => Err(DobraError::new(
+                "char() is only valid inside char_set",
+                line,
+                column,
+            )),
+            other => Err(DobraError::new(
+                format!("unknown regex item '{other}'"),
+                line,
+                column,
+            )),
+        }
+    }
+
+    pub(super) fn regex_quantified(
+        &mut self,
+        quantifier: RegexQuantifierKind,
+    ) -> DobraResult<RegexNode> {
+        let mode = self.regex_repeat_mode();
+        let target = self.regex_target()?;
+        Ok(RegexNode::Quantifier {
+            target: Box::new(target),
+            kind: quantifier,
+            mode,
+        })
+    }
+
+    pub(super) fn regex_repeat_mode(&mut self) -> RegexQuantifierMode {
+        match &self.peek().kind {
+            TokenKind::Identifier(name) if name == "lazy" => {
+                self.advance();
+                RegexQuantifierMode::Lazy
+            }
+            TokenKind::Identifier(name) if name == "possessive" => {
+                self.advance();
+                RegexQuantifierMode::Possessive
+            }
+            _ => RegexQuantifierMode::Greedy,
+        }
+    }
+
+    pub(super) fn regex_target(&mut self) -> DobraResult<RegexNode> {
+        self.skip_separators();
+        if self.match_kind(&TokenKind::LeftBrace) {
+            let items = self.regex_sequence()?;
+            self.expect(
+                TokenKind::RightBrace,
+                "expected '}' after regex block target",
+            )?;
+            return Ok(RegexNode::Sequence(items));
+        }
+        self.regex_item()
+    }
+
+    pub(super) fn regex_group(&mut self, kind: RegexGroupKind) -> DobraResult<RegexNode> {
+        let items = self.regex_braced_sequence(
+            "expected '{' after regex group",
+            "expected '}' after regex group",
+        )?;
+        Ok(RegexNode::Group { kind, body: items })
+    }
+
+    pub(super) fn regex_lookaround(&mut self, kind: RegexLookaroundKind) -> DobraResult<RegexNode> {
+        let items = self.regex_braced_sequence(
+            "expected '{' after regex lookaround",
+            "expected '}' after regex lookaround",
+        )?;
+        Ok(RegexNode::Lookaround { kind, body: items })
+    }
+
+    pub(super) fn regex_either(&mut self) -> DobraResult<RegexNode> {
+        self.expect(TokenKind::LeftBrace, "expected '{' after either")?;
+        let mut branches = Vec::new();
+        self.skip_separators();
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            let branch = self.expect_identifier("expected branch inside either")?;
+            if branch != "branch" {
+                return Err(DobraError::new(
+                    "expected branch inside either",
+                    self.previous().line,
+                    self.previous().column,
+                ));
+            }
+            branches.push(
+                self.regex_braced_sequence(
+                    "expected '{' after branch",
+                    "expected '}' after branch",
+                )?,
+            );
+            self.skip_separators();
+        }
+        self.expect(TokenKind::RightBrace, "expected '}' after either")?;
+        Ok(RegexNode::Alternation(branches))
+    }
+
+    pub(super) fn regex_char_set(&mut self, negated: bool) -> DobraResult<RegexNode> {
+        self.expect(TokenKind::LeftBrace, "expected '{' after char_set")?;
+        let mut items = Vec::new();
+        self.skip_separators();
+        while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
+            items.push(self.regex_char_set_item()?);
+            self.skip_separators();
+        }
+        self.expect(TokenKind::RightBrace, "expected '}' after char_set")?;
+        Ok(RegexNode::CharSet(RegexCharSet { negated, items }))
+    }
+
+    pub(super) fn regex_char_set_item(&mut self) -> DobraResult<RegexCharSetItem> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(value) | TokenKind::RawString(value) => {
+                self.regex_char_set_char_sugar(value, token.line, token.column)
+            }
+            TokenKind::Identifier(name) => {
+                if let Some(class) = RegexClass::from_name(&name) {
+                    return Ok(RegexCharSetItem::Class(class));
+                }
+                match name.as_str() {
+                    "char" => {
+                        let value = self.regex_parenthesized_string(
+                            "expected '(' after char",
+                            "expected string inside char()",
+                            "expected ')' after char()",
+                        )?;
+                        self.regex_char_set_char_sugar(value, token.line, token.column)
+                    }
+                    "raw_regex" => Ok(RegexCharSetItem::Raw(
+                        self.regex_expect_string("expected string after raw_regex")?,
+                    )),
+                    "range" => {
+                        let start =
+                            self.regex_expect_char_literal("expected char literal after range")?;
+                        let token = self.advance().clone();
+                        let keyword = match token.kind {
+                            TokenKind::Identifier(name) => name,
+                            _ => {
+                                return Err(DobraError::new(
+                                    "expected 'to' in range",
+                                    token.line,
+                                    token.column,
+                                ))
+                            }
+                        };
+                        if keyword != "to" {
+                            return Err(DobraError::new(
+                                "expected 'to' in range",
+                                token.line,
+                                token.column,
+                            ));
+                        }
+                        let end =
+                            self.regex_expect_char_literal("expected char literal after to")?;
+                        Ok(RegexCharSetItem::Range(start, end))
+                    }
+                    other if RegexAnchor::from_name(other).is_some() => Err(DobraError::new(
+                        format!("'{}' is not valid inside char_set", other),
+                        token.line,
+                        token.column,
+                    )),
+                    "any_char" | "any_codepoint" | "with_flags" | "without_flags" => {
+                        Err(DobraError::new(
+                            format!("'{}' is not valid inside char_set", name),
+                            token.line,
+                            token.column,
+                        ))
+                    }
+                    other => Err(DobraError::new(
+                        format!("unknown char_set item '{other}'"),
+                        token.line,
+                        token.column,
+                    )),
+                }
+            }
+            _ => Err(DobraError::new(
+                "expected char_set item",
+                token.line,
+                token.column,
+            )),
+        }
+    }
+
+    pub(super) fn regex_scoped_flags(&mut self, enable_only: bool) -> DobraResult<RegexNode> {
+        self.expect(TokenKind::LeftParen, "expected '(' after scoped flags")?;
+        let flags = self.regex_flags()?;
+        self.skip_separators();
+        let body = self.regex_braced_sequence(
+            "expected '{' after scoped flags",
+            "expected '}' after scoped flags",
+        )?;
+        Ok(RegexNode::ScopedFlags {
+            enable: if enable_only {
+                flags.clone()
+            } else {
+                Vec::new()
+            },
+            disable: if enable_only { Vec::new() } else { flags },
+            body,
+        })
+    }
+
+    pub(super) fn regex_parenthesized_string(
+        &mut self,
+        start_message: &str,
+        value_message: &str,
+        end_message: &str,
+    ) -> DobraResult<String> {
+        self.expect(TokenKind::LeftParen, start_message)?;
+        self.skip_separators();
+        let value = self.regex_expect_string(value_message)?;
+        self.skip_separators();
+        self.expect(TokenKind::RightParen, end_message)?;
+        Ok(value)
+    }
+
+    pub(super) fn regex_char_set_char_sugar(
+        &self,
+        value: String,
+        line: usize,
+        column: usize,
+    ) -> DobraResult<RegexCharSetItem> {
+        let mut chars = value.chars();
+        let Some(ch) = chars.next() else {
+            return Err(DobraError::new(
+                "char_set string sugar expects exactly one character",
+                line,
+                column,
+            ));
+        };
+        if chars.next().is_some() {
+            return Err(DobraError::new(
+                "char_set string sugar expects exactly one character; use multiple entries or raw_regex",
+                line,
+                column,
+            ));
+        }
+        Ok(RegexCharSetItem::Char(ch))
+    }
+
+    pub(super) fn regex_expect_string(&mut self, message: &str) -> DobraResult<String> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(value) | TokenKind::RawString(value) => Ok(value),
+            _ => Err(DobraError::new(message, token.line, token.column)),
+        }
+    }
+
+    pub(super) fn regex_expect_char_literal(&mut self, message: &str) -> DobraResult<char> {
+        let token = self.advance().clone();
+        let value = match token.kind {
+            TokenKind::String(value) | TokenKind::RawString(value) => value,
+            _ => return Err(DobraError::new(message, token.line, token.column)),
+        };
+        let mut chars = value.chars();
+        let Some(ch) = chars.next() else {
+            return Err(DobraError::new(
+                "expected single character literal",
+                token.line,
+                token.column,
+            ));
+        };
+        if chars.next().is_some() {
+            return Err(DobraError::new(
+                "expected single character literal",
+                token.line,
+                token.column,
+            ));
+        }
+        Ok(ch)
+    }
+
+    pub(super) fn regex_expect_usize(&mut self, message: &str) -> DobraResult<usize> {
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::Int(value) if value >= 0 => Ok(value as usize),
+            _ => Err(DobraError::new(message, token.line, token.column)),
+        }
+    }
+}

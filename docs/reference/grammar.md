@@ -63,10 +63,13 @@ args           = expression { "," expression } [","] ;
 
 primary_expr   = literal
                | identifier
+               | lambda_expr
                | regex_expr
                | "(" expression ")"
                | list_literal
                | map_literal ;
+
+lambda_expr    = "lambda" "(" [parameters] ")" block ;
 
 regex_expr     = "regex" [ "(" regex_flag { "," regex_flag } ")" ] regex_block ;
 regex_flag     = identifier ;
@@ -85,8 +88,11 @@ recursive-descent specification rather than as a flat EBNF block.
 
 * Identifiers: `[A-Za-z_][A-Za-z0-9_]*`.
 * Integer literals: base-10 signed 64-bit. The `-` is a unary operator.
-* Float literals: digits on both sides of `.` (no trailing-dot form).
-* String literals: `"..."`, `'...'`, `"""..."""`.
+* Float literals: digits on both sides of `.` and optional scientific notation
+  (`1e10`, `1.5e-3`).
+* String literals: `"..."`, `'...'`, `r"..."`, `r'...'`, `"""..."""`.
+* Triple-quoted strings and `r`-prefixed strings are raw: no escapes, no
+  interpolation.
 * Comments: `# ...` and `// ...`.
 
 See [Source Files](../language/source.md) for narrative coverage.

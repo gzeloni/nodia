@@ -1,7 +1,7 @@
 # Functions
 
-Functions are declared with `func`. They have positional parameters and a
-single `return` expression form.
+Functions are declared with `func`. Inline callbacks use `lambda(...) { ... }`.
+Both forms have positional parameters.
 
 ## Declaration
 
@@ -173,3 +173,24 @@ Functions are first-class values: you can pass them as arguments, return them
 from other functions, and store them in lists or maps. There is no method
 syntax — call style is always `f(x, y)`, never `x.f(y)`. This is the same
 convention used for stdlib builtins (see [Standard Library](../stdlib/index.md)).
+
+### Lambda Expressions
+
+Use `lambda(...) { ... }` for inline callbacks and higher-order helpers:
+
+```bash
+./target/release/nodia eval '
+val factor = 2
+emit map(lambda(x) { x * factor }, [1, 2, 3])
+emit reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
+'
+```
+
+```text
+[2, 4, 6]
+10
+```
+
+Lambdas capture the visible lexical scope, like nested `func` declarations.
+Their final bare expression is returned implicitly, so `lambda(x) { x * 2 }`
+is equivalent to `lambda(x) { return x * 2 }`.

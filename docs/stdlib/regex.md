@@ -1,5 +1,7 @@
 # Regex Builtins
 
+Import this namespace with `use re`.
+
 These builtins accept a **pattern** that can be either a regex value
 (produced by `regex { ... }`) or a plain string. When given a string, the
 builtin treats it as raw regex text.
@@ -189,7 +191,7 @@ emit split("ana   bruno\tcarla", regex { one_or_more whitespace })
 ```
 
 ```text
-[ana, bruno, carla]
+["ana", "bruno", "carla"]
 ```
 
 If the pattern can match empty text, `split` keeps the empty edge segments:
@@ -202,8 +204,8 @@ emit split("xay", regex { zero_or_more "a" })
 ```
 
 ```text
-[, a, b, c, ]
-[, x, y, ]
+["", "a", "b", "c", ""]
+["", "x", "y", ""]
 ```
 
 ## `split_regex(text, pattern)`

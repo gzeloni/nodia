@@ -74,7 +74,7 @@ emit values
 ```
 
 ```text
-[a, b]
+["a", "b"]
 ```
 
 See [Collections builtins](../stdlib/collections.md) for the full list of
@@ -154,7 +154,7 @@ emit user
 ```
 
 ```text
-{name: Ana, role: dev}
+{name: "Ana", role: "dev"}
 ```
 
 Map assignment inserts or replaces the final key. List assignment replaces an
@@ -201,6 +201,7 @@ role=dev
 * `keys(map)` — list of keys.
 * `values(map)` — list of values.
 * `entries(map)` — list of `{key, value}` items.
+* `get(value, key, default)` — safe lookup with fallback.
 * `contains(map, key)` — `true` if the key is present.
 
 ```bash
@@ -215,9 +216,9 @@ emit contains(u, "name")
 ```
 
 ```text
-[name, role]
-[Ana, dev]
-[{key: name, value: Ana}, {key: role, value: dev}]
+["name", "role"]
+["Ana", "dev"]
+[{key: "name", value: "Ana"}, {key: "role", value: "dev"}]
 2
 true
 ```

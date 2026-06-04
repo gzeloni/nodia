@@ -43,9 +43,29 @@ impl Lexer {
                         column,
                     ));
                 }
+                'r' if self.peek_next() == Some('"')
+                    && self.peek_n(2) == Some('"')
+                    && self.peek_n(3) == Some('"') =>
+                {
+                    tokens.push(Token::new(
+                        TokenKind::RawString(self.raw_triple_string(line, column)?),
+                        line,
+                        column,
+                    ));
+                }
+                'r' if self.peek_next() == Some('"') => tokens.push(Token::new(
+                    TokenKind::RawString(self.raw_string(line, column, '"')?),
+                    line,
+                    column,
+                )),
+                'r' if self.peek_next() == Some('\'') => tokens.push(Token::new(
+                    TokenKind::RawString(self.raw_string(line, column, '\'')?),
+                    line,
+                    column,
+                )),
                 '"' if self.peek_next() == Some('"') && self.peek_n(2) == Some('"') => {
                     tokens.push(Token::new(
-                        TokenKind::String(self.triple_string(line, column)?),
+                        TokenKind::RawString(self.triple_string(line, column)?),
                         line,
                         column,
                     ));
@@ -157,6 +177,23 @@ impl Lexer {
                 self.advance();
             }
         }
+        if matches!(self.peek(), Some('e' | 'E')) {
+            is_float = true;
+            self.advance();
+            if matches!(self.peek(), Some('+' | '-')) {
+                self.advance();
+            }
+            if !matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
+                return Err(DobraError::new(
+                    "invalid float literal",
+                    self.line,
+                    self.column,
+                ));
+            }
+            while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
+                self.advance();
+            }
+        }
         let text: String = self.chars[start..self.pos].iter().collect();
         if is_float {
             text.parse::<f64>()
@@ -199,6 +236,31 @@ impl Lexer {
         Err(DobraError::new("unterminated string", line, column))
     }
 
+    fn raw_string(&mut self, line: usize, column: usize, quote: char) -> DobraResult<String> {
+        self.advance();
+        self.advance();
+        let mut out = String::new();
+        while let Some(ch) = self.peek() {
+            if ch == quote {
+                self.advance();
+                if quote == '"'
+                    && looks_like_misdelimited_json_raw(&out)
+                    && matches!(self.peek(), Some(next) if next.is_ascii_alphanumeric() || matches!(next, '"' | '\''))
+                {
+                    return Err(DobraError::new(
+                        "raw string likely closed early; for inline JSON prefer r'...' or \"\"\"...\"\"\"",
+                        line,
+                        column,
+                    ));
+                }
+                return Ok(out);
+            }
+            out.push(ch);
+            self.advance();
+        }
+        Err(DobraError::new("unterminated raw string", line, column))
+    }
+
     fn triple_string(&mut self, line: usize, column: usize) -> DobraResult<String> {
         self.advance();
         self.advance();
@@ -220,6 +282,11 @@ impl Lexer {
             let ch = self.advance().expect("peek checked above");
             out.push(ch);
         }
+    }
+
+    fn raw_triple_string(&mut self, line: usize, column: usize) -> DobraResult<String> {
+        self.advance();
+        self.triple_string(line, column)
     }
 
     fn line_comment(&mut self, prefix_len: usize) -> String {
@@ -277,6 +344,11 @@ impl Lexer {
     }
 }
 
+fn looks_like_misdelimited_json_raw(value: &str) -> bool {
+    let trimmed = value.trim_start();
+    trimmed.starts_with('{') || trimmed.starts_with('[')
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -289,5 +361,31 @@ mod tests {
         assert!(matches!(tokens[0].kind, TokenKind::Comment(_)));
         assert!(matches!(tokens[2].kind, TokenKind::Val));
         assert!(tokens.iter().any(|t| matches!(t.kind, TokenKind::Emit)));
+    }
+
+    #[test]
+    fn tokenizes_raw_strings_and_scientific_numbers() {
+        let tokens = Lexer::new("emit r'{x}'\nemit \"\"\"{\"a\":1}\"\"\"\nemit 1e10")
+            .tokenize()
+            .unwrap();
+
+        assert!(tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::RawString(ref value) if value == "{x}")));
+        assert!(tokens.iter().any(|token| matches!(
+            token.kind,
+            TokenKind::RawString(ref value) if value == "{\"a\":1}"
+        )));
+        assert!(tokens
+            .iter()
+            .any(|token| matches!(token.kind, TokenKind::Float(value) if value == 1e10)));
+    }
+
+    #[test]
+    fn reports_helpful_error_for_json_inside_raw_double_quotes() {
+        let err = Lexer::new(r#"emit r"{"a":1}"#).tokenize().unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("for inline JSON prefer r'...' or \"\"\"...\"\"\""));
     }
 }

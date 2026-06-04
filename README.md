@@ -275,11 +275,13 @@ val user = "john"
 emit "Hello, {capitalize(user)}"
 ```
 
-Triple-quoted strings are supported:
+Raw and triple-quoted strings are supported:
 
 ```nodia
+emit r'{"name":"Ana","tpl":"hello {world}"}'
+
 emit """
-APP_NAME={input.app}
+APP_NAME=nodia
 APP_ENV=prod
 """
 ```
@@ -319,6 +321,7 @@ func greet(name) {
 }
 
 emit greet("ana")
+emit map(lambda(x) { x * 2 }, [1, 2, 3])
 ```
 
 ### Lists and Maps
@@ -498,7 +501,7 @@ type enum struct namespace
 | `3` | IO error |
 | `4` | Internal error |
 
-## VSCode Syntax Highlighting
+## VSCode Extension
 
 A local VSCode extension is included at:
 
@@ -513,6 +516,9 @@ Developer: Install Extension from Location...
 ```
 
 Then select the `vscode/nodia-language` folder.
+
+It provides syntax highlighting plus completions for stdlib namespaces such as
+`json.read()`, `csv.write()`, `text.upper()`, and `use re`.
 
 ## Project Layout
 

@@ -3,6 +3,23 @@
 Nodia composes programs from `.nod` files via the `use` declaration. Modules
 are lazily linked, cached by canonical path, and support cycles.
 
+`use` also loads selected stdlib namespaces without string paths:
+
+```nodia
+use json
+use csv as table
+
+emit json.read(r'{"name":"Ana"}').name
+emit table.write([{name: "Ana"}])
+```
+
+Regex helpers live in the `re` stdlib namespace:
+
+```nodia
+use re
+emit re.find("ana 42", regex { one_or_more digit }).text
+```
+
 ## Basic Form
 
 ```nodia
@@ -15,6 +32,12 @@ Rules:
 * Absolute paths are accepted.
 * `.nod` extension is optional.
 * Directories resolve through `index.nod`.
+
+For stdlib modules:
+
+* use a bare identifier such as `json` or `csv`;
+* the module is always bound as a namespace;
+* `pick` and `hide` filter names inside that namespace.
 
 ```text
 lib/

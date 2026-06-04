@@ -77,7 +77,7 @@ emit null
 42
 true
 [1, 2, 3]
-{name: Ana}
+{name: "Ana"}
 null
 ```
 

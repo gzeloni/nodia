@@ -5,6 +5,8 @@ Execute Nodia source supplied as a CLI string.
 ```bash
 nodia eval 'emit "hello"'
 nodia eval '<source>' --allow-write
+nodia eval '<source>' --allow-process
+nodia -e 'emit "hello"'
 ```
 
 `eval` is the same pipeline as `run`: lex, parse, check, execute. The only
@@ -80,6 +82,36 @@ emit date
 ```
 
 Without the flag the call fails with `E3001`.
+
+## Script Arguments
+
+Like `run`, `eval` accepts trailing script arguments after `--`:
+
+```bash
+./target/release/nodia eval 'emit args
+emit args[0]' -- one two
+```
+
+```text
+["one", "two"]
+one
+```
+
+## Environment Access
+
+`env(...)` is gated separately:
+
+```bash
+HOME=/tmp ./target/release/nodia -e 'emit env("HOME")' --allow-env
+```
+
+## Process Execution
+
+`exec(...)` is also gated explicitly:
+
+```bash
+./target/release/nodia -e 'emit exec("/bin/sh", ["-c", "printf ok"]).stdout' --allow-process
+```
 
 ## Notes
 

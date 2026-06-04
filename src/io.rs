@@ -2,7 +2,7 @@ use crate::error::{DobraError, DobraResult};
 use crate::value::StreamId;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, BufWriter, Read, Write};
+use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
 
 pub struct IoRegistry {
     next_file_id: usize,
@@ -16,8 +16,15 @@ impl Default for IoRegistry {
 }
 
 enum FileStream {
-    Reader { reader: BufReader<File>, eof: bool },
-    Writer { writer: BufWriter<File> },
+    Reader {
+        reader: BufReader<File>,
+        eof: bool,
+        chunk_buffer: Vec<u8>,
+        line_buffer: String,
+    },
+    Writer {
+        writer: BufWriter<File>,
+    },
 }
 
 impl IoRegistry {
@@ -35,6 +42,8 @@ impl IoRegistry {
                     DobraError::io(format!("cannot open '{path}' for read: {err}"))
                 })?),
                 eof: false,
+                chunk_buffer: Vec::new(),
+                line_buffer: String::new(),
             },
             "write" => {
                 ensure_write_allowed(allow_write)?;
@@ -114,13 +123,13 @@ impl IoRegistry {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
-            FileStream::Reader { reader, eof } => {
-                let mut out = String::new();
-                reader.read_to_string(&mut out).map_err(|err| {
+            FileStream::Reader { reader, eof, .. } => {
+                let mut out = Vec::with_capacity(remaining_file_hint(reader));
+                reader.read_to_end(&mut out).map_err(|err| {
                     DobraError::io(format!("cannot read from stream {id}: {err}"))
                 })?;
                 *eof = true;
-                Ok(out)
+                into_utf8_string(out, &format!("cannot read from stream {id}"))
             }
             FileStream::Writer { .. } => Err(DobraError::runtime(
                 "read() expects readable stream, got writable stream",
@@ -132,17 +141,29 @@ impl IoRegistry {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
-            FileStream::Reader { reader, eof } => {
-                let mut buffer = vec![0; size];
-                let read = reader.read(&mut buffer).map_err(|err| {
+            FileStream::Reader {
+                reader,
+                eof,
+                chunk_buffer,
+                ..
+            } => {
+                chunk_buffer.clear();
+                chunk_buffer.resize(size, 0);
+                let read = reader.read(chunk_buffer).map_err(|err| {
                     DobraError::io(format!("cannot read from stream {id}: {err}"))
                 })?;
                 if read == 0 {
                     *eof = true;
+                    chunk_buffer.clear();
                     return Ok(String::new());
                 }
-                buffer.truncate(read);
-                Ok(String::from_utf8_lossy(&buffer).to_string())
+                chunk_buffer.truncate(read);
+                let mut bytes = Vec::with_capacity(chunk_buffer.capacity());
+                std::mem::swap(chunk_buffer, &mut bytes);
+                match String::from_utf8(bytes) {
+                    Ok(text) => Ok(text),
+                    Err(err) => Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned()),
+                }
             }
             FileStream::Writer { .. } => Err(DobraError::runtime(
                 "read() expects readable stream, got writable stream",
@@ -154,21 +175,28 @@ impl IoRegistry {
         let id = expect_file_stream(stream, "readln")?;
         let stream = self.stream_mut(id)?;
         match stream {
-            FileStream::Reader { reader, eof } => {
-                let mut line = String::new();
-                let read = reader.read_line(&mut line).map_err(|err| {
+            FileStream::Reader {
+                reader,
+                eof,
+                line_buffer,
+                ..
+            } => {
+                line_buffer.clear();
+                let read = reader.read_line(line_buffer).map_err(|err| {
                     DobraError::io(format!("cannot read line from stream {id}: {err}"))
                 })?;
                 if read == 0 {
                     *eof = true;
                     return Ok(None);
                 }
-                if line.ends_with('\n') {
-                    line.pop();
-                    if line.ends_with('\r') {
-                        line.pop();
+                if line_buffer.ends_with('\n') {
+                    line_buffer.pop();
+                    if line_buffer.ends_with('\r') {
+                        line_buffer.pop();
                     }
                 }
+                let mut line = String::with_capacity(line_buffer.capacity());
+                std::mem::swap(line_buffer, &mut line);
                 Ok(Some(line))
             }
             FileStream::Writer { .. } => Err(DobraError::runtime(
@@ -209,7 +237,12 @@ impl IoRegistry {
 }
 
 pub fn read_path(path: &str) -> DobraResult<String> {
-    fs::read_to_string(path).map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))
+    let mut file =
+        File::open(path).map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))?;
+    let mut bytes = Vec::with_capacity(file_size_hint(&file));
+    file.read_to_end(&mut bytes)
+        .map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))?;
+    into_utf8_string(bytes, &format!("cannot read '{path}'"))
 }
 
 pub fn write_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()> {
@@ -243,4 +276,27 @@ fn expect_file_stream(stream: StreamId, name: &str) -> DobraResult<usize> {
             "{name}() cannot use {stream} through the file registry"
         ))),
     }
+}
+
+fn file_size_hint(file: &File) -> usize {
+    file.metadata()
+        .ok()
+        .map(|meta| meta.len().min(usize::MAX as u64) as usize)
+        .unwrap_or(0)
+}
+
+fn remaining_file_hint(reader: &mut BufReader<File>) -> usize {
+    let Ok(position) = reader.stream_position() else {
+        return 0;
+    };
+    reader
+        .get_ref()
+        .metadata()
+        .ok()
+        .map(|meta| meta.len().saturating_sub(position).min(usize::MAX as u64) as usize)
+        .unwrap_or(0)
+}
+
+fn into_utf8_string(bytes: Vec<u8>, context: &str) -> DobraResult<String> {
+    String::from_utf8(bytes).map_err(|err| DobraError::io(format!("{context}: {err}")))
 }

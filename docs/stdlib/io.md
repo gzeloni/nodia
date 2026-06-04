@@ -21,6 +21,29 @@ file IO and streams work in Nodia (including `--allow-write`), see
 | `flush(stream)`        | flush a writable stream                                   |
 | `eof(stream)`          | returns whether a readable file stream is at EOF          |
 
+## Path Helpers
+
+| Builtin            | Behavior                                                  |
+| ------------------ | --------------------------------------------------------- |
+| `basename(path)`   | last lexical path component                               |
+| `dirname(path)`    | lexical parent path; `"."` when there is no parent       |
+| `exists(path)`     | whether a path exists                                     |
+| `is_file(path)`    | whether a path exists and is a file                       |
+| `is_dir(path)`     | whether a path exists and is a directory                  |
+
+## Directories And Globs
+
+| Builtin            | Behavior                                                  |
+| ------------------ | --------------------------------------------------------- |
+| `list_dir(path)`   | returns entry names in lexicographic order                |
+| `glob(pattern)`    | returns matching paths in lexicographic order             |
+
+`glob(...)` supports:
+
+* `*` for zero or more characters inside one path segment
+* `?` for exactly one character inside one path segment
+* `**` for zero or more directory segments
+
 ## Reading
 
 | Builtin                | Behavior                                                |
@@ -50,6 +73,18 @@ All file writes (where `path` or `mode = "write"/"append"` is involved) require
 val text = read("input.txt")
 emit upper(text)
 ```
+
+### Path And Directory Queries
+
+```nodia
+emit basename("/tmp/report.txt")
+emit dirname("/tmp/report.txt")
+emit list_dir("/tmp")
+emit glob("/tmp/**/*.txt")
+```
+
+`list_dir(...)` returns entry names. `glob(...)` returns path strings that
+match the pattern.
 
 ### Line-By-Line Transform
 

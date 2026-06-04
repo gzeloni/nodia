@@ -1,6 +1,7 @@
 # Strings & Interpolation
 
-Nodia supports three string literal forms and runtime `{...}` interpolation.
+Nodia supports interpolated strings, raw strings, and raw triple-quoted
+blocks.
 
 ## Literal Forms
 
@@ -16,8 +17,23 @@ emit "hello"
 emit 'hello'
 ```
 
-Single- and double-quoted strings are equivalent in v0.6 — they accept the
+Single- and double-quoted strings are equivalent in v0.6.2 — they accept the
 same escape sequences and use the same interpolation rules.
+
+### Raw Strings
+
+Use `r"..."` or `r'...'` when you want literal braces, backslashes, or JSON
+snippets without interpolation:
+
+```nodia
+emit r'{"name":"Ana","tpl":"hello {world}"}'
+emit r"\n stays backslash-n"
+```
+
+Raw strings do not process escapes and do not interpolate `{...}`.
+
+For inline JSON, prefer `r'...'` or `"""..."""`. `r"..."` closes on the next
+double quote, so it is usually the wrong delimiter for JSON text.
 
 ### Triple Quotes
 
@@ -31,7 +47,8 @@ emit config
 ```
 
 Triple-quoted strings preserve their literal contents until the next `"""`
-delimiter, including newlines.
+delimiter, including newlines. Like raw strings, they do not process escapes
+and do not interpolate `{...}`.
 
 ## Escapes
 
@@ -68,7 +85,8 @@ tab	here
 
 ## Interpolation
 
-Strings interpolate `{expr}` at runtime when evaluated:
+Single- and double-quoted strings interpolate `{expr}` at runtime when
+evaluated:
 
 ```bash
 ./target/release/nodia eval '
@@ -97,7 +115,7 @@ sum=5
 
 ### Literal Braces
 
-Use `{{` and `}}` to emit literal braces:
+Use `{{` and `}}` to emit literal braces inside interpolated strings:
 
 ```bash
 ./target/release/nodia eval 'emit "{{value}}"'
@@ -109,10 +127,10 @@ Use `{{` and `}}` to emit literal braces:
 
 ### Where Interpolation Runs
 
-Interpolation is a runtime feature of string values, not a parse-time AST
-node. The string keeps its source form until it is evaluated and converted to
-text. This applies equally to literals, triple-quoted strings, and strings
-returned from functions or builtins, as long as they are evaluated as strings.
+Interpolation happens when an interpolated source literal is evaluated. After
+that, the resulting `string` value is plain text. Raw strings, triple-quoted
+strings, JSON-parsed strings, and other runtime string values are not
+re-interpolated.
 
 ### Errors
 

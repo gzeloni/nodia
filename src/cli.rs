@@ -1,7 +1,7 @@
 use nodia::project;
 use nodia::{
     check_file, format_source, lex_source, parse_source, run_file_with_options,
-    run_source_with_options, RuntimeOptions, Value,
+    run_source_with_options, DobraError, RuntimeOptions, Value,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -20,6 +20,8 @@ struct Options {
     verbose: bool,
     color: ColorMode,
     allow_write: bool,
+    allow_env: bool,
+    allow_process: bool,
 }
 
 enum ColorMode {
@@ -37,6 +39,8 @@ impl Default for ColorMode {
 struct CliError {
     code: i32,
     message: String,
+    output: Option<String>,
+    exit_status: Option<i32>,
 }
 
 impl CliError {
@@ -44,6 +48,8 @@ impl CliError {
         Self {
             code: EXIT_USAGE,
             message: message.into(),
+            output: None,
+            exit_status: None,
         }
     }
 
@@ -51,6 +57,8 @@ impl CliError {
         Self {
             code: EXIT_LANGUAGE,
             message: message.into(),
+            output: None,
+            exit_status: None,
         }
     }
 
@@ -58,6 +66,17 @@ impl CliError {
         Self {
             code: EXIT_IO,
             message: message.into(),
+            output: None,
+            exit_status: None,
+        }
+    }
+
+    fn language_runtime(err: DobraError) -> Self {
+        Self {
+            code: err.exit_status.unwrap_or(EXIT_LANGUAGE),
+            message: err.render(),
+            output: err.output,
+            exit_status: err.exit_status,
         }
     }
 }
@@ -67,6 +86,14 @@ pub fn run(args: Vec<String>) -> i32 {
     match run_inner(args, &mut options) {
         Ok(()) => 0,
         Err(err) => {
+            if let Some(status) = err.exit_status.or_else(|| exit_status(&err.message)) {
+                if let Some(output) = err.output.filter(|output| !output.is_empty()) {
+                    if !options.quiet {
+                        println!("{output}");
+                    }
+                }
+                return status;
+            }
             if options.json {
                 if err.message.trim_start().starts_with('{') {
                     eprintln!("{}", err.message);
@@ -83,6 +110,12 @@ pub fn run(args: Vec<String>) -> i32 {
             err.code
         }
     }
+}
+
+fn exit_status(message: &str) -> Option<i32> {
+    message
+        .strip_prefix("exit ")
+        .and_then(|value| value.trim().parse::<i32>().ok())
 }
 
 fn run_inner(args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
@@ -103,7 +136,7 @@ fn run_inner(args: Vec<String>, options: &mut Options) -> Result<(), CliError> {
         "run" => run_command(args, options),
         "check" => check_command(args, options),
         "fmt" => fmt_command(args, options),
-        "eval" => eval_command(args, options),
+        "eval" | "-e" => eval_command(args, options),
         "tokens" => tokens_command(args, options),
         "ast" => ast_command(args, options),
         "init" => init_command(args, options),
@@ -134,6 +167,14 @@ fn parse_global_flags(args: &mut Vec<String>, options: &mut Options) -> Result<(
             }
             "--allow-write" => {
                 options.allow_write = true;
+                args.remove(0);
+            }
+            "--allow-env" => {
+                options.allow_env = true;
+                args.remove(0);
+            }
+            "--allow-process" => {
+                options.allow_process = true;
                 args.remove(0);
             }
             "--color" => {
@@ -178,6 +219,14 @@ fn parse_command_flags(args: &mut Vec<String>, options: &mut Options) -> Result<
                 options.allow_write = true;
                 args.remove(index);
             }
+            "--allow-env" => {
+                options.allow_env = true;
+                args.remove(index);
+            }
+            "--allow-process" => {
+                options.allow_process = true;
+                args.remove(index);
+            }
             "--color" => {
                 let value = args
                     .get(index + 1)
@@ -203,10 +252,15 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     let mut path = None;
     let mut out_path = None;
     let mut vars = Vec::new();
+    let mut script_args = Vec::new();
     let mut index = 0;
 
     while index < args.len() {
         match args[index].as_str() {
+            "--" => {
+                script_args.extend_from_slice(&args[index + 1..]);
+                break;
+            }
             "--var" => {
                 let value = args
                     .get(index + 1)
@@ -243,13 +297,13 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     let input = parse_vars(&vars)?;
     let output = if path.as_deref() == Some("-") {
         let source = read_stdin()?;
-        run_source_with_options(&source, input, runtime_options(options))
-            .map_err(|err| CliError::language(err.render()))?
+        run_source_with_options(&source, input, runtime_options(options, script_args))
+            .map_err(CliError::language_runtime)?
     } else {
         let path = resolve_entry(path.as_deref())?;
         ensure_dob(&path)?;
-        let output = run_file_with_options(&path, input, runtime_options(options))
-            .map_err(|err| CliError::language(err.render()))?;
+        let output = run_file_with_options(&path, input, runtime_options(options, script_args))
+            .map_err(CliError::language_runtime)?;
         if let Some(target) = out_path {
             let target = if target.as_os_str().is_empty() {
                 PathBuf::from(format!("{}.out", path.display()))
@@ -372,9 +426,17 @@ fn eval_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliE
     if args.is_empty() {
         return Err(CliError::usage("eval expects source code"));
     }
-    let source = args.join(" ");
-    let output = run_source_with_options(&source, BTreeMap::new(), runtime_options(options))
-        .map_err(|err| CliError::language(err.render()))?;
+    let (source_args, script_args) = split_script_args(args);
+    if source_args.is_empty() {
+        return Err(CliError::usage("eval expects source code"));
+    }
+    let source = source_args.join(" ");
+    let output = run_source_with_options(
+        &source,
+        BTreeMap::new(),
+        runtime_options(options, script_args),
+    )
+    .map_err(CliError::language_runtime)?;
     if !options.quiet {
         println!("{output}");
     }
@@ -455,9 +517,20 @@ fn version_command(mut args: Vec<String>, options: &mut Options) -> Result<(), C
     Ok(())
 }
 
-fn runtime_options(options: &Options) -> RuntimeOptions {
+fn runtime_options(options: &Options, args: Vec<String>) -> RuntimeOptions {
     RuntimeOptions {
         allow_write: options.allow_write,
+        allow_env: options.allow_env,
+        allow_process: options.allow_process,
+        args,
+    }
+}
+
+fn split_script_args(args: Vec<String>) -> (Vec<String>, Vec<String>) {
+    if let Some(index) = args.iter().position(|value| value == "--") {
+        (args[..index].to_vec(), args[index + 1..].to_vec())
+    } else {
+        (args, Vec::new())
     }
 }
 
@@ -687,7 +760,42 @@ fn json_escape(value: &str) -> String {
 
 fn print_help() {
     println!(
-        "Nodia {}\n\nUsage:\n  nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write]\n  nodia check [file.nod] [--json]\n  nodia fmt [file.nod|dir] [--check] [--stdout]\n  nodia eval 'emit \"hello\"'\n  nodia tokens file.nod [--json]\n  nodia ast file.nod [--json]\n  nodia init [dir]\n  nodia version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --allow-write\n  --help\n  --version",
+        "Nodia {}\n\nUsage:\n  nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write] [--allow-env] [--allow-process] [-- script-args...]\n  nodia check [file.nod] [--json]\n  nodia fmt [file.nod|dir] [--check] [--stdout]\n  nodia eval 'emit \"hello\"' [-- script-args...]\n  nodia -e 'emit \"hello\"' [-- script-args...]\n  nodia tokens file.nod [--json]\n  nodia ast file.nod [--json]\n  nodia init [dir]\n  nodia version [--json]\n\nGlobal flags:\n  --json\n  --quiet\n  --verbose\n  --color auto|always|never\n  --allow-write\n  --allow-env\n  --allow-process\n  --help\n  --version",
         env!("CARGO_PKG_VERSION")
     );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn split_script_args_keeps_source_and_trailing_args_separate() {
+        let (source, script_args) = split_script_args(vec![
+            "emit args".to_string(),
+            "--".to_string(),
+            "one".to_string(),
+            "two".to_string(),
+        ]);
+
+        assert_eq!(source, vec!["emit args".to_string()]);
+        assert_eq!(script_args, vec!["one".to_string(), "two".to_string()]);
+    }
+
+    #[test]
+    fn exit_status_parser_reads_special_exit_message() {
+        assert_eq!(exit_status("exit 7"), Some(7));
+        assert_eq!(exit_status("error[E2000]: boom"), None);
+    }
+
+    #[test]
+    fn eval_alias_returns_custom_exit_code() {
+        let code = run(vec![
+            "nodia".to_string(),
+            "-e".to_string(),
+            "emit \"before\"\nexit(7)".to_string(),
+        ]);
+
+        assert_eq!(code, 7);
+    }
 }

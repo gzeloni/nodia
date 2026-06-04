@@ -10,10 +10,13 @@ fixed set of kinds.
 | `null`     | `null`                                               |
 | `bool`     | `true`, `false`                                      |
 | `int`      | `42`, `-3`                                           |
-| `float`    | `3.14`, `0.0`                                        |
-| `string`   | `"hello"`, `'hello'`, `"""triple"""`                 |
+| `float`    | `3.14`, `0.0`, `1e10`                                |
+| `string`   | `"hello"`, `'hello'`, `r"hello"`, `"""triple"""`     |
 | `list`     | `[1, 2, 3]`                                          |
 | `map`      | `{name: "Ana", role: "dev"}`                         |
+| `date`     | `date(2026, 5, 27)`                                  |
+| `datetime` | `parse_datetime("2026-05-27T14:30:05Z")`             |
+| `duration` | `duration({hours: 2, minutes: 30})`                  |
 | `stream`   | `stdin`, `stdout`, `stderr`, `open("f.txt", "read")` |
 | `function` | `func greet(name) { ... }`                           |
 | `regex`    | `regex { one_or_more digit }`                        |
@@ -31,11 +34,14 @@ val offset = -3
 
 ### Floats
 
-Decimal literals with digits on both sides of `.`:
+Decimal literals with digits on both sides of `.` and optional scientific
+notation:
 
 ```nodia
 val ratio = 0.5
 val total = 10.0
+val huge = 1e10
+val tiny = 1.5e-3
 ```
 
 The trailing-dot form `10.` is **not** part of the language.
@@ -47,6 +53,11 @@ See [Strings & Interpolation](strings.md).
 ### Lists And Maps
 
 See [Lists & Maps](collections.md).
+
+### Dates, Datetimes, And Durations
+
+These are first-class runtime values created through standard library
+constructors and parsers. See [Date & Time Builtins](../stdlib/datetime.md).
 
 ## Truthiness
 
@@ -62,6 +73,9 @@ rules are:
 | `string`   | false if empty (`""`) |
 | `list`     | false if empty (`[]`) |
 | `map`      | false if empty (`{}`) |
+| `date`     | always true           |
+| `datetime` | always true           |
+| `duration` | always true           |
 | `stream`   | always true           |
 | `function` | always true           |
 | `regex`    | always true           |
@@ -109,5 +123,7 @@ false
 false
 ```
 
-Lists and maps compare element-wise / key-wise. Functions, streams, regexes,
-and `use` references compare by identity in v0.6.
+Lists and maps compare element-wise / key-wise. `date` compares by calendar
+day, `datetime` compares by instant, and `duration` compares by exact stored
+length. Functions, streams, regexes, and `use` references compare by identity
+in v0.6.

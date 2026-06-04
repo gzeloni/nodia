@@ -246,7 +246,7 @@ emit find_all("yes/maybe/no", p)
 
 ```text
 (?:yes|no|maybe)
-[{end: 3, groups: [], named: {}, start: 0, text: yes}, {end: 9, groups: [], named: {}, start: 4, text: maybe}, {end: 12, groups: [], named: {}, start: 10, text: no}]
+[{end: 3, groups: [], named: {}, start: 0, text: "yes"}, {end: 9, groups: [], named: {}, start: 4, text: "maybe"}, {end: 12, groups: [], named: {}, start: 10, text: "no"}]
 ```
 
 ## Character Sets
@@ -291,7 +291,7 @@ emit find_all("a, b , c", p)
 
 ```text
 (?:[^\s,])+
-[{end: 1, groups: [], named: {}, start: 0, text: a}, {end: 4, groups: [], named: {}, start: 3, text: b}, {end: 8, groups: [], named: {}, start: 7, text: c}]
+[{end: 1, groups: [], named: {}, start: 0, text: "a"}, {end: 4, groups: [], named: {}, start: 3, text: "b"}, {end: 8, groups: [], named: {}, start: 7, text: "c"}]
 ```
 
 Character ranges use `range "a" to "z"` (not `range "a" "z"`):
@@ -310,7 +310,7 @@ emit find_all("ab12cd34", p)
 
 ```text
 (?:[0-9])+
-[{end: 4, groups: [], named: {}, start: 2, text: 12}, {end: 8, groups: [], named: {}, start: 6, text: 34}]
+[{end: 4, groups: [], named: {}, start: 2, text: "12"}, {end: 8, groups: [], named: {}, start: 6, text: "34"}]
 ```
 
 ## Lookarounds
@@ -337,7 +337,7 @@ emit find_all("12px 7em 3px 99", p)
 
 ```text
 \d+(?=px)
-[{end: 2, groups: [], named: {}, start: 0, text: 12}, {end: 10, groups: [], named: {}, start: 9, text: 3}]
+[{end: 2, groups: [], named: {}, start: 0, text: "12"}, {end: 10, groups: [], named: {}, start: 9, text: "3"}]
 ```
 
 ## Backreferences

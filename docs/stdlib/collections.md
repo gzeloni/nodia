@@ -36,7 +36,7 @@ Returns the keys in deterministic sorted order:
 ```
 
 ```text
-[name, role]
+["name", "role"]
 ```
 
 ### `values(map)`
@@ -48,7 +48,7 @@ Returns the values, ordered by key:
 ```
 
 ```text
-[Ana, dev]
+["Ana", "dev"]
 ```
 
 ### `entries(map)`
@@ -60,12 +60,36 @@ Returns the entries as `{key, value}` maps, ordered by key:
 ```
 
 ```text
-[{key: name, value: Ana}, {key: role, value: dev}]
+[{key: "name", value: "Ana"}, {key: "role", value: "dev"}]
 ```
 
 ### `contains(map, key)`
 
 See [`contains`](text.md#tests) — works on strings, lists, and maps.
+
+### `get(value, key, default)`
+
+Safe lookup with fallback:
+
+* maps look up `key` after converting it to string;
+* lists and strings use `key` as an index;
+* negative indexes count from the end for lists and strings.
+
+```bash
+./target/release/nodia eval '
+emit get({name: "Ana"}, "name", "missing")
+emit get({name: "Ana"}, "role", "missing")
+emit get(["a", "b"], 5, "missing")
+emit get("nodia", -1, "?")
+'
+```
+
+```text
+Ana
+missing
+missing
+a
+```
 
 ## List Helpers
 
@@ -129,8 +153,8 @@ emit slice("nodia", 1, 4)
 ```
 
 ```text
-[b, c]
-[b, c]
+["b", "c"]
+["b", "c"]
 odi
 ```
 
@@ -167,7 +191,7 @@ emit sort(["c", "a", "b"])
 
 ```text
 [1, 2, 3]
-[a, b, c]
+["a", "b", "c"]
 ```
 
 ### `unique(list)`
@@ -179,5 +203,103 @@ Removes duplicates while preserving the original order:
 ```
 
 ```text
-[a, b, c]
+["a", "b", "c"]
+```
+
+## Higher-Order Helpers
+
+These helpers operate on lists and require a user-defined function as the
+callback.
+
+### `map(fn, list)`
+
+Transforms each item:
+
+```bash
+./target/release/nodia eval '
+func double(x) {
+  return x * 2
+}
+emit map(double, [1, 2, 3])
+'
+```
+
+```text
+[2, 4, 6]
+```
+
+### `filter(fn, list)`
+
+Keeps items whose callback result is truthy:
+
+```bash
+./target/release/nodia eval '
+func odd(x) {
+  return x % 2 != 0
+}
+emit filter(odd, [1, 2, 3, 4])
+'
+```
+
+```text
+[1, 3]
+```
+
+### `reduce(fn, init, list)`
+
+Folds a list into a single value. The callback receives `(acc, item)`:
+
+```bash
+./target/release/nodia eval '
+func add(acc, x) {
+  return acc + x
+}
+emit reduce(add, 0, [1, 2, 3, 4])
+'
+```
+
+```text
+10
+```
+
+### `group_by(fn, list)`
+
+Groups items into a map keyed by the callback result converted to string:
+
+```bash
+./target/release/nodia eval '
+func bucket(x) {
+  if x < 10 {
+    return "small"
+  }
+  return "big"
+}
+emit group_by(bucket, [3, 12, 8, 20])
+'
+```
+
+```text
+{big: [12, 20], small: [3, 8]}
+```
+
+### `sort_by(fn, list)`
+
+Sorts a list by a computed key:
+
+```bash
+./target/release/nodia eval '
+func age(user) {
+  return user.age
+}
+val users = [
+  {name: "Bia", age: 30},
+  {name: "Ana", age: 20},
+  {name: "Caio", age: 25},
+]
+emit sort_by(age, users)
+'
+```
+
+```text
+[{age: 20, name: "Ana"}, {age: 25, name: "Caio"}, {age: 30, name: "Bia"}]
 ```

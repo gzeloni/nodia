@@ -42,6 +42,7 @@ pub enum TokenKind {
     Pick,
     LegacyShow,
     Hide,
+    Lambda,
     Match,
     Case,
     Default,
@@ -59,6 +60,7 @@ pub enum TokenKind {
     Int(i64),
     Float(f64),
     String(String),
+    RawString(String),
     Comment(String),
     Plus,
     Minus,
@@ -116,6 +118,7 @@ impl TokenKind {
             TokenKind::Pick => "Pick",
             TokenKind::LegacyShow => "LegacyShow",
             TokenKind::Hide => "Hide",
+            TokenKind::Lambda => "Lambda",
             TokenKind::Match => "Match",
             TokenKind::Case => "Case",
             TokenKind::Default => "Default",
@@ -133,6 +136,7 @@ impl TokenKind {
             TokenKind::Int(_) => "Int",
             TokenKind::Float(_) => "Float",
             TokenKind::String(_) => "String",
+            TokenKind::RawString(_) => "RawString",
             TokenKind::Comment(_) => "Comment",
             TokenKind::Plus => "Plus",
             TokenKind::Minus => "Minus",
@@ -163,9 +167,10 @@ impl TokenKind {
 
     pub fn literal(&self) -> Option<String> {
         match self {
-            TokenKind::Identifier(value) | TokenKind::String(value) | TokenKind::Comment(value) => {
-                Some(value.clone())
-            }
+            TokenKind::Identifier(value)
+            | TokenKind::String(value)
+            | TokenKind::RawString(value)
+            | TokenKind::Comment(value) => Some(value.clone()),
             TokenKind::Int(value) => Some(value.to_string()),
             TokenKind::Float(value) => Some(value.to_string()),
             _ => None,
@@ -212,6 +217,7 @@ pub fn keyword_kind(text: &str) -> Option<TokenKind> {
         "pick" => TokenKind::Pick,
         "show" => TokenKind::LegacyShow,
         "hide" => TokenKind::Hide,
+        "lambda" => TokenKind::Lambda,
         "match" => TokenKind::Match,
         "case" => TokenKind::Case,
         "default" => TokenKind::Default,

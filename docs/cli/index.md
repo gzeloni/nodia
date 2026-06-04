@@ -34,6 +34,8 @@ workflow.
 | `--color always`    | Color mode. Output is currently plain text.                             |
 | `--color never`     | Color mode. Output is currently plain text.                             |
 | `--allow-write`     | Allow Nodia code to write files through IO builtins (see below).        |
+| `--allow-env`       | Allow Nodia code to read process environment variables.                 |
+| `--allow-process`   | Allow Nodia code to spawn subprocesses through `exec(...)`.             |
 | `--help`, `-h`      | Print help.                                                             |
 | `--version`, `-V`   | Print version.                                                          |
 
@@ -58,6 +60,18 @@ This flag does **not** affect:
 * the `--out` / `-o` CLI flag, which is a CLI redirection of the program's
   emitted output and is always allowed.
 
+### `--allow-env`
+
+`--allow-env` gates `env(...)` access from Nodia code.
+
+Without it, environment reads fail with `E3002`.
+
+### `--allow-process`
+
+`--allow-process` gates `exec(...)`.
+
+Without it, subprocess execution fails with `E3003`.
+
 ## Exit Codes
 
 | Code | Meaning                          |
@@ -77,13 +91,14 @@ nodia -h
 ```
 
 ```text
-Nodia 0.6.0
+Nodia 0.6.2
 
 Usage:
-  nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write]
+  nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write] [--allow-env] [--allow-process] [-- script-args...]
   nodia check [file.nod] [--json]
   nodia fmt [file.nod|dir] [--check] [--stdout]
-  nodia eval 'emit "hello"'
+  nodia eval 'emit "hello"' [-- script-args...]
+  nodia -e 'emit "hello"' [-- script-args...]
   nodia tokens file.nod [--json]
   nodia ast file.nod [--json]
   nodia init [dir]

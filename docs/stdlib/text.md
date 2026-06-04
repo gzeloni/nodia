@@ -103,7 +103,7 @@ Splits on a literal separator string, or on a regex value:
 ```
 
 ```text
-[a, b, c]
+["a", "b", "c"]
 ```
 
 ```bash
@@ -111,7 +111,7 @@ Splits on a literal separator string, or on a regex value:
 ```
 
 ```text
-[ana, bruno, carla]
+["ana", "bruno", "carla"]
 ```
 
 If the separator is an empty string, or a regex that can match empty text,
@@ -125,8 +125,8 @@ emit split("xay", regex { zero_or_more "a" })
 ```
 
 ```text
-[, a, b, c, ]
-[, x, y, ]
+["", "a", "b", "c", ""]
+["", "x", "y", ""]
 ```
 
 ### `split_regex(text, pattern)`
@@ -155,7 +155,7 @@ Splits on `\n`:
 ```
 
 ```text
-[a, b, c]
+["a", "b", "c"]
 ```
 
 ### `unlines(list)`
@@ -181,7 +181,7 @@ Splits on runs of whitespace:
 ```
 
 ```text
-[terra, blade, true, night, edge]
+["terra", "blade", "true", "night", "edge"]
 ```
 
 ## Substitution
@@ -293,8 +293,6 @@ true
 true
 true
 ```
-
-`starts_with` and `ends_with` are accepted as legacy aliases.
 
 ## Length
 

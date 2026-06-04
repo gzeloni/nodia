@@ -8,6 +8,9 @@ nodia run file.nod --var key=value
 nodia run file.nod --vars key1=value1 key2=value2 ...
 nodia run file.nod --out output.txt
 nodia run file.nod --allow-write
+nodia run file.nod --allow-env
+nodia run file.nod --allow-process
+nodia run file.nod -- one two
 nodia run -                          # read source from stdin
 nodia run                            # uses nodia.toml entry
 ```
@@ -85,6 +88,26 @@ emit input.env
 JSON files preserve typed scalars (`string`, `int`, `float`, `bool`, `null`).
 `--var` / inline `--vars` always pass strings.
 
+## Script Arguments
+
+Arguments after `--` are exposed through the read-only `args` list:
+
+```bash
+./target/release/nodia run script.nod -- one two
+```
+
+`script.nod`:
+
+```nodia
+emit args
+emit args[1]
+```
+
+```text
+["one", "two"]
+two
+```
+
 ## Source From Stdin
 
 Pass `-` as the file argument:
@@ -134,6 +157,22 @@ Functions like `write(path, text)`, `append(path, text)`, and
 ```
 
 Without it, the program fails with `E3001`.
+
+## Environment Access
+
+`env(...)` requires `--allow-env`:
+
+```bash
+HOME=/tmp ./target/release/nodia run script.nod --allow-env
+```
+
+## Process Execution
+
+`exec(...)` requires `--allow-process`:
+
+```bash
+./target/release/nodia run script.nod --allow-process
+```
 
 ## Project Entry
 

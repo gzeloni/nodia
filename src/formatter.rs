@@ -1,4 +1,4 @@
-use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp};
+use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::regex::{
     RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
     RegexQuantifierMode, RegexReference,
@@ -45,14 +45,17 @@ impl Formatter {
                 }
             }
             Stmt::Use {
-                path,
+                target,
                 alias,
                 pick,
                 hide,
             } => {
                 self.write_indent();
                 self.out.push_str("use ");
-                self.out.push_str(&quote_string(path));
+                match target {
+                    UseTarget::Path(path) => self.out.push_str(&quote_string(path)),
+                    UseTarget::Stdlib(name) => self.out.push_str(name),
+                }
                 if let Some(alias) = alias {
                     self.out.push_str(" as ");
                     self.out.push_str(alias);
@@ -270,6 +273,10 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -
     let prec = precedence(expr);
     let rendered = match expr {
         Expr::Literal(value) => format_literal(value, indent, width),
+        Expr::String { value, interpolate } => {
+            format_source_string_literal(value, *interpolate, indent, width)
+        }
+        Expr::Lambda { params, body } => format_lambda(params, body, indent),
         Expr::Regex(pattern) => format_regex(pattern, indent),
         Expr::Identifier(name) => name.clone(),
         Expr::Unary { op, expr } => {
@@ -354,7 +361,7 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 value.to_string()
             }
         }
-        Value::String(value) => format_string_literal(value, indent, width),
+        Value::String(value) => format_source_string_literal(value, false, indent, width),
         Value::List(values) => {
             let exprs = values
                 .iter()
@@ -369,9 +376,13 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
-        Value::Regex(regex) => format_string_literal(regex.rendered(), indent, width),
+        Value::Date(value) => format!("parse_date({})", quote_string(&value.isoformat())),
+        Value::DateTime(value) => format!("parse_datetime({})", quote_string(&value.isoformat())),
+        Value::Duration(value) => format!("parse_duration({})", quote_string(&value.isoformat())),
+        Value::Regex(regex) => quote_string(regex.rendered()),
         Value::Stream(stream) => stream.to_string(),
         Value::UseBinding(_, name) => format!("<use {name}>"),
+        Value::BuiltinFunction(name) => format!("<builtin {name}>"),
         Value::Function(_) => "<func>".to_string(),
     }
 }
@@ -397,6 +408,15 @@ fn format_call(callee: &Expr, args: &[Expr], indent: usize, width: usize) -> Str
     out.push_str(&indent_string(indent));
     out.push(')');
     out
+}
+
+fn format_lambda(params: &[String], body: &[Stmt], indent: usize) -> String {
+    let mut formatter = Formatter {
+        out: format!("lambda({}) ", params.join(", ")),
+        indent,
+    };
+    formatter.write_block(body);
+    formatter.out
 }
 
 fn format_list(values: &[Expr], indent: usize, width: usize) -> String {
@@ -660,12 +680,17 @@ fn format_regex_flag_list(flags: &[RegexFlag]) -> String {
         .join(", ")
 }
 
-fn format_string_literal(value: &str, indent: usize, width: usize) -> String {
-    if value.contains('\n') {
+fn format_source_string_literal(
+    value: &str,
+    interpolate: bool,
+    indent: usize,
+    width: usize,
+) -> String {
+    if !interpolate && value.contains('\n') && !value.contains("\"\"\"") {
         return format!("\"\"\"{}\"\"\"", value);
     }
 
-    let quoted = quote_string(value);
+    let quoted = quote_source_string(value, interpolate);
     if fits_inline(&quoted, width) {
         return quoted;
     }
@@ -677,7 +702,7 @@ fn format_string_literal(value: &str, indent: usize, width: usize) -> String {
             out.push('\n');
             out.push_str(&indent_string(indent + 1));
         }
-        out.push_str(&quote_string(chunk));
+        out.push_str(&quote_source_string(chunk, interpolate));
         if index + 1 < chunks.len() {
             out.push_str(" +");
         }
@@ -737,6 +762,29 @@ fn quote_string(value: &str) -> String {
             '\n' => out.push_str("\\n"),
             '\r' => out.push_str("\\r"),
             '\t' => out.push_str("\\t"),
+            ch => out.push(ch),
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn quote_source_string(value: &str, interpolate: bool) -> String {
+    if interpolate {
+        return quote_string(value);
+    }
+
+    let mut out = String::new();
+    out.push('"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '{' => out.push_str("{{"),
+            '}' => out.push_str("}}"),
             ch => out.push(ch),
         }
     }

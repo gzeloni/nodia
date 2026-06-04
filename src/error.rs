@@ -9,6 +9,8 @@ pub struct DobraError {
     pub line: usize,
     pub column: usize,
     pub file: Option<String>,
+    pub exit_status: Option<i32>,
+    pub output: Option<String>,
 }
 
 impl DobraError {
@@ -19,6 +21,8 @@ impl DobraError {
             line,
             column,
             file: None,
+            exit_status: None,
+            output: None,
         }
     }
 
@@ -29,6 +33,8 @@ impl DobraError {
             line: 0,
             column: 0,
             file: None,
+            exit_status: None,
+            output: None,
         }
     }
 
@@ -39,6 +45,8 @@ impl DobraError {
             line: 0,
             column: 0,
             file: None,
+            exit_status: None,
+            output: None,
         }
     }
 
@@ -53,6 +61,20 @@ impl DobraError {
             line,
             column,
             file: None,
+            exit_status: None,
+            output: None,
+        }
+    }
+
+    pub fn exit(status: i32) -> Self {
+        Self {
+            code: "EXIT".to_string(),
+            message: String::new(),
+            line: 0,
+            column: 0,
+            file: None,
+            exit_status: Some(status),
+            output: None,
         }
     }
 
@@ -73,7 +95,15 @@ impl DobraError {
         self
     }
 
+    pub fn with_output(mut self, output: impl Into<String>) -> Self {
+        self.output = Some(output.into());
+        self
+    }
+
     pub fn render(&self) -> String {
+        if let Some(status) = self.exit_status {
+            return format!("exit {status}");
+        }
         let location = match (&self.file, self.line, self.column) {
             (Some(file), line, column) if line > 0 => format!("\n  at {file}:{line}:{column}"),
             (None, line, column) if line > 0 => format!("\n  at {line}:{column}"),

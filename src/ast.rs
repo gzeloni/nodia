@@ -7,10 +7,16 @@ pub struct Program {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+pub enum UseTarget {
+    Path(String),
+    Stdlib(String),
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Stmt {
     Comment(String),
     Use {
-        path: String,
+        target: UseTarget,
         alias: Option<String>,
         pick: Vec<String>,
         hide: Vec<String>,
@@ -72,6 +78,14 @@ pub enum ForBinding {
 #[derive(Debug, Clone, PartialEq)]
 pub enum Expr {
     Literal(Value),
+    String {
+        value: String,
+        interpolate: bool,
+    },
+    Lambda {
+        params: Vec<String>,
+        body: Vec<Stmt>,
+    },
     Regex(RegexPattern),
     Identifier(String),
     Unary {

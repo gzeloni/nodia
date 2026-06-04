@@ -38,6 +38,8 @@ When `--json` is set, the same error becomes structured output:
 | `E2000`  | runtime language error                             |
 | `E3000`  | IO error                                           |
 | `E3001`  | file write attempted without `--allow-write`       |
+| `E3002`  | environment read attempted without `--allow-env`   |
+| `E3003`  | process execution attempted without `--allow-process` |
 | `E4000`  | generic semantic check error                       |
 | `E4100`  | undefined variable                                 |
 | `E4101`  | assignment to immutable binding                    |
@@ -131,7 +133,7 @@ error[E1000]: expected expression
 | lexer / parser | `E1000`                            |
 | use resolution | `E3000`, `E4104`                   |
 | semantic check | `E41xx`                            |
-| runtime        | `E2000`, `E3000`, `E3001`, `E4xxx` |
+| runtime        | `E2000`, `E3000`, `E3001`, `E3002`, `E3003`, `E4xxx` |
 
 `nodia check` runs everything up to and including the semantic check. `nodia
 run` / `nodia eval` go all the way through runtime.

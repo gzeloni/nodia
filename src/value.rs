@@ -1,5 +1,6 @@
 use crate::ast::Stmt;
 use crate::regex::RuntimeRegex;
+use crate::temporal::{DateTimeValue, DateValue, DurationValue};
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -41,9 +42,13 @@ pub enum Value {
     String(String),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    Date(DateValue),
+    DateTime(DateTimeValue),
+    Duration(DurationValue),
     Regex(RuntimeRegex),
     Stream(StreamId),
     UseBinding(ModuleRef, String),
+    BuiltinFunction(String),
     Function(Function),
 }
 
@@ -64,9 +69,13 @@ impl Value {
             Value::String(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
+            Value::Date(_) => true,
+            Value::DateTime(_) => true,
+            Value::Duration(_) => true,
             Value::Regex(_) => true,
             Value::Stream(_) => true,
             Value::UseBinding(_, _) => true,
+            Value::BuiltinFunction(_) => true,
             Value::Function(_) => true,
         }
     }
@@ -80,10 +89,66 @@ impl Value {
             Value::String(_) => "string",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::Date(_) => "date",
+            Value::DateTime(_) => "datetime",
+            Value::Duration(_) => "duration",
             Value::Regex(_) => "regex",
             Value::Stream(_) => "stream",
             Value::UseBinding(_, _) => "use",
+            Value::BuiltinFunction(_) => "function",
             Value::Function(_) => "function",
+        }
+    }
+
+    fn write_display(&self, f: &mut fmt::Formatter<'_>, nested: bool) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::Bool(value) => write!(f, "{value}"),
+            Value::Int(value) => write!(f, "{value}"),
+            Value::Float(value) => {
+                if value.fract() == 0.0 {
+                    write!(f, "{value:.1}")
+                } else {
+                    write!(f, "{value}")
+                }
+            }
+            Value::String(value) => {
+                if nested {
+                    write_string_literal(f, value)
+                } else {
+                    write!(f, "{value}")
+                }
+            }
+            Value::List(values) => {
+                write!(f, "[")?;
+                for (index, value) in values.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    value.write_display(f, true)?;
+                }
+                write!(f, "]")
+            }
+            Value::Map(values) => {
+                write!(f, "{{")?;
+                for (index, (key, value)) in values.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write_map_key(f, key)?;
+                    write!(f, ": ")?;
+                    value.write_display(f, true)?;
+                }
+                write!(f, "}}")
+            }
+            Value::Date(value) => write!(f, "{}", value.isoformat()),
+            Value::DateTime(value) => write!(f, "{}", value.isoformat()),
+            Value::Duration(value) => write!(f, "{}", value.isoformat()),
+            Value::Regex(regex) => write!(f, "{}", regex.rendered()),
+            Value::Stream(stream) => write!(f, "{stream}"),
+            Value::UseBinding(_, name) => write!(f, "<use {name}>"),
+            Value::BuiltinFunction(name) => write!(f, "<builtin {name}>"),
+            Value::Function(_) => write!(f, "<func>"),
         }
     }
 }
@@ -98,8 +163,12 @@ impl PartialEq for Value {
             (Value::String(a), Value::String(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Date(a), Value::Date(b)) => a == b,
+            (Value::DateTime(a), Value::DateTime(b)) => a == b,
+            (Value::Duration(a), Value::Duration(b)) => a == b,
             (Value::Regex(a), Value::Regex(b)) => a == b,
             (Value::Stream(a), Value::Stream(b)) => a == b,
+            (Value::BuiltinFunction(a), Value::BuiltinFunction(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a == b,
             (Value::UseBinding(a_module, a_name), Value::UseBinding(b_module, b_name)) => {
                 Rc::ptr_eq(a_module, b_module) && a_name == b_name
@@ -137,43 +206,7 @@ impl fmt::Debug for SharedBinding {
 
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Null => write!(f, "null"),
-            Value::Bool(value) => write!(f, "{value}"),
-            Value::Int(value) => write!(f, "{value}"),
-            Value::Float(value) => {
-                if value.fract() == 0.0 {
-                    write!(f, "{value:.1}")
-                } else {
-                    write!(f, "{value}")
-                }
-            }
-            Value::String(value) => write!(f, "{value}"),
-            Value::List(values) => {
-                write!(f, "[")?;
-                for (index, value) in values.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{value}")?;
-                }
-                write!(f, "]")
-            }
-            Value::Map(values) => {
-                write!(f, "{{")?;
-                for (index, (key, value)) in values.iter().enumerate() {
-                    if index > 0 {
-                        write!(f, ", ")?;
-                    }
-                    write!(f, "{key}: {value}")?;
-                }
-                write!(f, "}}")
-            }
-            Value::Regex(regex) => write!(f, "{}", regex.rendered()),
-            Value::Stream(stream) => write!(f, "{stream}"),
-            Value::UseBinding(_, name) => write!(f, "<use {name}>"),
-            Value::Function(_) => write!(f, "<func>"),
-        }
+        self.write_display(f, false)
     }
 }
 
@@ -186,4 +219,39 @@ impl fmt::Display for StreamId {
             StreamId::File(id) => write!(f, "<stream {id}>"),
         }
     }
+}
+
+fn write_map_key(f: &mut fmt::Formatter<'_>, key: &str) -> fmt::Result {
+    if is_plain_key(key) {
+        write!(f, "{key}")
+    } else {
+        write_string_literal(f, key)
+    }
+}
+
+fn is_plain_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    if !matches!(first, 'a'..='z' | 'A'..='Z' | '_') {
+        return false;
+    }
+    chars.all(|ch| matches!(ch, 'a'..='z' | 'A'..='Z' | '0'..='9' | '_'))
+}
+
+fn write_string_literal(f: &mut fmt::Formatter<'_>, value: &str) -> fmt::Result {
+    write!(f, "\"")?;
+    for ch in value.chars() {
+        match ch {
+            '"' => write!(f, "\\\"")?,
+            '\\' => write!(f, "\\\\")?,
+            '\n' => write!(f, "\\n")?,
+            '\r' => write!(f, "\\r")?,
+            '\t' => write!(f, "\\t")?,
+            ch if ch.is_control() => write!(f, "\\u{:04x}", ch as u32)?,
+            _ => write!(f, "{ch}")?,
+        }
+    }
+    write!(f, "\"")
 }

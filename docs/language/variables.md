@@ -127,3 +127,17 @@ seeds before the program runs. Field access (`input.app`) and index access
 (`input["app"]`) both work.
 
 If your CLI does not pass any variables, `input` is an empty map.
+
+## Script Arguments
+
+The runtime also seeds a read-only `args` list with trailing script arguments:
+
+```bash
+./target/release/nodia eval 'emit args
+emit args[0]' -- one two
+```
+
+```text
+["one", "two"]
+one
+```
