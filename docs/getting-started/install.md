@@ -87,13 +87,13 @@ runtime, and stdlib `upper`.
 
 ## Editor Support
 
-A VSCode syntax extension is included in the repo under:
+A VSCode extension is included in the repo under:
 
 ```text
 vscode/nodia-language
 ```
 
 Install it with **Developer: Install Extension from Location...** and pick the
-`vscode/nodia-language` folder. It registers the `.nod` association and
-highlights keywords, strings, interpolation, comments, numbers, operators,
-builtins, and language globals.
+`vscode/nodia-language` folder. It registers the `.nod` association, highlights
+the language surface, and adds completions for stdlib namespaces, `use`
+declarations, and the regex DSL.

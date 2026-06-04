@@ -10,16 +10,22 @@
       "include": "#strings"
     },
     {
+      "include": "#useStatements"
+    },
+    {
       "include": "#numbers"
     },
     {
       "include": "#keywords"
     },
     {
-      "include": "#builtins"
+      "include": "#globals"
     },
     {
       "include": "#declarations"
+    },
+    {
+      "include": "#memberAccess"
     },
     {
       "include": "#operators"
@@ -44,18 +50,37 @@
     "strings": {
       "patterns": [
         {
-          "name": "string.quoted.triple.nodia",
-          "begin": "\"\"\"",
-          "end": "\"\"\"",
-          "patterns": [
-            {
-              "include": "#interpolation"
-            },
-            {
-              "name": "constant.character.escape.nodia",
-              "match": "\\\\."
+          "name": "string.quoted.raw.triple.nodia",
+          "begin": "r?\"\"\"",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.raw.triple.delimiter.nodia"
             }
-          ]
+          },
+          "end": "\"\"\"",
+          "patterns": []
+        },
+        {
+          "name": "string.quoted.raw.double.nodia",
+          "begin": "r\"",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.raw.double.delimiter.nodia"
+            }
+          },
+          "end": "\"",
+          "patterns": []
+        },
+        {
+          "name": "string.quoted.raw.single.nodia",
+          "begin": "r'",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.raw.single.delimiter.nodia"
+            }
+          },
+          "end": "'",
+          "patterns": []
         },
         {
           "name": "string.quoted.double.nodia",
@@ -103,11 +128,98 @@
               "name": "punctuation.section.interpolation.end.nodia"
             }
           },
+          "contentName": "meta.embedded.inline.nodia",
           "patterns": [
             {
-              "include": "$self"
+              "include": "#embeddedExpression"
             }
           ]
+        }
+      ]
+    },
+    "embeddedExpression": {
+      "patterns": [
+        {
+          "include": "#embeddedStrings"
+        },
+        {
+          "include": "#embeddedBraces"
+        },
+        {
+          "include": "#comments"
+        },
+        {
+          "include": "#numbers"
+        },
+        {
+          "include": "#keywords"
+        },
+        {
+          "include": "#globals"
+        },
+        {
+          "include": "#declarations"
+        },
+        {
+          "include": "#memberAccess"
+        },
+        {
+          "include": "#embeddedIdentifiers"
+        },
+        {
+          "include": "#operators"
+        },
+        {
+          "include": "#punctuation"
+        }
+      ]
+    },
+    "embeddedStrings": {
+      "patterns": [
+        {
+          "name": "string.quoted.embedded.double.nodia",
+          "match": "\\\\\"(?:\\\\.|[^\"\\\\])*\\\\\""
+        },
+        {
+          "name": "string.quoted.embedded.single.nodia",
+          "match": "\\\\'(?:\\\\.|[^'\\\\])*\\\\'"
+        },
+        {
+          "name": "constant.character.escape.nodia",
+          "match": "\\\\."
+        }
+      ]
+    },
+    "embeddedBraces": {
+      "patterns": [
+        {
+          "name": "meta.embedded.block.nodia",
+          "begin": "\\{",
+          "beginCaptures": {
+            "0": {
+              "name": "punctuation.bracket.nodia"
+            }
+          },
+          "end": "\\}",
+          "endCaptures": {
+            "0": {
+              "name": "punctuation.bracket.nodia"
+            }
+          },
+          "contentName": "meta.embedded.block.content.nodia",
+          "patterns": [
+            {
+              "include": "#embeddedExpression"
+            }
+          ]
+        }
+      ]
+    },
+    "embeddedIdentifiers": {
+      "patterns": [
+        {
+          "name": "variable.other.readwrite.nodia",
+          "match": "\\b[A-Za-z_][A-Za-z0-9_]*\\b"
         }
       ]
     },
@@ -127,7 +239,7 @@
       "patterns": [
         {
           "name": "keyword.control.nodia",
-          "match": "\\b(?:if|else|for|in|while|break|continue|return)\\b"
+          "match": "\\b(?:if|else|for|in|while|break|continue|return|lambda)\\b"
         },
         {
           "name": "keyword.declaration.nodia",
@@ -140,6 +252,10 @@
         {
           "name": "keyword.other.emit.nodia",
           "match": "\\bemit\\b"
+        },
+        {
+          "name": "keyword.other.regex.nodia",
+          "match": "\\bregex\\b"
         },
         {
           "name": "keyword.other.use.nodia",
@@ -155,15 +271,62 @@
         }
       ]
     },
-    "builtins": {
+    "useStatements": {
       "patterns": [
         {
-          "name": "support.function.builtin.nodia",
-          "match": "\\b(?:upper|lower|uppercase|lowercase|capitalize|trim|replace|split|join|lines|unlines|words|contains|starts|ends|starts_with|ends_with|indent|dedent|open|close|flush|read|readln|write|writeln|append|eof|keys|values|len|int|float|string|bool|range|abs|floor|ceil|round|sqrt|pow|min|max|clamp|sum|avg|push|pop|first|last|slice|reverse|sort|unique)\\b(?=\\s*\\()"
+          "name": "meta.use.nodia",
+          "begin": "\\buse\\b",
+          "beginCaptures": {
+            "0": {
+              "name": "keyword.other.use.nodia"
+            }
+          },
+          "end": "$",
+          "patterns": [
+            {
+              "include": "#strings"
+            },
+            {
+              "name": "keyword.other.use.nodia",
+              "match": "\\b(?:as|pick|hide)\\b"
+            },
+            {
+              "name": "support.module.stdlib.nodia",
+              "match": "\\b(?:text|numbers|conversion|collections|format|re|io|system|datetime|json|csv)\\b"
+            },
+            {
+              "name": "meta.use.alias.nodia",
+              "match": "\\b(as)\\s+([A-Za-z_][A-Za-z0-9_]*)",
+              "captures": {
+                "1": {
+                  "name": "keyword.other.use.nodia"
+                },
+                "2": {
+                  "name": "entity.name.namespace.nodia"
+                }
+              }
+            }
+          ]
         },
         {
+          "name": "meta.use.selection.nodia",
+          "match": "\\b(pick|hide)\\b\\s+([A-Za-z_][A-Za-z0-9_]*(?:\\s*,\\s*[A-Za-z_][A-Za-z0-9_]*)*)",
+          "captures": {
+            "1": {
+              "name": "keyword.other.use.nodia"
+            },
+            "2": {
+              "name": "variable.other.readwrite.nodia"
+            }
+          }
+        }
+      ]
+    },
+    "globals": {
+      "patterns": [
+        {
           "name": "variable.language.input.nodia",
-          "match": "\\b(?:input|stdin|stdout|stderr)\\b"
+          "match": "\\binput\\b"
         }
       ]
     },
@@ -190,6 +353,22 @@
             },
             "2": {
               "name": "variable.other.definition.nodia"
+            }
+          }
+        }
+      ]
+    },
+    "memberAccess": {
+      "patterns": [
+        {
+          "name": "meta.member.access.nodia",
+          "match": "(\\.)\\s*([A-Za-z_][A-Za-z0-9_]*)",
+          "captures": {
+            "1": {
+              "name": "punctuation.accessor.dot.nodia"
+            },
+            "2": {
+              "name": "variable.other.member.nodia"
             }
           }
         }

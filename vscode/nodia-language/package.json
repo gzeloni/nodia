@@ -1,15 +1,26 @@
 {
   "name": "nodia-language",
   "displayName": "Nodia Language",
-  "description": "Syntax highlighting and editor configuration for Nodia files.",
-  "version": "0.5.0",
+  "description": "Editor support for Nodia with syntax highlighting and stdlib-aware completions.",
+  "version": "0.6.2",
   "publisher": "nodia",
   "license": "GPL-3.0-or-later",
+  "main": "./extension.js",
+  "activationEvents": [
+    "onLanguage:nodia"
+  ],
   "engines": {
     "vscode": "^1.80.0"
   },
   "categories": [
     "Programming Languages"
+  ],
+  "keywords": [
+    "nodia",
+    "stdlib",
+    "json",
+    "csv",
+    "regex"
   ],
   "contributes": {
     "languages": [
@@ -32,5 +43,10 @@
         "path": "./syntaxes/nodia.tmLanguage.json"
       }
     ]
+  },
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": true
+    }
   }
 }
