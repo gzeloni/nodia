@@ -11,11 +11,11 @@ impl Runtime {
         args: &[Value],
         expected: usize,
         name: &str,
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         if args.len() == expected {
             Ok(())
         } else {
-            Err(DobraError::runtime(format!(
+            Err(NodiaError::runtime(format!(
                 "{name}() expects {expected} argument(s), got {}",
                 args.len()
             )))
@@ -27,10 +27,10 @@ impl Runtime {
         value: &Value,
         name: &str,
         position: &str,
-    ) -> DobraResult<String> {
+    ) -> NodiaResult<String> {
         match value {
             Value::String(value) => Ok(value.clone()),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{name}() expects string as {position} argument, got {}",
                 other.type_name()
             ))),
@@ -42,10 +42,10 @@ impl Runtime {
         value: &Value,
         name: &str,
         position: &str,
-    ) -> DobraResult<StreamId> {
+    ) -> NodiaResult<StreamId> {
         match value {
             Value::Stream(stream) => Ok(*stream),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{name}() expects stream as {position} argument, got {}",
                 other.type_name()
             ))),
@@ -57,10 +57,10 @@ impl Runtime {
         value: &Value,
         name: &str,
         position: &str,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         match value {
             Value::Function(_) | Value::BuiltinFunction(_) => Ok(value.clone()),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{name}() expects function as {position} argument, got {}",
                 other.type_name()
             ))),
@@ -72,10 +72,10 @@ impl Runtime {
         value: &'a Value,
         name: &str,
         position: &str,
-    ) -> DobraResult<&'a Vec<Value>> {
+    ) -> NodiaResult<&'a Vec<Value>> {
         match value {
             Value::List(values) => Ok(values),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{name}() expects list as {position} argument, got {}",
                 other.type_name()
             ))),
@@ -87,33 +87,33 @@ impl Runtime {
         value: &Value,
         name: &str,
         position: &str,
-    ) -> DobraResult<usize> {
+    ) -> NodiaResult<usize> {
         match value {
             Value::Int(value) if *value >= 0 => Ok(*value as usize),
-            Value::Int(_) => Err(DobraError::runtime(format!(
+            Value::Int(_) => Err(NodiaError::runtime(format!(
                 "{name}() expects non-negative size as {position} argument"
             ))),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{name}() expects int as {position} argument, got {}",
                 other.type_name()
             ))),
         }
     }
 
-    pub(super) fn expect_exit_code(&self, value: &Value) -> DobraResult<i32> {
+    pub(super) fn expect_exit_code(&self, value: &Value) -> NodiaResult<i32> {
         match value {
             Value::Int(value) if (0..=255).contains(value) => Ok(*value as i32),
-            Value::Int(_) => Err(DobraError::runtime(
+            Value::Int(_) => Err(NodiaError::runtime(
                 "exit() expects an int status between 0 and 255",
             )),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "exit() expects int as first argument, got {}",
                 other.type_name()
             ))),
         }
     }
 
-    pub(super) fn add(&self, left: Value, right: Value) -> DobraResult<Value> {
+    pub(super) fn add(&self, left: Value, right: Value) -> NodiaResult<Value> {
         match (left, right) {
             (Value::Int(a), Value::Int(b)) => Ok(Value::Int(a + b)),
             (Value::Int(a), Value::Float(b)) => Ok(Value::Float(a as f64 + b)),
@@ -121,7 +121,7 @@ impl Runtime {
             (Value::Float(a), Value::Float(b)) => Ok(Value::Float(a + b)),
             (Value::String(a), b) => Ok(Value::String(a + &b.to_string())),
             (a, Value::String(b)) => Ok(Value::String(a.to_string() + &b)),
-            (a, b) => Err(DobraError::runtime(format!(
+            (a, b) => Err(NodiaError::runtime(format!(
                 "cannot add {} and {}",
                 a.type_name(),
                 b.type_name()
@@ -129,7 +129,7 @@ impl Runtime {
         }
     }
 
-    pub(super) fn divide(&self, left: Value, right: Value) -> DobraResult<Value> {
+    pub(super) fn divide(&self, left: Value, right: Value) -> NodiaResult<Value> {
         Ok(Value::Float(to_number(&left)? / to_number(&right)?))
     }
 
@@ -138,7 +138,7 @@ impl Runtime {
         left: Value,
         right: Value,
         op: impl FnOnce(f64, f64) -> f64,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         let left_float = to_number(&left)?;
         let right_float = to_number(&right)?;
         let result = op(left_float, right_float);
@@ -155,7 +155,7 @@ impl Runtime {
         left: Value,
         right: Value,
         f: impl FnOnce(std::cmp::Ordering) -> bool,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         let ordering = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::String(a), Value::String(b)) => a.cmp(b),
@@ -166,19 +166,19 @@ impl Runtime {
                 let a = to_number(&left)?;
                 let b = to_number(&right)?;
                 a.partial_cmp(&b)
-                    .ok_or_else(|| DobraError::runtime("cannot compare NaN"))?
+                    .ok_or_else(|| NodiaError::runtime("cannot compare NaN"))?
             }
         };
         Ok(Value::Bool(f(ordering)))
     }
 
-    pub(super) fn index(&self, object: Value, index: Value) -> DobraResult<Value> {
+    pub(super) fn index(&self, object: Value, index: Value) -> NodiaResult<Value> {
         match object {
             Value::List(values) => {
                 let index = match index {
                     Value::Int(value) => value,
                     other => {
-                        return Err(DobraError::runtime(format!(
+                        return Err(NodiaError::runtime(format!(
                             "list index must be int, got {}",
                             other.type_name()
                         )))
@@ -192,13 +192,13 @@ impl Runtime {
                 values
                     .get(normalized as usize)
                     .cloned()
-                    .ok_or_else(|| DobraError::runtime("list index out of bounds"))
+                    .ok_or_else(|| NodiaError::runtime("list index out of bounds"))
             }
             Value::String(value) => {
                 let index = match index {
                     Value::Int(value) => value,
                     other => {
-                        return Err(DobraError::runtime(format!(
+                        return Err(NodiaError::runtime(format!(
                             "string index must be int, got {}",
                             other.type_name()
                         )))
@@ -208,24 +208,24 @@ impl Runtime {
                     .chars()
                     .nth(index as usize)
                     .map(|ch| Value::String(ch.to_string()))
-                    .ok_or_else(|| DobraError::runtime("string index out of bounds"))
+                    .ok_or_else(|| NodiaError::runtime("string index out of bounds"))
             }
             Value::Map(values) => {
                 let key = index.to_string();
                 let value = values
                     .get(&key)
                     .cloned()
-                    .ok_or_else(|| DobraError::runtime(format!("key '{key}' not found")))?;
+                    .ok_or_else(|| NodiaError::runtime(format!("key '{key}' not found")))?;
                 self.resolve_value(value)
             }
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "cannot index {}",
                 other.type_name()
             ))),
         }
     }
 
-    pub(super) fn interpolate(&mut self, raw: &str) -> DobraResult<String> {
+    pub(super) fn interpolate(&mut self, raw: &str) -> NodiaResult<String> {
         let mut output = String::with_capacity(raw.len());
         let bytes = raw.as_bytes();
         let mut index = 0;
@@ -238,7 +238,7 @@ impl Runtime {
                 }
                 let start = index + 1;
                 let Some(offset) = raw[start..].find('}') else {
-                    return Err(DobraError::runtime("unterminated interpolation"));
+                    return Err(NodiaError::runtime("unterminated interpolation"));
                 };
                 let end = start + offset;
                 let tokens = Lexer::new(&raw[start..end]).tokenize()?;
@@ -262,10 +262,10 @@ impl Runtime {
         Ok(output)
     }
 
-    pub(super) fn define(&mut self, name: &str, value: Value, mutable: bool) -> DobraResult<()> {
+    pub(super) fn define(&mut self, name: &str, value: Value, mutable: bool) -> NodiaResult<()> {
         let scope = self.scopes.last_mut().expect("runtime always has a scope");
         if scope.contains_key(name) {
-            return Err(DobraError::runtime(format!(
+            return Err(NodiaError::runtime(format!(
                 "'{name}' is already defined in this scope"
             )));
         }
@@ -273,7 +273,7 @@ impl Runtime {
         Ok(())
     }
 
-    pub(super) fn assign(&mut self, name: &str, value: Value) -> DobraResult<()> {
+    pub(super) fn assign(&mut self, name: &str, value: Value) -> NodiaResult<()> {
         for scope in self.scopes.iter().rev() {
             if let Some(binding) = scope.get(name) {
                 let mut binding = binding.borrow_mut();
@@ -281,7 +281,7 @@ impl Runtime {
                     return assign_use_binding(module, &export_name, value);
                 }
                 if !binding.mutable {
-                    return Err(DobraError::runtime(format!(
+                    return Err(NodiaError::runtime(format!(
                         "cannot assign to val '{name}'"
                     )));
                 }
@@ -289,14 +289,14 @@ impl Runtime {
                 return Ok(());
             }
         }
-        Err(DobraError::runtime(format!("undefined variable '{name}'")))
+        Err(NodiaError::runtime(format!("undefined variable '{name}'")))
     }
 
-    pub(super) fn assign_target(&mut self, target: &AssignTarget, value: Value) -> DobraResult<()> {
+    pub(super) fn assign_target(&mut self, target: &AssignTarget, value: Value) -> NodiaResult<()> {
         let (root, steps) = self.resolve_target(target)?;
         let current = self
             .get(&root)
-            .ok_or_else(|| DobraError::runtime(format!("undefined variable '{root}'")))?;
+            .ok_or_else(|| NodiaError::runtime(format!("undefined variable '{root}'")))?;
         if let Some(updated) = self.update_value_path(current, &steps, value)? {
             self.assign(&root, updated)?;
         }
@@ -306,7 +306,7 @@ impl Runtime {
     pub(super) fn resolve_target(
         &mut self,
         target: &AssignTarget,
-    ) -> DobraResult<(String, Vec<TargetStep>)> {
+    ) -> NodiaResult<(String, Vec<TargetStep>)> {
         match target {
             AssignTarget::Identifier(name) => Ok((name.clone(), Vec::new())),
             AssignTarget::Get { object, field } => {
@@ -327,7 +327,7 @@ impl Runtime {
         current: Value,
         steps: &[TargetStep],
         new_value: Value,
-    ) -> DobraResult<Option<Value>> {
+    ) -> NodiaResult<Option<Value>> {
         if let Value::UseBinding(module, name) = current.clone() {
             if steps.is_empty() {
                 assign_use_binding(module, &name, new_value)?;
@@ -354,7 +354,7 @@ impl Runtime {
                 let child = map
                     .get(field)
                     .cloned()
-                    .ok_or_else(|| DobraError::runtime(format!("field '{field}' not found")))?;
+                    .ok_or_else(|| NodiaError::runtime(format!("field '{field}' not found")))?;
                 match self.update_value_path(child, rest, new_value)? {
                     Some(updated) => {
                         map.insert(field.clone(), updated);
@@ -372,7 +372,7 @@ impl Runtime {
                 let child = map
                     .get(&key)
                     .cloned()
-                    .ok_or_else(|| DobraError::runtime(format!("key '{key}' not found")))?;
+                    .ok_or_else(|| NodiaError::runtime(format!("key '{key}' not found")))?;
                 match self.update_value_path(child, rest, new_value)? {
                     Some(updated) => {
                         map.insert(key, updated);
@@ -397,24 +397,24 @@ impl Runtime {
                 }
             }
             (Value::String(_), TargetStep::Index(_)) => {
-                Err(DobraError::runtime("cannot assign through string index"))
+                Err(NodiaError::runtime("cannot assign through string index"))
             }
-            (other, TargetStep::Field(_)) => Err(DobraError::runtime(format!(
+            (other, TargetStep::Field(_)) => Err(NodiaError::runtime(format!(
                 "cannot assign field on {}",
                 other.type_name()
             ))),
-            (other, TargetStep::Index(_)) => Err(DobraError::runtime(format!(
+            (other, TargetStep::Index(_)) => Err(NodiaError::runtime(format!(
                 "cannot index {}",
                 other.type_name()
             ))),
         }
     }
 
-    pub(super) fn normalize_list_index(&self, len: usize, index: &Value) -> DobraResult<usize> {
+    pub(super) fn normalize_list_index(&self, len: usize, index: &Value) -> NodiaResult<usize> {
         let index = match index {
             Value::Int(value) => *value,
             other => {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "list index must be int, got {}",
                     other.type_name()
                 )))
@@ -422,7 +422,7 @@ impl Runtime {
         };
         let normalized = if index < 0 { len as i64 + index } else { index };
         if normalized < 0 || normalized as usize >= len {
-            return Err(DobraError::runtime("list index out of bounds"));
+            return Err(NodiaError::runtime("list index out of bounds"));
         }
         Ok(normalized as usize)
     }
@@ -431,7 +431,7 @@ impl Runtime {
         &self,
         binding: &ForBinding,
         iterable: Value,
-    ) -> DobraResult<Vec<Vec<(String, Value)>>> {
+    ) -> NodiaResult<Vec<Vec<(String, Value)>>> {
         match binding {
             ForBinding::Single(name) => Ok(self
                 .iterable_single_values(iterable)?
@@ -442,7 +442,7 @@ impl Runtime {
         }
     }
 
-    pub(super) fn iterable_single_values(&self, iterable: Value) -> DobraResult<Vec<Value>> {
+    pub(super) fn iterable_single_values(&self, iterable: Value) -> NodiaResult<Vec<Value>> {
         match iterable {
             Value::List(values) => Ok(values),
             Value::String(value) => Ok(value
@@ -450,7 +450,7 @@ impl Runtime {
                 .map(|ch| Value::String(ch.to_string()))
                 .collect()),
             Value::Map(value) => Ok(value.keys().cloned().map(Value::String).collect()),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "cannot iterate over {}",
                 other.type_name()
             ))),
@@ -462,7 +462,7 @@ impl Runtime {
         iterable: Value,
         key_name: &str,
         value_name: &str,
-    ) -> DobraResult<Vec<Vec<(String, Value)>>> {
+    ) -> NodiaResult<Vec<Vec<(String, Value)>>> {
         match iterable {
             Value::Map(values) => Ok(values
                 .into_iter()
@@ -483,18 +483,18 @@ impl Runtime {
                     ])
                 })
                 .collect(),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "cannot destructure iteration over {}",
                 other.type_name()
             ))),
         }
     }
 
-    pub(super) fn destructure_pair(&self, value: Value) -> DobraResult<(Value, Value)> {
+    pub(super) fn destructure_pair(&self, value: Value) -> NodiaResult<(Value, Value)> {
         match value {
             Value::List(values) => match values.as_slice() {
                 [key, value] => Ok((key.clone(), value.clone())),
-                _ => Err(DobraError::runtime(
+                _ => Err(NodiaError::runtime(
                     "pair iteration expects list items with exactly 2 values",
                 )),
             },
@@ -503,12 +503,12 @@ impl Runtime {
                 let value = values.get("value").cloned();
                 match (key, value) {
                     (Some(key), Some(value)) => Ok((key, value)),
-                    _ => Err(DobraError::runtime(
+                    _ => Err(NodiaError::runtime(
                         "pair iteration expects map items with 'key' and 'value'",
                     )),
                 }
             }
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "cannot destructure pair from {}",
                 other.type_name()
             ))),
@@ -521,6 +521,25 @@ impl Runtime {
                 .get(name)
                 .map(|binding| binding.borrow().value.clone())
         })
+    }
+
+    pub(super) fn builtin_value(&self, name: &str) -> Option<Value> {
+        match name {
+            "args" => Some(Value::List(
+                self.options
+                    .args
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect(),
+            )),
+            "stdin" => Some(Value::Stream(StreamId::Stdin)),
+            "stdout" => Some(Value::Stream(StreamId::Stdout)),
+            "stderr" => Some(Value::Stream(StreamId::Stderr)),
+            _ => stdlib::global_builtin_item(name).and_then(|(_, export_name, arities)| {
+                arities.map(|_| Value::BuiltinFunction(export_name.to_string()))
+            }),
+        }
     }
 
     pub(super) fn root_get(&self, name: &str) -> Option<Value> {

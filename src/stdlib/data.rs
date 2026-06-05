@@ -4,35 +4,35 @@
 //! JSON and CSV standard-library functions.
 
 use super::{expect_arity, expect_list};
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
 use std::collections::BTreeMap;
 
-pub fn json_read(args: &[Value]) -> DobraResult<Value> {
+pub fn json_read(args: &[Value]) -> NodiaResult<Value> {
     json_read_named(args, "json.read")
 }
 
-pub fn json_write(args: &[Value]) -> DobraResult<Value> {
+pub fn json_write(args: &[Value]) -> NodiaResult<Value> {
     json_write_named(args, "json.write")
 }
 
-pub fn csv_read(args: &[Value]) -> DobraResult<Value> {
+pub fn csv_read(args: &[Value]) -> NodiaResult<Value> {
     csv_read_named(args, "csv.read")
 }
 
-pub fn csv_write(args: &[Value]) -> DobraResult<Value> {
+pub fn csv_write(args: &[Value]) -> NodiaResult<Value> {
     csv_write_named(args, "csv.write")
 }
 
-fn json_read_named(args: &[Value], name: &str) -> DobraResult<Value> {
+fn json_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
     let text = expect_string(&args[0], name, "first")?;
     JsonParser::new(&text).parse()
 }
 
-fn json_write_named(args: &[Value], name: &str) -> DobraResult<Value> {
+fn json_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     if args.len() != 1 && args.len() != 2 {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{name}() expects 1 or 2 argument(s), got {}",
             args.len()
         )));
@@ -47,9 +47,9 @@ fn json_write_named(args: &[Value], name: &str) -> DobraResult<Value> {
     Ok(Value::String(stringify_json(&args[0], &options, 0, name)?))
 }
 
-fn csv_read_named(args: &[Value], name: &str) -> DobraResult<Value> {
+fn csv_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     if args.len() != 1 && args.len() != 2 {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{name}() expects 1 or 2 argument(s), got {}",
             args.len()
         )));
@@ -85,7 +85,7 @@ fn csv_read_named(args: &[Value], name: &str) -> DobraResult<Value> {
     let mut mapped = Vec::new();
     for row in rows.into_iter().skip(1) {
         if row.len() != headers.len() {
-            return Err(DobraError::runtime(format!(
+            return Err(NodiaError::runtime(format!(
                 "{name}() row has {} field(s), expected {} from header",
                 row.len(),
                 headers.len()
@@ -100,7 +100,7 @@ fn csv_read_named(args: &[Value], name: &str) -> DobraResult<Value> {
     Ok(Value::List(mapped))
 }
 
-fn csv_write_named(args: &[Value], name: &str) -> DobraResult<Value> {
+fn csv_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
     let rows = expect_list(&args[0], name, "first")?;
     if rows.is_empty() {
@@ -115,12 +115,12 @@ fn csv_write_named(args: &[Value], name: &str) -> DobraResult<Value> {
         return Ok(Value::String(write_map_rows(rows, name)?));
     }
 
-    Err(DobraError::runtime(format!(
+    Err(NodiaError::runtime(format!(
         "{name}() expects a list of rows where each row is a list or map"
     )))
 }
 
-fn write_list_rows(rows: &[Value], name: &str) -> DobraResult<String> {
+fn write_list_rows(rows: &[Value], name: &str) -> NodiaResult<String> {
     let mut encoded = String::new();
     for (index, row) in rows.iter().enumerate() {
         if index > 0 {
@@ -138,7 +138,7 @@ fn write_list_rows(rows: &[Value], name: &str) -> DobraResult<String> {
     Ok(encoded)
 }
 
-fn write_map_rows(rows: &[Value], _name: &str) -> DobraResult<String> {
+fn write_map_rows(rows: &[Value], _name: &str) -> NodiaResult<String> {
     let mut headers = Vec::new();
     for row in rows {
         let Value::Map(values) = row else {
@@ -187,7 +187,7 @@ fn write_csv_record(fields: &[String], out: &mut String) {
     }
 }
 
-fn parse_csv_rows(text: &str, name: &str) -> DobraResult<Vec<Vec<String>>> {
+fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
     if text.is_empty() {
         return Ok(Vec::new());
     }
@@ -244,7 +244,7 @@ fn parse_csv_rows(text: &str, name: &str) -> DobraResult<Vec<Vec<String>>> {
                     }
                 }
                 _ => {
-                    return Err(DobraError::runtime(format!(
+                    return Err(NodiaError::runtime(format!(
                         "{name}() found characters after closing quote"
                     )))
                 }
@@ -258,7 +258,7 @@ fn parse_csv_rows(text: &str, name: &str) -> DobraResult<Vec<Vec<String>>> {
                 index += 1;
             }
             '"' => {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "{name}() found quote inside unquoted field"
                 )))
             }
@@ -287,7 +287,7 @@ fn parse_csv_rows(text: &str, name: &str) -> DobraResult<Vec<Vec<String>>> {
     }
 
     if in_quotes {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{name}() found unterminated quoted field"
         )));
     }
@@ -300,20 +300,20 @@ fn parse_csv_rows(text: &str, name: &str) -> DobraResult<Vec<Vec<String>>> {
     Ok(rows)
 }
 
-fn expect_string(value: &Value, name: &str, position: &str) -> DobraResult<String> {
+fn expect_string(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
     match value {
         Value::String(value) => Ok(value.clone()),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects string as {position} argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-fn expect_bool(value: &Value, name: &str, position: &str) -> DobraResult<bool> {
+fn expect_bool(value: &Value, name: &str, position: &str) -> NodiaResult<bool> {
     match value {
         Value::Bool(value) => Ok(*value),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects bool as {position} argument, got {}",
             other.type_name()
         ))),
@@ -331,7 +331,7 @@ struct JsonStringifyOptions {
     indent: Option<usize>,
 }
 
-fn csv_read_options(value: &Value, name: &str) -> DobraResult<CsvReadOptions> {
+fn csv_read_options(value: &Value, name: &str) -> NodiaResult<CsvReadOptions> {
     match value {
         Value::Bool(header) => Ok(CsvReadOptions {
             header: *header,
@@ -341,14 +341,14 @@ fn csv_read_options(value: &Value, name: &str) -> DobraResult<CsvReadOptions> {
             header: option_bool(options, "header", name)?.unwrap_or(false),
             types: option_bool(options, "types", name)?.unwrap_or(false),
         }),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects bool or map as second argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-fn json_stringify_options(value: &Value, name: &str) -> DobraResult<JsonStringifyOptions> {
+fn json_stringify_options(value: &Value, name: &str) -> NodiaResult<JsonStringifyOptions> {
     match value {
         Value::Int(indent) => Ok(JsonStringifyOptions {
             indent: normalize_indent(expect_non_negative_int(*indent, name, "second")? as usize),
@@ -356,7 +356,7 @@ fn json_stringify_options(value: &Value, name: &str) -> DobraResult<JsonStringif
         Value::Map(options) => Ok(JsonStringifyOptions {
             indent: option_usize(options, "indent", name)?.and_then(normalize_indent),
         }),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects int or map as second argument, got {}",
             other.type_name()
         ))),
@@ -367,7 +367,7 @@ fn option_bool(
     options: &BTreeMap<String, Value>,
     key: &str,
     name: &str,
-) -> DobraResult<Option<bool>> {
+) -> NodiaResult<Option<bool>> {
     options
         .get(key)
         .map(|value| expect_bool(value, name, &format!("option '{key}'")).map(Some))
@@ -378,14 +378,14 @@ fn option_usize(
     options: &BTreeMap<String, Value>,
     key: &str,
     name: &str,
-) -> DobraResult<Option<usize>> {
+) -> NodiaResult<Option<usize>> {
     match options.get(key) {
         Some(Value::Int(value)) => {
             Ok(Some(
                 expect_non_negative_int(*value, name, &format!("option '{key}'"))? as usize,
             ))
         }
-        Some(other) => Err(DobraError::runtime(format!(
+        Some(other) => Err(NodiaError::runtime(format!(
             "{name}() expects int as option '{key}', got {}",
             other.type_name()
         ))),
@@ -393,9 +393,9 @@ fn option_usize(
     }
 }
 
-fn expect_non_negative_int(value: i64, name: &str, position: &str) -> DobraResult<i64> {
+fn expect_non_negative_int(value: i64, name: &str, position: &str) -> NodiaResult<i64> {
     if value < 0 {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{name}() expects non-negative int as {position} argument"
         )));
     }
@@ -432,14 +432,14 @@ fn stringify_json(
     options: &JsonStringifyOptions,
     depth: usize,
     name: &str,
-) -> DobraResult<String> {
+) -> NodiaResult<String> {
     match value {
         Value::Null => Ok("null".to_string()),
         Value::Bool(value) => Ok(value.to_string()),
         Value::Int(value) => Ok(value.to_string()),
         Value::Float(value) => {
             if !value.is_finite() {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "{name}() cannot encode NaN or infinite numbers"
                 )));
             }
@@ -492,7 +492,7 @@ fn stringify_json(
                 Ok(format!("{{{}}}", encoded.join(",")))
             }
         }
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() does not accept {}",
             other.type_name()
         ))),
@@ -546,7 +546,7 @@ impl<'a> JsonParser<'a> {
         }
     }
 
-    fn parse(mut self) -> DobraResult<Value> {
+    fn parse(mut self) -> NodiaResult<Value> {
         self.skip_whitespace();
         let value = self.parse_value()?;
         self.skip_whitespace();
@@ -556,7 +556,7 @@ impl<'a> JsonParser<'a> {
         Ok(value)
     }
 
-    fn parse_value(&mut self) -> DobraResult<Value> {
+    fn parse_value(&mut self) -> NodiaResult<Value> {
         self.skip_whitespace();
         let Some(ch) = self.peek() else {
             return Err(self.error("unexpected end of input"));
@@ -583,7 +583,7 @@ impl<'a> JsonParser<'a> {
         }
     }
 
-    fn parse_array(&mut self) -> DobraResult<Value> {
+    fn parse_array(&mut self) -> NodiaResult<Value> {
         self.index += 1;
         self.skip_whitespace();
         let mut values = Vec::new();
@@ -611,7 +611,7 @@ impl<'a> JsonParser<'a> {
         Ok(Value::List(values))
     }
 
-    fn parse_object(&mut self) -> DobraResult<Value> {
+    fn parse_object(&mut self) -> NodiaResult<Value> {
         self.index += 1;
         self.skip_whitespace();
         let mut values = BTreeMap::new();
@@ -650,7 +650,7 @@ impl<'a> JsonParser<'a> {
         Ok(Value::Map(values))
     }
 
-    fn parse_string(&mut self) -> DobraResult<String> {
+    fn parse_string(&mut self) -> NodiaResult<String> {
         if self.peek() != Some('"') {
             return Err(self.error("expected string"));
         }
@@ -670,7 +670,7 @@ impl<'a> JsonParser<'a> {
         Err(self.error("unterminated string"))
     }
 
-    fn parse_escape(&mut self) -> DobraResult<char> {
+    fn parse_escape(&mut self) -> NodiaResult<char> {
         let Some(ch) = self.peek() else {
             return Err(self.error("unterminated escape"));
         };
@@ -689,7 +689,7 @@ impl<'a> JsonParser<'a> {
         }
     }
 
-    fn parse_unicode_escape(&mut self) -> DobraResult<char> {
+    fn parse_unicode_escape(&mut self) -> NodiaResult<char> {
         let code = self.parse_hex_code_unit()?;
         if (0xD800..=0xDBFF).contains(&code) {
             let saved = self.index;
@@ -709,7 +709,7 @@ impl<'a> JsonParser<'a> {
         char::from_u32(code as u32).ok_or_else(|| self.error("invalid unicode escape"))
     }
 
-    fn parse_hex_code_unit(&mut self) -> DobraResult<u16> {
+    fn parse_hex_code_unit(&mut self) -> NodiaResult<u16> {
         let start = self.index;
         let end = start + 4;
         if end > self.chars.len() {
@@ -730,7 +730,7 @@ impl<'a> JsonParser<'a> {
         Ok(value)
     }
 
-    fn parse_number(&mut self) -> DobraResult<Value> {
+    fn parse_number(&mut self) -> NodiaResult<Value> {
         let start = self.index;
         if self.peek() == Some('-') {
             self.index += 1;
@@ -787,7 +787,7 @@ impl<'a> JsonParser<'a> {
         }
     }
 
-    fn consume_keyword(&mut self, keyword: &str) -> DobraResult<()> {
+    fn consume_keyword(&mut self, keyword: &str) -> NodiaResult<()> {
         if self
             .chars
             .get(self.index..self.index + keyword.len())
@@ -810,9 +810,9 @@ impl<'a> JsonParser<'a> {
         self.chars.get(self.index).copied()
     }
 
-    fn error(&self, message: &str) -> DobraError {
+    fn error(&self, message: &str) -> NodiaError {
         let column = self.source[..self.byte_index()].chars().count() + 1;
-        DobraError::runtime(format!("invalid JSON: {message} at column {column}"))
+        NodiaError::runtime(format!("invalid JSON: {message} at column {column}"))
     }
 
     fn byte_index(&self) -> usize {

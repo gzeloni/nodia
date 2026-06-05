@@ -11,12 +11,12 @@ pub(super) fn unary_string(
     args: &[Value],
     name: &str,
     f: impl FnOnce(String) -> String,
-) -> DobraResult<Value> {
+) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::String(f(args[0].to_string())))
 }
 
-pub(super) fn replace_text(args: &[Value], name: &str) -> DobraResult<Value> {
+pub(super) fn replace_text(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 3, name)?;
     let text = args[0].to_string();
     let replacement = args[2].to_string();
@@ -27,7 +27,7 @@ pub(super) fn replace_text(args: &[Value], name: &str) -> DobraResult<Value> {
     Ok(Value::String(replaced))
 }
 
-pub(super) fn split_text(args: &[Value], name: &str) -> DobraResult<Value> {
+pub(super) fn split_text(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 2, name)?;
     let text = args[0].to_string();
     let parts = match &args[1] {
@@ -40,19 +40,19 @@ pub(super) fn split_text(args: &[Value], name: &str) -> DobraResult<Value> {
     Ok(Value::List(parts.into_iter().map(Value::String).collect()))
 }
 
-pub(super) fn regex_test(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn regex_test(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "test")?;
     let pattern = expect_regex(&args[1], "test", "second")?;
     Ok(Value::Bool(pattern.is_match(&args[0].to_string())?))
 }
 
-pub(super) fn regex_full_match(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn regex_full_match(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "full_match")?;
     let pattern = expect_regex(&args[1], "full_match", "second")?;
     Ok(Value::Bool(pattern.is_full_match(&args[0].to_string())?))
 }
 
-pub(super) fn regex_find(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn regex_find(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "find")?;
     let text = args[0].to_string();
     let pattern = expect_regex(&args[1], "find", "second")?;
@@ -62,7 +62,7 @@ pub(super) fn regex_find(args: &[Value]) -> DobraResult<Value> {
         .unwrap_or(Value::Null))
 }
 
-pub(super) fn regex_find_all(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn regex_find_all(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "find_all")?;
     let text = args[0].to_string();
     let pattern = expect_regex(&args[1], "find_all", "second")?;
@@ -75,14 +75,14 @@ pub(super) fn regex_find_all(args: &[Value]) -> DobraResult<Value> {
     ))
 }
 
-pub(super) fn contains_text(text: &str, needle: &Value) -> DobraResult<bool> {
+pub(super) fn contains_text(text: &str, needle: &Value) -> NodiaResult<bool> {
     match needle {
         Value::Regex(pattern) => pattern.is_match(text),
         other => Ok(text.contains(&other.to_string())),
     }
 }
 
-pub(super) fn text_starts_with(text: &str, prefix: &Value) -> DobraResult<bool> {
+pub(super) fn text_starts_with(text: &str, prefix: &Value) -> NodiaResult<bool> {
     match prefix {
         Value::Regex(pattern) => Ok(pattern
             .find(text)?
@@ -91,7 +91,7 @@ pub(super) fn text_starts_with(text: &str, prefix: &Value) -> DobraResult<bool> 
     }
 }
 
-pub(super) fn text_ends_with(text: &str, suffix: &Value) -> DobraResult<bool> {
+pub(super) fn text_ends_with(text: &str, suffix: &Value) -> NodiaResult<bool> {
     match suffix {
         Value::Regex(pattern) => {
             let end = text.chars().count();
@@ -104,11 +104,11 @@ pub(super) fn text_ends_with(text: &str, suffix: &Value) -> DobraResult<bool> {
     }
 }
 
-fn expect_regex(value: &Value, name: &str, position: &str) -> DobraResult<RuntimeRegex> {
+fn expect_regex(value: &Value, name: &str, position: &str) -> NodiaResult<RuntimeRegex> {
     match value {
         Value::Regex(pattern) => Ok(pattern.clone()),
         Value::String(pattern) => regex::compile_text(pattern),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects regex or string as {position} argument, got {}",
             other.type_name()
         ))),
@@ -146,7 +146,7 @@ fn option_string_value(value: Option<String>) -> Value {
     }
 }
 
-pub(super) fn indent(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn indent(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "indent")?;
     let text = args[0].to_string();
     let prefix = match &args[1] {

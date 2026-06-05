@@ -7,7 +7,7 @@ use super::helpers::*;
 use super::*;
 
 impl<'a> State<'a> {
-    pub(super) fn check_expr(&mut self, expr: &Expr) -> DobraResult<()> {
+    pub(super) fn check_expr(&mut self, expr: &Expr) -> NodiaResult<()> {
         match expr {
             Expr::Literal(_) => Ok(()),
             Expr::String { value, interpolate } => {
@@ -19,7 +19,7 @@ impl<'a> State<'a> {
             Expr::Lambda { params, body } => self.check_function(params, body),
             Expr::Regex(pattern) => regex::validate(pattern),
             Expr::Identifier(name) => {
-                if self.lookup(name).is_some() {
+                if self.lookup(name).is_some() || self.builtin_symbol(name).is_some() {
                     Ok(())
                 } else {
                     Err(self.error_name("E4100", format!("undefined variable '{name}'"), name))
@@ -63,13 +63,14 @@ impl<'a> State<'a> {
         }
     }
 
-    pub(super) fn check_call(&mut self, callee: &Expr, args: &[Expr]) -> DobraResult<()> {
+    pub(super) fn check_call(&mut self, callee: &Expr, args: &[Expr]) -> NodiaResult<()> {
         for arg in args {
             self.check_expr(arg)?;
         }
 
         if let Some(name) = direct_identifier(callee) {
-            if let Some(symbol) = self.lookup(name) {
+            if let Some(symbol) = self.lookup(name).cloned().or_else(|| self.builtin_symbol(name))
+            {
                 if let SymbolKind::Function { arities } = &symbol.kind {
                     self.check_arity(name, args.len(), arities)?;
                 }
@@ -105,7 +106,7 @@ impl<'a> State<'a> {
         &mut self,
         target: &AssignTarget,
         final_step: bool,
-    ) -> DobraResult<Option<Symbol>> {
+    ) -> NodiaResult<Option<Symbol>> {
         match target {
             AssignTarget::Identifier(name) => {
                 let Some(symbol) = self.lookup(name).cloned() else {
@@ -175,7 +176,7 @@ impl<'a> State<'a> {
         &mut self,
         target: &AssignTarget,
         value: &Expr,
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         let Some(root_name) = assign_target_root_name(target) else {
             return Ok(());
         };
@@ -188,11 +189,11 @@ impl<'a> State<'a> {
         };
         let value_symbol = self.symbol_for_expr(value, false);
         let steps = assignment_symbol_steps(target);
-        let updated = self.update_symbol_after_assignment(root_symbol, &steps, value_symbol);
+        let updated = self.update_assigned_symbol(root_symbol, &steps, value_symbol);
         self.update_symbol(root_name, updated)
     }
 
-    pub(super) fn update_symbol_after_assignment(
+    pub(super) fn update_assigned_symbol(
         &self,
         symbol: Symbol,
         steps: &[AssignmentSymbolStep],
@@ -226,13 +227,13 @@ impl<'a> State<'a> {
                 let current = fields
                     .remove(field)
                     .unwrap_or_else(|| Symbol::unknown(false));
-                let updated = self.update_symbol_after_assignment(current, rest, value_symbol);
+                let updated = self.update_assigned_symbol(current, rest, value_symbol);
                 fields.insert(field.to_string(), updated);
                 SymbolKind::Map(fields)
             }
             SymbolKind::Namespace(mut fields) => {
                 if let Some(current) = fields.remove(field) {
-                    let updated = self.update_symbol_after_assignment(current, rest, value_symbol);
+                    let updated = self.update_assigned_symbol(current, rest, value_symbol);
                     fields.insert(field.to_string(), updated);
                 }
                 SymbolKind::Namespace(fields)
@@ -242,7 +243,7 @@ impl<'a> State<'a> {
         Symbol { mutable, kind }
     }
 
-    pub(super) fn check_interpolations(&mut self, raw: &str) -> DobraResult<()> {
+    pub(super) fn check_interpolations(&mut self, raw: &str) -> NodiaResult<()> {
         let chars = raw.chars().collect::<Vec<_>>();
         let mut index = 0;
         while index < chars.len() {

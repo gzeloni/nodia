@@ -23,7 +23,7 @@ impl<'a> State<'a> {
         }
     }
 
-    pub(super) fn predeclare_top_level(&mut self, program: &Program) -> DobraResult<()> {
+    pub(super) fn predeclare_top_level(&mut self, program: &Program) -> NodiaResult<()> {
         for statement in &program.statements {
             match statement {
                 Stmt::Use {
@@ -48,14 +48,14 @@ impl<'a> State<'a> {
         &mut self,
         statements: &[Stmt],
         mode: ScopeMode,
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         for statement in statements {
             self.check_statement(statement, mode)?;
         }
         Ok(())
     }
 
-    pub(super) fn check_statement(&mut self, statement: &Stmt, mode: ScopeMode) -> DobraResult<()> {
+    pub(super) fn check_statement(&mut self, statement: &Stmt, mode: ScopeMode) -> NodiaResult<()> {
         match statement {
             Stmt::Comment(_) => Ok(()),
             Stmt::Use {
@@ -155,14 +155,14 @@ impl<'a> State<'a> {
         }
     }
 
-    pub(super) fn check_block(&mut self, statements: &[Stmt]) -> DobraResult<()> {
+    pub(super) fn check_block(&mut self, statements: &[Stmt]) -> NodiaResult<()> {
         self.push_scope();
         let result = self.check_statements(statements, ScopeMode::Nested);
         self.pop_scope();
         result
     }
 
-    pub(super) fn check_function(&mut self, params: &[String], body: &[Stmt]) -> DobraResult<()> {
+    pub(super) fn check_function(&mut self, params: &[String], body: &[Stmt]) -> NodiaResult<()> {
         self.function_depth += 1;
         self.push_scope();
         let mut seen = HashSet::new();

@@ -4,7 +4,7 @@
 //! Runtime state and execution engine for Nodia programs.
 
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::io::{self as fsio, IoRegistry};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -95,16 +95,16 @@ fn assignment_target_root_name(target: &AssignTarget) -> Option<&str> {
     }
 }
 
-fn assign_use_binding(module: ModuleRef, name: &str, value: Value) -> DobraResult<()> {
+fn assign_use_binding(module: ModuleRef, name: &str, value: Value) -> NodiaResult<()> {
     let mut module = module.borrow_mut();
     let mutable = module.mutability.get(name).copied().unwrap_or(false);
     if !mutable {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "cannot assign to val '{name}'"
         )));
     }
     if !module.exports.contains_key(name) {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "used binding '{name}' is not initialized yet"
         )));
     }
@@ -123,11 +123,11 @@ fn binding_scope(values: &BTreeMap<String, BindingRef>) -> HashMap<String, Bindi
         .collect()
 }
 
-fn to_number(value: &Value) -> DobraResult<f64> {
+fn to_number(value: &Value) -> NodiaResult<f64> {
     match value {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "expected number, got {}",
             other.type_name()
         ))),

@@ -12,7 +12,7 @@ impl Runtime {
         alias: Option<&str>,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         match target {
             UseTarget::Path(path) => {
                 let resolved = self.resolve_use(path)?;
@@ -46,9 +46,9 @@ impl Runtime {
         alias: Option<&str>,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         let Some(items) = stdlib::module_items(name) else {
-            return Err(DobraError::runtime(format!(
+            return Err(NodiaError::runtime(format!(
                 "unknown stdlib module '{name}'"
             )));
         };
@@ -57,7 +57,7 @@ impl Runtime {
             let value = match arities {
                 Some(_) => Value::BuiltinFunction((*target).to_string()),
                 None => self.stdlib_binding_value(target).ok_or_else(|| {
-                    DobraError::runtime(format!(
+                    NodiaError::runtime(format!(
                         "stdlib module '{name}' binding '{field}' is not available"
                     ))
                 })?,
@@ -93,13 +93,13 @@ impl Runtime {
         source: &str,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<Vec<String>> {
+    ) -> NodiaResult<Vec<String>> {
         let mut names = if pick.is_empty() {
             available.to_vec()
         } else {
             for name in pick {
                 if !available.contains(name) {
-                    return Err(DobraError::runtime(format!(
+                    return Err(NodiaError::runtime(format!(
                         "use '{source}' does not expose '{name}'"
                     )));
                 }
@@ -111,13 +111,13 @@ impl Runtime {
         Ok(names)
     }
 
-    pub(super) fn load_module(&mut self, resolved: &Path) -> DobraResult<ModuleRef> {
+    pub(super) fn load_module(&mut self, resolved: &Path) -> NodiaResult<ModuleRef> {
         if let Some(module) = self.modules.borrow().get(resolved).cloned() {
             return Ok(module);
         }
 
         let source = fs::read_to_string(resolved).map_err(|err| {
-            DobraError::io(format!("cannot read use '{}': {err}", resolved.display()))
+            NodiaError::io(format!("cannot read use '{}': {err}", resolved.display()))
         })?;
         let tokens = Lexer::new(&source)
             .tokenize()
@@ -161,7 +161,7 @@ impl Runtime {
         module: &ModuleRef,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<Vec<String>> {
+    ) -> NodiaResult<Vec<String>> {
         let module = module.borrow();
         let all = if module.declared.is_empty() {
             module.exports.keys().cloned().collect::<Vec<_>>()
@@ -171,7 +171,7 @@ impl Runtime {
         self.selected_export_names(&all, &module.path.display().to_string(), pick, hide)
     }
 
-    pub(super) fn resolve_use(&self, path: &str) -> DobraResult<PathBuf> {
+    pub(super) fn resolve_use(&self, path: &str) -> NodiaResult<PathBuf> {
         let raw = Path::new(path);
         let joined = if raw.is_absolute() {
             raw.to_path_buf()
@@ -195,7 +195,7 @@ impl Runtime {
         for candidate in candidates {
             if candidate.exists() {
                 return candidate.canonicalize().map_err(|err| {
-                    DobraError::io(format!(
+                    NodiaError::io(format!(
                         "cannot resolve use '{}': {err}",
                         candidate.display()
                     ))
@@ -203,10 +203,10 @@ impl Runtime {
             }
         }
 
-        Err(DobraError::io(format!("cannot resolve use '{path}'")))
+        Err(NodiaError::io(format!("cannot resolve use '{path}'")))
     }
 
-    pub(super) fn publish_statement(&mut self, statement: &Stmt) -> DobraResult<()> {
+    pub(super) fn publish_statement(&mut self, statement: &Stmt) -> NodiaResult<()> {
         let Some(name) = statement_export_name(statement) else {
             return Ok(());
         };

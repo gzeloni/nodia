@@ -3,7 +3,7 @@
 
 //! Regex AST, validation, rendering, and runtime helpers for the native regex DSL.
 
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use fancy_regex::{Captures, Regex};
 use std::collections::{BTreeMap, HashSet};
 use std::fmt;

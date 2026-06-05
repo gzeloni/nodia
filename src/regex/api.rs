@@ -9,14 +9,14 @@ use super::validation::*;
 use super::*;
 
 /// Validates a regex AST for semantic correctness.
-pub fn validate(pattern: &RegexPattern) -> DobraResult<()> {
+pub fn validate(pattern: &RegexPattern) -> NodiaResult<()> {
     validate_flags(&pattern.flags, "regex")?;
     let mut named_groups = HashSet::new();
     validate_sequence(&pattern.body, &mut named_groups)
 }
 
 /// Validates a regex AST against a specific output target.
-pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraResult<()> {
+pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> NodiaResult<()> {
     validate(pattern)?;
     validate_target_sequence(&pattern.body, target)?;
 
@@ -37,12 +37,12 @@ pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> Dobra
 }
 
 /// Renders a regex AST to classic regex text.
-pub fn render(pattern: &RegexPattern) -> DobraResult<String> {
+pub fn render(pattern: &RegexPattern) -> NodiaResult<String> {
     render_for_target(pattern, RegexTarget::Classic)
 }
 
 /// Renders a regex AST for a specific target after validation.
-pub fn render_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraResult<String> {
+pub fn render_for_target(pattern: &RegexPattern, target: RegexTarget) -> NodiaResult<String> {
     validate_for_target(pattern, target)?;
     let mut out = String::new();
     if !pattern.flags.is_empty() {
@@ -53,15 +53,15 @@ pub fn render_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraRe
 }
 
 /// Compiles a validated regex AST into a runtime regex value.
-pub fn compile(pattern: &RegexPattern) -> DobraResult<RuntimeRegex> {
+pub fn compile(pattern: &RegexPattern) -> NodiaResult<RuntimeRegex> {
     let rendered = render(pattern)?;
     compile_text(&rendered)
 }
 
 /// Compiles raw regex text into a runtime regex value.
-pub fn compile_text(rendered: &str) -> DobraResult<RuntimeRegex> {
+pub fn compile_text(rendered: &str) -> NodiaResult<RuntimeRegex> {
     let engine = Regex::new(rendered)
-        .map_err(|err| DobraError::runtime(format!("cannot compile regex '{rendered}': {err}")))?;
+        .map_err(|err| NodiaError::runtime(format!("cannot compile regex '{rendered}': {err}")))?;
     Ok(RuntimeRegex {
         rendered: rendered.to_string(),
         engine: Rc::new(engine),

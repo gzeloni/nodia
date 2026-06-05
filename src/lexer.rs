@@ -3,7 +3,7 @@
 
 //! Lexer implementation for Nodia source text.
 
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::token::{keyword_kind, Token, TokenKind};
 
 /// Stateful tokenizer that walks source text and emits [`Token`] values.
@@ -26,7 +26,7 @@ impl Lexer {
     }
 
     /// Consumes the source text and returns the full token stream.
-    pub fn tokenize(mut self) -> DobraResult<Vec<Token>> {
+    pub fn tokenize(mut self) -> NodiaResult<Vec<Token>> {
         let mut tokens = Vec::new();
         while let Some(ch) = self.peek() {
             let line = self.line;
@@ -110,7 +110,7 @@ impl Lexer {
                     if self.match_char('=') {
                         tokens.push(Token::new(TokenKind::BangEqual, line, column));
                     } else {
-                        return Err(DobraError::new(
+                        return Err(NodiaError::new(
                             "unexpected '!'; use 'not' or '!='",
                             line,
                             column,
@@ -144,7 +144,7 @@ impl Lexer {
                 ':' => self.single(&mut tokens, TokenKind::Colon),
                 ';' => self.single(&mut tokens, TokenKind::Semicolon),
                 _ => {
-                    return Err(DobraError::new(
+                    return Err(NodiaError::new(
                         format!("unexpected character '{ch}'"),
                         line,
                         column,
@@ -172,7 +172,7 @@ impl Lexer {
         keyword_kind(&text).unwrap_or(TokenKind::Identifier(text))
     }
 
-    fn number(&mut self) -> DobraResult<TokenKind> {
+    fn number(&mut self) -> NodiaResult<TokenKind> {
         let start = self.pos;
         while matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
             self.advance();
@@ -192,7 +192,7 @@ impl Lexer {
                 self.advance();
             }
             if !matches!(self.peek(), Some(ch) if ch.is_ascii_digit()) {
-                return Err(DobraError::new(
+                return Err(NodiaError::new(
                     "invalid float literal",
                     self.line,
                     self.column,
@@ -206,15 +206,15 @@ impl Lexer {
         if is_float {
             text.parse::<f64>()
                 .map(TokenKind::Float)
-                .map_err(|_| DobraError::new("invalid float literal", self.line, self.column))
+                .map_err(|_| NodiaError::new("invalid float literal", self.line, self.column))
         } else {
             text.parse::<i64>()
                 .map(TokenKind::Int)
-                .map_err(|_| DobraError::new("invalid integer literal", self.line, self.column))
+                .map_err(|_| NodiaError::new("invalid integer literal", self.line, self.column))
         }
     }
 
-    fn string(&mut self, line: usize, column: usize, quote: char) -> DobraResult<String> {
+    fn string(&mut self, line: usize, column: usize, quote: char) -> NodiaResult<String> {
         self.advance();
         let mut out = String::new();
         while let Some(ch) = self.peek() {
@@ -226,7 +226,7 @@ impl Lexer {
                 self.advance();
                 let escaped = self
                     .advance()
-                    .ok_or_else(|| DobraError::new("unterminated escape", line, column))?;
+                    .ok_or_else(|| NodiaError::new("unterminated escape", line, column))?;
                 out.push(match escaped {
                     'n' => '\n',
                     'r' => '\r',
@@ -241,10 +241,10 @@ impl Lexer {
                 self.advance();
             }
         }
-        Err(DobraError::new("unterminated string", line, column))
+        Err(NodiaError::new("unterminated string", line, column))
     }
 
-    fn raw_string(&mut self, line: usize, column: usize, quote: char) -> DobraResult<String> {
+    fn raw_string(&mut self, line: usize, column: usize, quote: char) -> NodiaResult<String> {
         self.advance();
         self.advance();
         let mut out = String::new();
@@ -252,10 +252,10 @@ impl Lexer {
             if ch == quote {
                 self.advance();
                 if quote == '"'
-                    && looks_like_misdelimited_json_raw(&out)
+                    && looks_like_raw_json(&out)
                     && matches!(self.peek(), Some(next) if next.is_ascii_alphanumeric() || matches!(next, '"' | '\''))
                 {
-                    return Err(DobraError::new(
+                    return Err(NodiaError::new(
                         "raw string likely closed early; for inline JSON prefer r'...' or \"\"\"...\"\"\"",
                         line,
                         column,
@@ -266,17 +266,17 @@ impl Lexer {
             out.push(ch);
             self.advance();
         }
-        Err(DobraError::new("unterminated raw string", line, column))
+        Err(NodiaError::new("unterminated raw string", line, column))
     }
 
-    fn triple_string(&mut self, line: usize, column: usize) -> DobraResult<String> {
+    fn triple_string(&mut self, line: usize, column: usize) -> NodiaResult<String> {
         self.advance();
         self.advance();
         self.advance();
         let mut out = String::new();
         loop {
             if self.peek().is_none() {
-                return Err(DobraError::new("unterminated triple string", line, column));
+                return Err(NodiaError::new("unterminated triple string", line, column));
             }
             if self.peek() == Some('"')
                 && self.peek_next() == Some('"')
@@ -292,7 +292,7 @@ impl Lexer {
         }
     }
 
-    fn raw_triple_string(&mut self, line: usize, column: usize) -> DobraResult<String> {
+    fn raw_triple_string(&mut self, line: usize, column: usize) -> NodiaResult<String> {
         self.advance();
         self.triple_string(line, column)
     }
@@ -352,7 +352,7 @@ impl Lexer {
     }
 }
 
-fn looks_like_misdelimited_json_raw(value: &str) -> bool {
+fn looks_like_raw_json(value: &str) -> bool {
     let trimmed = value.trim_start();
     trimmed.starts_with('{') || trimmed.starts_with('[')
 }

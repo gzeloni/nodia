@@ -6,11 +6,11 @@
 use std::fmt;
 
 /// Result type used throughout the crate.
-pub type DobraResult<T> = Result<T, DobraError>;
+pub type NodiaResult<T> = Result<T, NodiaError>;
 
 /// Primary error type returned by the library and runtime layers.
 #[derive(Debug, Clone, PartialEq)]
-pub struct DobraError {
+pub struct NodiaError {
     /// Stable error code for machine-readable consumers.
     pub code: String,
     /// Human-readable description of the failure.
@@ -27,7 +27,7 @@ pub struct DobraError {
     pub output: Option<String>,
 }
 
-impl DobraError {
+impl NodiaError {
     /// Creates a syntax-oriented error with source coordinates.
     pub fn new(message: impl Into<String>, line: usize, column: usize) -> Self {
         Self {
@@ -154,13 +154,13 @@ impl DobraError {
     }
 }
 
-impl fmt::Display for DobraError {
+impl fmt::Display for NodiaError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.render())
     }
 }
 
-impl std::error::Error for DobraError {}
+impl std::error::Error for NodiaError {}
 
 fn json_escape(value: &str) -> String {
     let mut out = String::new();

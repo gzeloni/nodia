@@ -4,7 +4,7 @@
 //! Recursive-descent parser for the Nodia grammar.
 
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::regex::{
     RegexAnchor, RegexCharSet, RegexCharSetItem, RegexClass, RegexFlag, RegexGroupKind,
     RegexLookaroundKind, RegexNode, RegexPattern, RegexQuantifierKind, RegexQuantifierMode,
@@ -31,7 +31,7 @@ impl Parser {
     }
 
     /// Parses the full input as a program.
-    pub fn parse_program(&mut self) -> DobraResult<Program> {
+    pub fn parse_program(&mut self) -> NodiaResult<Program> {
         let mut statements = Vec::new();
         self.skip_newlines();
         while !self.is_at_end() {
@@ -43,7 +43,7 @@ impl Parser {
     }
 
     /// Parses a single expression and rejects trailing tokens.
-    pub fn parse_expression_only(&mut self) -> DobraResult<Expr> {
+    pub fn parse_expression_only(&mut self) -> NodiaResult<Expr> {
         self.skip_separators();
         let expr = self.expression()?;
         self.skip_separators();

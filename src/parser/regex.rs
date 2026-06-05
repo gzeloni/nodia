@@ -6,7 +6,7 @@
 use super::*;
 
 impl Parser {
-    pub(super) fn regex_literal(&mut self) -> DobraResult<Expr> {
+    pub(super) fn regex_literal(&mut self) -> NodiaResult<Expr> {
         let flags = if self.match_kind(&TokenKind::LeftParen) {
             self.regex_flags()?
         } else {
@@ -18,7 +18,7 @@ impl Parser {
         Ok(Expr::Regex(RegexPattern { flags, body: items }))
     }
 
-    pub(super) fn regex_flags(&mut self) -> DobraResult<Vec<RegexFlag>> {
+    pub(super) fn regex_flags(&mut self) -> NodiaResult<Vec<RegexFlag>> {
         let mut flags = Vec::new();
         self.skip_separators();
         if !self.check(&TokenKind::RightParen) {
@@ -27,7 +27,7 @@ impl Parser {
                 let name = match token.kind {
                     TokenKind::Identifier(name) => name,
                     _ => {
-                        return Err(DobraError::new(
+                        return Err(NodiaError::new(
                             "expected regex flag name",
                             token.line,
                             token.column,
@@ -35,7 +35,7 @@ impl Parser {
                     }
                 };
                 let Some(flag) = RegexFlag::from_name(&name) else {
-                    return Err(DobraError::new(
+                    return Err(NodiaError::new(
                         format!("unknown regex flag '{name}'"),
                         token.line,
                         token.column,
@@ -60,14 +60,14 @@ impl Parser {
         &mut self,
         start_message: &str,
         end_message: &str,
-    ) -> DobraResult<Vec<RegexNode>> {
+    ) -> NodiaResult<Vec<RegexNode>> {
         self.expect(TokenKind::LeftBrace, start_message)?;
         let items = self.regex_sequence()?;
         self.expect(TokenKind::RightBrace, end_message)?;
         Ok(items)
     }
 
-    pub(super) fn regex_sequence(&mut self) -> DobraResult<Vec<RegexNode>> {
+    pub(super) fn regex_sequence(&mut self) -> NodiaResult<Vec<RegexNode>> {
         let mut items = Vec::new();
         self.skip_separators();
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
@@ -77,14 +77,14 @@ impl Parser {
         Ok(items)
     }
 
-    pub(super) fn regex_item(&mut self) -> DobraResult<RegexNode> {
+    pub(super) fn regex_item(&mut self) -> NodiaResult<RegexNode> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) | TokenKind::RawString(value) => Ok(RegexNode::Literal(value)),
             TokenKind::Identifier(name) => {
                 self.regex_identifier_item(name, token.line, token.column)
             }
-            _ => Err(DobraError::new(
+            _ => Err(NodiaError::new(
                 "expected regex item",
                 token.line,
                 token.column,
@@ -97,7 +97,7 @@ impl Parser {
         name: String,
         line: usize,
         column: usize,
-    ) -> DobraResult<RegexNode> {
+    ) -> NodiaResult<RegexNode> {
         if let Some(anchor) = RegexAnchor::from_name(&name) {
             return Ok(RegexNode::Anchor(anchor));
         }
@@ -155,27 +155,27 @@ impl Parser {
             ))),
             "with_flags" => self.regex_scoped_flags(true),
             "without_flags" => self.regex_scoped_flags(false),
-            "branch" => Err(DobraError::new(
+            "branch" => Err(NodiaError::new(
                 "branch is only valid inside either",
                 line,
                 column,
             )),
-            "range" => Err(DobraError::new(
+            "range" => Err(NodiaError::new(
                 "range is only valid inside char_set",
                 line,
                 column,
             )),
-            "lazy" | "possessive" => Err(DobraError::new(
+            "lazy" | "possessive" => Err(NodiaError::new(
                 "repeat mode must follow a quantifier",
                 line,
                 column,
             )),
-            "char" => Err(DobraError::new(
+            "char" => Err(NodiaError::new(
                 "char() is only valid inside char_set",
                 line,
                 column,
             )),
-            other => Err(DobraError::new(
+            other => Err(NodiaError::new(
                 format!("unknown regex item '{other}'"),
                 line,
                 column,
@@ -186,7 +186,7 @@ impl Parser {
     pub(super) fn regex_quantified(
         &mut self,
         quantifier: RegexQuantifierKind,
-    ) -> DobraResult<RegexNode> {
+    ) -> NodiaResult<RegexNode> {
         let mode = self.regex_repeat_mode();
         let target = self.regex_target()?;
         Ok(RegexNode::Quantifier {
@@ -210,7 +210,7 @@ impl Parser {
         }
     }
 
-    pub(super) fn regex_target(&mut self) -> DobraResult<RegexNode> {
+    pub(super) fn regex_target(&mut self) -> NodiaResult<RegexNode> {
         self.skip_separators();
         if self.match_kind(&TokenKind::LeftBrace) {
             let items = self.regex_sequence()?;
@@ -223,7 +223,7 @@ impl Parser {
         self.regex_item()
     }
 
-    pub(super) fn regex_group(&mut self, kind: RegexGroupKind) -> DobraResult<RegexNode> {
+    pub(super) fn regex_group(&mut self, kind: RegexGroupKind) -> NodiaResult<RegexNode> {
         let items = self.regex_braced_sequence(
             "expected '{' after regex group",
             "expected '}' after regex group",
@@ -231,7 +231,7 @@ impl Parser {
         Ok(RegexNode::Group { kind, body: items })
     }
 
-    pub(super) fn regex_lookaround(&mut self, kind: RegexLookaroundKind) -> DobraResult<RegexNode> {
+    pub(super) fn regex_lookaround(&mut self, kind: RegexLookaroundKind) -> NodiaResult<RegexNode> {
         let items = self.regex_braced_sequence(
             "expected '{' after regex lookaround",
             "expected '}' after regex lookaround",
@@ -239,14 +239,14 @@ impl Parser {
         Ok(RegexNode::Lookaround { kind, body: items })
     }
 
-    pub(super) fn regex_either(&mut self) -> DobraResult<RegexNode> {
+    pub(super) fn regex_either(&mut self) -> NodiaResult<RegexNode> {
         self.expect(TokenKind::LeftBrace, "expected '{' after either")?;
         let mut branches = Vec::new();
         self.skip_separators();
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
             let branch = self.expect_identifier("expected branch inside either")?;
             if branch != "branch" {
-                return Err(DobraError::new(
+                return Err(NodiaError::new(
                     "expected branch inside either",
                     self.previous().line,
                     self.previous().column,
@@ -264,7 +264,7 @@ impl Parser {
         Ok(RegexNode::Alternation(branches))
     }
 
-    pub(super) fn regex_char_set(&mut self, negated: bool) -> DobraResult<RegexNode> {
+    pub(super) fn regex_char_set(&mut self, negated: bool) -> NodiaResult<RegexNode> {
         self.expect(TokenKind::LeftBrace, "expected '{' after char_set")?;
         let mut items = Vec::new();
         self.skip_separators();
@@ -276,7 +276,7 @@ impl Parser {
         Ok(RegexNode::CharSet(RegexCharSet { negated, items }))
     }
 
-    pub(super) fn regex_char_set_item(&mut self) -> DobraResult<RegexCharSetItem> {
+    pub(super) fn regex_char_set_item(&mut self) -> NodiaResult<RegexCharSetItem> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) | TokenKind::RawString(value) => {
@@ -305,7 +305,7 @@ impl Parser {
                         let keyword = match token.kind {
                             TokenKind::Identifier(name) => name,
                             _ => {
-                                return Err(DobraError::new(
+                                return Err(NodiaError::new(
                                     "expected 'to' in range",
                                     token.line,
                                     token.column,
@@ -313,7 +313,7 @@ impl Parser {
                             }
                         };
                         if keyword != "to" {
-                            return Err(DobraError::new(
+                            return Err(NodiaError::new(
                                 "expected 'to' in range",
                                 token.line,
                                 token.column,
@@ -323,26 +323,26 @@ impl Parser {
                             self.regex_expect_char_literal("expected char literal after to")?;
                         Ok(RegexCharSetItem::Range(start, end))
                     }
-                    other if RegexAnchor::from_name(other).is_some() => Err(DobraError::new(
+                    other if RegexAnchor::from_name(other).is_some() => Err(NodiaError::new(
                         format!("'{}' is not valid inside char_set", other),
                         token.line,
                         token.column,
                     )),
                     "any_char" | "any_codepoint" | "with_flags" | "without_flags" => {
-                        Err(DobraError::new(
+                        Err(NodiaError::new(
                             format!("'{}' is not valid inside char_set", name),
                             token.line,
                             token.column,
                         ))
                     }
-                    other => Err(DobraError::new(
+                    other => Err(NodiaError::new(
                         format!("unknown char_set item '{other}'"),
                         token.line,
                         token.column,
                     )),
                 }
             }
-            _ => Err(DobraError::new(
+            _ => Err(NodiaError::new(
                 "expected char_set item",
                 token.line,
                 token.column,
@@ -350,7 +350,7 @@ impl Parser {
         }
     }
 
-    pub(super) fn regex_scoped_flags(&mut self, enable_only: bool) -> DobraResult<RegexNode> {
+    pub(super) fn regex_scoped_flags(&mut self, enable_only: bool) -> NodiaResult<RegexNode> {
         self.expect(TokenKind::LeftParen, "expected '(' after scoped flags")?;
         let flags = self.regex_flags()?;
         self.skip_separators();
@@ -374,7 +374,7 @@ impl Parser {
         start_message: &str,
         value_message: &str,
         end_message: &str,
-    ) -> DobraResult<String> {
+    ) -> NodiaResult<String> {
         self.expect(TokenKind::LeftParen, start_message)?;
         self.skip_separators();
         let value = self.regex_expect_string(value_message)?;
@@ -388,17 +388,17 @@ impl Parser {
         value: String,
         line: usize,
         column: usize,
-    ) -> DobraResult<RegexCharSetItem> {
+    ) -> NodiaResult<RegexCharSetItem> {
         let mut chars = value.chars();
         let Some(ch) = chars.next() else {
-            return Err(DobraError::new(
+            return Err(NodiaError::new(
                 "char_set string sugar expects exactly one character",
                 line,
                 column,
             ));
         };
         if chars.next().is_some() {
-            return Err(DobraError::new(
+            return Err(NodiaError::new(
                 "char_set string sugar expects exactly one character; use multiple entries or raw_regex",
                 line,
                 column,
@@ -407,30 +407,30 @@ impl Parser {
         Ok(RegexCharSetItem::Char(ch))
     }
 
-    pub(super) fn regex_expect_string(&mut self, message: &str) -> DobraResult<String> {
+    pub(super) fn regex_expect_string(&mut self, message: &str) -> NodiaResult<String> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::String(value) | TokenKind::RawString(value) => Ok(value),
-            _ => Err(DobraError::new(message, token.line, token.column)),
+            _ => Err(NodiaError::new(message, token.line, token.column)),
         }
     }
 
-    pub(super) fn regex_expect_char_literal(&mut self, message: &str) -> DobraResult<char> {
+    pub(super) fn regex_expect_char_literal(&mut self, message: &str) -> NodiaResult<char> {
         let token = self.advance().clone();
         let value = match token.kind {
             TokenKind::String(value) | TokenKind::RawString(value) => value,
-            _ => return Err(DobraError::new(message, token.line, token.column)),
+            _ => return Err(NodiaError::new(message, token.line, token.column)),
         };
         let mut chars = value.chars();
         let Some(ch) = chars.next() else {
-            return Err(DobraError::new(
+            return Err(NodiaError::new(
                 "expected single character literal",
                 token.line,
                 token.column,
             ));
         };
         if chars.next().is_some() {
-            return Err(DobraError::new(
+            return Err(NodiaError::new(
                 "expected single character literal",
                 token.line,
                 token.column,
@@ -439,11 +439,11 @@ impl Parser {
         Ok(ch)
     }
 
-    pub(super) fn regex_expect_usize(&mut self, message: &str) -> DobraResult<usize> {
+    pub(super) fn regex_expect_usize(&mut self, message: &str) -> NodiaResult<usize> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Int(value) if value >= 0 => Ok(value as usize),
-            _ => Err(DobraError::new(message, token.line, token.column)),
+            _ => Err(NodiaError::new(message, token.line, token.column)),
         }
     }
 }

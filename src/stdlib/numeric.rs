@@ -5,9 +5,9 @@
 
 use super::*;
 
-pub(super) fn range(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn range(args: &[Value]) -> NodiaResult<Value> {
     if args.len() != 1 && args.len() != 2 {
-        return Err(DobraError::runtime("range() expects 1 or 2 arguments"));
+        return Err(NodiaError::runtime("range() expects 1 or 2 arguments"));
     }
     let (start, end) = if args.len() == 1 {
         (0, to_int(&args[0])?)
@@ -22,15 +22,15 @@ pub(super) fn range(args: &[Value]) -> DobraResult<Value> {
     Ok(Value::List(values))
 }
 
-pub(super) fn abs(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn abs(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "abs")?;
     match &args[0] {
         Value::Int(value) => value
             .checked_abs()
             .map(Value::Int)
-            .ok_or_else(|| DobraError::runtime("abs() integer overflow")),
+            .ok_or_else(|| NodiaError::runtime("abs() integer overflow")),
         Value::Float(value) => Ok(Value::Float(value.abs())),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "abs() expects number, got {}",
             other.type_name()
         ))),
@@ -41,12 +41,12 @@ pub(super) fn rounded(
     args: &[Value],
     name: &str,
     op: impl FnOnce(f64) -> f64,
-) -> DobraResult<Value> {
+) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
     Ok(Value::Int(op(to_float(&args[0])?) as i64))
 }
 
-pub(super) fn sum(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn sum(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "sum")?;
     let values = expect_list(&args[0], "sum", "first")?;
     let mut total = 0.0;
@@ -64,7 +64,7 @@ pub(super) fn sum(args: &[Value]) -> DobraResult<Value> {
     }
 }
 
-pub(super) fn avg(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn avg(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "avg")?;
     let values = expect_list(&args[0], "avg", "first")?;
     if values.is_empty() {

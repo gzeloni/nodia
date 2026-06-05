@@ -3,7 +3,7 @@
 
 //! Date, datetime, duration, and formatting helpers used by the standard library.
 
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use std::cmp::min;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -101,11 +101,11 @@ pub struct DateTimeParts {
 
 impl DateValue {
     /// Creates a validated calendar date.
-    pub fn new(year: i32, month: u8, day: u8) -> DobraResult<Self> {
+    pub fn new(year: i32, month: u8, day: u8) -> NodiaResult<Self> {
         validate_month(month)?;
         let last_day = days_in_month(year, month);
         if day == 0 || day > last_day {
-            return Err(DobraError::runtime(format!(
+            return Err(NodiaError::runtime(format!(
                 "invalid date {year:04}-{month:02}-{day:02}"
             )));
         }
@@ -121,12 +121,12 @@ impl DateValue {
     }
 
     /// Returns the current date at the given UTC offset in minutes.
-    pub fn today(offset_minutes: i32) -> DobraResult<Self> {
+    pub fn today(offset_minutes: i32) -> NodiaResult<Self> {
         Ok(DateTimeValue::now(offset_minutes)?.date())
     }
 
     /// Parses an ISO 8601 calendar date such as `2026-06-04`.
-    pub fn parse_iso(text: &str) -> DobraResult<Self> {
+    pub fn parse_iso(text: &str) -> NodiaResult<Self> {
         let (year, month, day) = parse_date_fields(text)?;
         Self::new(year, month, day)
     }
@@ -158,13 +158,13 @@ impl DateValue {
     }
 
     /// Adds a whole number of days.
-    pub fn add_days(self, days: i64) -> DobraResult<Self> {
+    pub fn add_days(self, days: i64) -> NodiaResult<Self> {
         let next = self.days_since_epoch as i64 + days;
         Ok(Self::from_days_since_epoch(i32_from_i64(next)?))
     }
 
     /// Adds calendar months while clamping the day to the destination month.
-    pub fn add_months(self, months: i32) -> DobraResult<Self> {
+    pub fn add_months(self, months: i32) -> NodiaResult<Self> {
         let parts = self.parts();
         let total = parts.year as i64 * 12 + (parts.month as i64 - 1) + months as i64;
         let year = total.div_euclid(12);
@@ -174,10 +174,10 @@ impl DateValue {
     }
 
     /// Adds calendar years while preserving month and clamping the day when needed.
-    pub fn add_years(self, years: i32) -> DobraResult<Self> {
+    pub fn add_years(self, years: i32) -> NodiaResult<Self> {
         let parts = self.parts();
         let year = parts.year.checked_add(years).ok_or_else(|| {
-            DobraError::runtime("date arithmetic overflowed supported year range")
+            NodiaError::runtime("date arithmetic overflowed supported year range")
         })?;
         let day = min(parts.day, days_in_month(year, parts.month));
         Self::new(year, parts.month, day)
@@ -257,7 +257,7 @@ impl DateValue {
     }
 
     /// Formats the date using a restricted `strftime`-style pattern set.
-    pub fn strftime(self, pattern: &str) -> DobraResult<String> {
+    pub fn strftime(self, pattern: &str) -> NodiaResult<String> {
         let parts = self.parts();
         format_strftime(
             pattern,
@@ -287,7 +287,7 @@ impl DateTimeValue {
         second: u8,
         nanosecond: u32,
         offset_minutes: i32,
-    ) -> DobraResult<Self> {
+    ) -> NodiaResult<Self> {
         validate_month(month)?;
         validate_time(hour, minute, second, nanosecond)?;
         validate_offset(offset_minutes)?;
@@ -302,11 +302,11 @@ impl DateTimeValue {
     }
 
     /// Returns the current datetime at the given UTC offset in minutes.
-    pub fn now(offset_minutes: i32) -> DobraResult<Self> {
+    pub fn now(offset_minutes: i32) -> NodiaResult<Self> {
         validate_offset(offset_minutes)?;
         let duration = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|err| DobraError::runtime(format!("system clock before unix epoch: {err}")))?;
+            .map_err(|err| NodiaError::runtime(format!("system clock before unix epoch: {err}")))?;
         let total = duration.as_secs() as i128 * NANOS_PER_SECOND + duration.subsec_nanos() as i128;
         Self::from_unix_total_nanos(total, offset_minutes)
     }
@@ -316,7 +316,7 @@ impl DateTimeValue {
         unix_seconds: i64,
         nanosecond: u32,
         offset_minutes: i32,
-    ) -> DobraResult<Self> {
+    ) -> NodiaResult<Self> {
         validate_time(0, 0, 0, nanosecond)?;
         validate_offset(offset_minutes)?;
         let total = unix_seconds as i128 * NANOS_PER_SECOND + nanosecond as i128;
@@ -327,16 +327,16 @@ impl DateTimeValue {
     pub fn from_unix_milliseconds(
         unix_milliseconds: i128,
         offset_minutes: i32,
-    ) -> DobraResult<Self> {
+    ) -> NodiaResult<Self> {
         validate_offset(offset_minutes)?;
         Self::from_unix_total_nanos(unix_milliseconds * NANOS_PER_MILLISECOND, offset_minutes)
     }
 
     /// Parses an ISO 8601 datetime with an explicit offset.
-    pub fn parse_iso(text: &str) -> DobraResult<Self> {
+    pub fn parse_iso(text: &str) -> NodiaResult<Self> {
         let trimmed = text.trim();
         let split = trimmed.find(['T', 't', ' ']).ok_or_else(|| {
-            DobraError::runtime("datetime text must separate date and time with 'T' or space")
+            NodiaError::runtime("datetime text must separate date and time with 'T' or space")
         })?;
         let (date_text, rest) = trimmed.split_at(split);
         let time_text = &rest[1..];
@@ -445,12 +445,12 @@ impl DateTimeValue {
     }
 
     /// Re-expresses the same absolute instant with a different offset.
-    pub fn with_offset(self, offset_minutes: i32) -> DobraResult<Self> {
+    pub fn with_offset(self, offset_minutes: i32) -> NodiaResult<Self> {
         Self::from_unix_total_nanos(self.to_unix_total_nanos(), offset_minutes)
     }
 
     /// Adds a whole number of days without changing the local time fields.
-    pub fn add_days(self, days: i64) -> DobraResult<Self> {
+    pub fn add_days(self, days: i64) -> NodiaResult<Self> {
         Ok(Self {
             date: self.date.add_days(days)?,
             ..self
@@ -458,7 +458,7 @@ impl DateTimeValue {
     }
 
     /// Adds calendar months while clamping the day when needed.
-    pub fn add_months(self, months: i32) -> DobraResult<Self> {
+    pub fn add_months(self, months: i32) -> NodiaResult<Self> {
         Ok(Self {
             date: self.date.add_months(months)?,
             ..self
@@ -466,7 +466,7 @@ impl DateTimeValue {
     }
 
     /// Adds calendar years while clamping the day when needed.
-    pub fn add_years(self, years: i32) -> DobraResult<Self> {
+    pub fn add_years(self, years: i32) -> NodiaResult<Self> {
         Ok(Self {
             date: self.date.add_years(years)?,
             ..self
@@ -474,11 +474,11 @@ impl DateTimeValue {
     }
 
     /// Adds an exact duration in nanoseconds.
-    pub fn add_duration(self, duration: DurationValue) -> DobraResult<Self> {
+    pub fn add_duration(self, duration: DurationValue) -> NodiaResult<Self> {
         Self::from_unix_total_nanos(
             self.to_unix_total_nanos()
                 .checked_add(duration.total_nanoseconds())
-                .ok_or_else(|| DobraError::runtime("datetime arithmetic overflowed"))?,
+                .ok_or_else(|| NodiaError::runtime("datetime arithmetic overflowed"))?,
             self.offset_minutes,
         )
     }
@@ -547,7 +547,7 @@ impl DateTimeValue {
     }
 
     /// Formats the datetime using a restricted `strftime`-style pattern set.
-    pub fn strftime(self, pattern: &str) -> DobraResult<String> {
+    pub fn strftime(self, pattern: &str) -> NodiaResult<String> {
         format_strftime(
             pattern,
             self.date.parts(),
@@ -575,7 +575,7 @@ impl DateTimeValue {
         (self.to_unix_total_nanos() / NANOS_PER_SECOND) as i64
     }
 
-    fn from_unix_total_nanos(total_nanoseconds: i128, offset_minutes: i32) -> DobraResult<Self> {
+    fn from_unix_total_nanos(total_nanoseconds: i128, offset_minutes: i32) -> NodiaResult<Self> {
         validate_offset(offset_minutes)?;
         let shifted = total_nanoseconds
             + offset_minutes as i128 * SECONDS_PER_MINUTE as i128 * NANOS_PER_SECOND;
@@ -628,7 +628,7 @@ impl DurationValue {
         milliseconds: i64,
         microseconds: i64,
         nanoseconds: i64,
-    ) -> DobraResult<Self> {
+    ) -> NodiaResult<Self> {
         let total = checked_sum_i128(&[
             weeks as i128 * 7 * NANOS_PER_DAY,
             days as i128 * NANOS_PER_DAY,
@@ -643,10 +643,10 @@ impl DurationValue {
     }
 
     /// Parses an ISO 8601 duration such as `PT1H30M`.
-    pub fn parse_iso(text: &str) -> DobraResult<Self> {
+    pub fn parse_iso(text: &str) -> NodiaResult<Self> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
-            return Err(DobraError::runtime("duration text cannot be empty"));
+            return Err(NodiaError::runtime("duration text cannot be empty"));
         }
         let (negative, body) = if let Some(rest) = trimmed.strip_prefix('-') {
             (true, rest)
@@ -656,7 +656,7 @@ impl DurationValue {
             (false, trimmed)
         };
         if !body.starts_with('P') {
-            return Err(DobraError::runtime("duration text must start with 'P'"));
+            return Err(NodiaError::runtime("duration text must start with 'P'"));
         }
 
         let mut index = 1usize;
@@ -677,7 +677,7 @@ impl DurationValue {
                 index += 1;
             }
             if start == index || index == chars.len() {
-                return Err(DobraError::runtime("invalid duration component"));
+                return Err(NodiaError::runtime("invalid duration component"));
             }
             let number = chars[start..index].iter().collect::<String>();
             let designator = chars[index];
@@ -704,17 +704,17 @@ impl DurationValue {
                     }
                     'S' if in_time => parse_second_fraction(&number)?,
                     'Y' | 'M' => {
-                        return Err(DobraError::runtime(
+                        return Err(NodiaError::runtime(
                             "duration text does not support years or calendar months",
                         ))
                     }
-                    _ => return Err(DobraError::runtime("invalid duration designator")),
+                    _ => return Err(NodiaError::runtime("invalid duration designator")),
                 })
-                .ok_or_else(|| DobraError::runtime("duration overflowed supported range"))?;
+                .ok_or_else(|| NodiaError::runtime("duration overflowed supported range"))?;
         }
 
         if !seen_any {
-            return Err(DobraError::runtime(
+            return Err(NodiaError::runtime(
                 "duration text must include at least one component",
             ));
         }
@@ -810,19 +810,19 @@ struct TimeParts {
 }
 
 /// Parses a UTC offset written as `Z`, `+HH`, `+HHMM`, or `+HH:MM`.
-pub fn parse_offset_text(text: &str) -> DobraResult<i32> {
+pub fn parse_offset_text(text: &str) -> NodiaResult<i32> {
     if text == "Z" || text == "z" {
         return Ok(0);
     }
     let bytes = text.as_bytes();
     let Some(sign) = bytes.first().copied() else {
-        return Err(DobraError::runtime("offset text cannot be empty"));
+        return Err(NodiaError::runtime("offset text cannot be empty"));
     };
     let sign = match sign {
         b'+' => 1,
         b'-' => -1,
         _ => {
-            return Err(DobraError::runtime(
+            return Err(NodiaError::runtime(
                 "offset text must start with '+', '-', or 'Z'",
             ))
         }
@@ -835,7 +835,7 @@ pub fn parse_offset_text(text: &str) -> DobraResult<i32> {
     } else if digits.len() == 4 {
         (&digits[..2], &digits[2..])
     } else {
-        return Err(DobraError::runtime(
+        return Err(NodiaError::runtime(
             "offset text must use +HH, +HHMM, or +HH:MM",
         ));
     };
@@ -869,7 +869,7 @@ fn format_strftime(
     ordinal_day: u16,
     weekday: u8,
     iso_week: (i32, u8),
-) -> DobraResult<String> {
+) -> NodiaResult<String> {
     let mut out = String::with_capacity(pattern.len() + 16);
     let chars: Vec<char> = pattern.chars().collect();
     let mut index = 0usize;
@@ -881,7 +881,7 @@ fn format_strftime(
         }
         index += 1;
         if index >= chars.len() {
-            return Err(DobraError::runtime("strftime() pattern ends with '%'"));
+            return Err(NodiaError::runtime("strftime() pattern ends with '%'"));
         }
         let directive = chars[index];
         index += 1;
@@ -924,7 +924,7 @@ fn format_strftime(
                         out.push_str(&format_offset(offset));
                     }
                 } else {
-                    return Err(DobraError::runtime("strftime() does not support '%:' here"));
+                    return Err(NodiaError::runtime("strftime() does not support '%:' here"));
                 }
             }
             'Z' => {
@@ -938,7 +938,7 @@ fn format_strftime(
                 }
             }
             other => {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "strftime() does not support '%{other}'"
                 )))
             }
@@ -947,46 +947,46 @@ fn format_strftime(
     Ok(out)
 }
 
-fn parse_date_fields(text: &str) -> DobraResult<(i32, u8, u8)> {
+fn parse_date_fields(text: &str) -> NodiaResult<(i32, u8, u8)> {
     let mut parts = text.split('-');
     let year = parts
         .next()
-        .ok_or_else(|| DobraError::runtime("date text must be YYYY-MM-DD"))?;
+        .ok_or_else(|| NodiaError::runtime("date text must be YYYY-MM-DD"))?;
     let month = parts
         .next()
-        .ok_or_else(|| DobraError::runtime("date text must be YYYY-MM-DD"))?;
+        .ok_or_else(|| NodiaError::runtime("date text must be YYYY-MM-DD"))?;
     let day = parts
         .next()
-        .ok_or_else(|| DobraError::runtime("date text must be YYYY-MM-DD"))?;
+        .ok_or_else(|| NodiaError::runtime("date text must be YYYY-MM-DD"))?;
     if parts.next().is_some() {
-        return Err(DobraError::runtime("date text must be YYYY-MM-DD"));
+        return Err(NodiaError::runtime("date text must be YYYY-MM-DD"));
     }
     Ok((
         year.parse::<i32>()
-            .map_err(|_| DobraError::runtime("invalid date year"))?,
+            .map_err(|_| NodiaError::runtime("invalid date year"))?,
         parse_u8(month, "date month")?,
         parse_u8(day, "date day")?,
     ))
 }
 
-fn parse_time_and_offset(text: &str) -> DobraResult<(u8, u8, u8, u32, i32)> {
+fn parse_time_and_offset(text: &str) -> NodiaResult<(u8, u8, u8, u32, i32)> {
     let (time_text, offset_text) = split_time_offset(text)?;
     let mut parts = time_text.split(':');
     let hour = parse_u8(
         parts
             .next()
-            .ok_or_else(|| DobraError::runtime("time text must start with hour"))?,
+            .ok_or_else(|| NodiaError::runtime("time text must start with hour"))?,
         "time hour",
     )?;
     let minute = parse_u8(
         parts
             .next()
-            .ok_or_else(|| DobraError::runtime("time text must include minute"))?,
+            .ok_or_else(|| NodiaError::runtime("time text must include minute"))?,
         "time minute",
     )?;
     let second_text = parts.next().unwrap_or("00");
     if parts.next().is_some() {
-        return Err(DobraError::runtime("time text has too many ':' separators"));
+        return Err(NodiaError::runtime("time text has too many ':' separators"));
     }
     let (second, nanosecond) = if let Some((whole, fraction)) = second_text.split_once('.') {
         (
@@ -1000,7 +1000,7 @@ fn parse_time_and_offset(text: &str) -> DobraResult<(u8, u8, u8, u32, i32)> {
     Ok((hour, minute, second, nanosecond, offset))
 }
 
-fn split_time_offset(text: &str) -> DobraResult<(&str, Option<&str>)> {
+fn split_time_offset(text: &str) -> NodiaResult<(&str, Option<&str>)> {
     if let Some(stripped) = text.strip_suffix('Z').or_else(|| text.strip_suffix('z')) {
         return Ok((stripped, Some("Z")));
     }
@@ -1012,50 +1012,50 @@ fn split_time_offset(text: &str) -> DobraResult<(&str, Option<&str>)> {
     Ok((text, None))
 }
 
-fn validate_month(month: u8) -> DobraResult<()> {
+fn validate_month(month: u8) -> NodiaResult<()> {
     if (1..=12).contains(&month) {
         Ok(())
     } else {
-        Err(DobraError::runtime("month must be between 1 and 12"))
+        Err(NodiaError::runtime("month must be between 1 and 12"))
     }
 }
 
-fn validate_time(hour: u8, minute: u8, second: u8, nanosecond: u32) -> DobraResult<()> {
+fn validate_time(hour: u8, minute: u8, second: u8, nanosecond: u32) -> NodiaResult<()> {
     if hour > 23 {
-        return Err(DobraError::runtime("hour must be between 0 and 23"));
+        return Err(NodiaError::runtime("hour must be between 0 and 23"));
     }
     if minute > 59 {
-        return Err(DobraError::runtime("minute must be between 0 and 59"));
+        return Err(NodiaError::runtime("minute must be between 0 and 59"));
     }
     if second > 59 {
-        return Err(DobraError::runtime("second must be between 0 and 59"));
+        return Err(NodiaError::runtime("second must be between 0 and 59"));
     }
     if nanosecond >= 1_000_000_000 {
-        return Err(DobraError::runtime(
+        return Err(NodiaError::runtime(
             "nanosecond must be between 0 and 999999999",
         ));
     }
     Ok(())
 }
 
-fn validate_offset(offset_minutes: i32) -> DobraResult<()> {
+fn validate_offset(offset_minutes: i32) -> NodiaResult<()> {
     if offset_minutes.abs() <= MAX_OFFSET_MINUTES {
         Ok(())
     } else {
-        Err(DobraError::runtime(
+        Err(NodiaError::runtime(
             "offset must be between -23:59 and +23:59",
         ))
     }
 }
 
-fn parse_u8(text: &str, label: &str) -> DobraResult<u8> {
+fn parse_u8(text: &str, label: &str) -> NodiaResult<u8> {
     text.parse::<u8>()
-        .map_err(|_| DobraError::runtime(format!("invalid {label}")))
+        .map_err(|_| NodiaError::runtime(format!("invalid {label}")))
 }
 
-fn parse_fractional_nanoseconds(text: &str) -> DobraResult<u32> {
+fn parse_fractional_nanoseconds(text: &str) -> NodiaResult<u32> {
     if text.is_empty() || text.len() > 9 || !text.chars().all(|ch| ch.is_ascii_digit()) {
-        return Err(DobraError::runtime(
+        return Err(NodiaError::runtime(
             "fractional seconds must use 1 to 9 digits",
         ));
     }
@@ -1065,40 +1065,40 @@ fn parse_fractional_nanoseconds(text: &str) -> DobraResult<u32> {
     }
     digits
         .parse::<u32>()
-        .map_err(|_| DobraError::runtime("invalid fractional seconds"))
+        .map_err(|_| NodiaError::runtime("invalid fractional seconds"))
 }
 
-fn parse_int_component(text: &str, label: &str) -> DobraResult<i64> {
+fn parse_int_component(text: &str, label: &str) -> NodiaResult<i64> {
     if text.contains('.') {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{label} duration component cannot be fractional"
         )));
     }
     text.parse::<i64>()
-        .map_err(|_| DobraError::runtime(format!("invalid {label} duration component")))
+        .map_err(|_| NodiaError::runtime(format!("invalid {label} duration component")))
 }
 
-fn parse_second_fraction(text: &str) -> DobraResult<i128> {
+fn parse_second_fraction(text: &str) -> NodiaResult<i128> {
     if let Some((whole, fraction)) = text.split_once('.') {
         let seconds = whole
             .parse::<i64>()
-            .map_err(|_| DobraError::runtime("invalid seconds duration component"))?;
+            .map_err(|_| NodiaError::runtime("invalid seconds duration component"))?;
         Ok(seconds as i128 * NANOS_PER_SECOND + parse_fractional_nanoseconds(fraction)? as i128)
     } else {
         Ok(text
             .parse::<i64>()
-            .map_err(|_| DobraError::runtime("invalid seconds duration component"))?
+            .map_err(|_| NodiaError::runtime("invalid seconds duration component"))?
             as i128
             * NANOS_PER_SECOND)
     }
 }
 
-fn checked_sum_i128(values: &[i128]) -> DobraResult<i128> {
+fn checked_sum_i128(values: &[i128]) -> NodiaResult<i128> {
     let mut total = 0i128;
     for value in values {
         total = total
             .checked_add(*value)
-            .ok_or_else(|| DobraError::runtime("duration overflowed supported range"))?;
+            .ok_or_else(|| NodiaError::runtime("duration overflowed supported range"))?;
     }
     Ok(total)
 }
@@ -1139,21 +1139,21 @@ fn format_year(year: i32) -> String {
     }
 }
 
-fn i32_from_i64(value: i64) -> DobraResult<i32> {
+fn i32_from_i64(value: i64) -> NodiaResult<i32> {
     i32::try_from(value)
-        .map_err(|_| DobraError::runtime("date arithmetic overflowed supported year range"))
+        .map_err(|_| NodiaError::runtime("date arithmetic overflowed supported year range"))
 }
 
-fn i32_from_i128(value: i128) -> DobraResult<i32> {
+fn i32_from_i128(value: i128) -> NodiaResult<i32> {
     i32::try_from(value)
-        .map_err(|_| DobraError::runtime("datetime arithmetic overflowed supported year range"))
+        .map_err(|_| NodiaError::runtime("datetime arithmetic overflowed supported year range"))
 }
 
-fn i64_from_i128(value: i128) -> DobraResult<i64> {
-    i64::try_from(value).map_err(|_| DobraError::runtime("value overflowed i64 range"))
+fn i64_from_i128(value: i128) -> NodiaResult<i64> {
+    i64::try_from(value).map_err(|_| NodiaError::runtime("value overflowed i64 range"))
 }
 
-fn days_from_civil(year: i32, month: u8, day: u8) -> DobraResult<i32> {
+fn days_from_civil(year: i32, month: u8, day: u8) -> NodiaResult<i32> {
     let mut year = year as i64;
     let month = month as i64;
     let day = day as i64;

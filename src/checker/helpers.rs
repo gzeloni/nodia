@@ -108,7 +108,7 @@ pub(super) fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     Symbol { mutable, kind }
 }
 
-pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> DobraResult<PathBuf> {
+pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> NodiaResult<PathBuf> {
     let raw = Path::new(path);
     let joined = if raw.is_absolute() {
         raw.to_path_buf()
@@ -129,7 +129,7 @@ pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> DobraResult<Pa
     for candidate in candidates {
         if candidate.exists() {
             return candidate.canonicalize().map_err(|err| {
-                DobraError::io(format!(
+                NodiaError::io(format!(
                     "cannot resolve use '{}': {err}",
                     candidate.display()
                 ))
@@ -137,7 +137,7 @@ pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> DobraResult<Pa
         }
     }
 
-    Err(DobraError::io(format!("cannot resolve use '{path}'")))
+    Err(NodiaError::io(format!("cannot resolve use '{path}'")))
 }
 
 pub(super) fn direct_identifier(expr: &Expr) -> Option<&str> {
@@ -180,9 +180,9 @@ pub(super) fn semantic(
     code: &'static str,
     message: impl Into<String>,
     position: Option<(usize, usize)>,
-) -> DobraError {
+) -> NodiaError {
     let (line, column) = position.unwrap_or((0, 0));
-    DobraError::semantic_at(message, line, column).with_code(code)
+    NodiaError::semantic_at(message, line, column).with_code(code)
 }
 
 #[derive(Clone)]
@@ -202,22 +202,22 @@ pub(super) fn assign_target_root_name(target: &AssignTarget) -> Option<&str> {
 
 pub(super) fn assignment_symbol_steps(target: &AssignTarget) -> Vec<AssignmentSymbolStep> {
     let mut steps = Vec::new();
-    collect_assignment_symbol_steps(target, &mut steps);
+    collect_target_steps(target, &mut steps);
     steps
 }
 
-pub(super) fn collect_assignment_symbol_steps(
+pub(super) fn collect_target_steps(
     target: &AssignTarget,
     steps: &mut Vec<AssignmentSymbolStep>,
 ) {
     match target {
         AssignTarget::Identifier(_) => {}
         AssignTarget::Get { object, field } => {
-            collect_assignment_symbol_steps(object, steps);
+            collect_target_steps(object, steps);
             steps.push(AssignmentSymbolStep::Field(field.clone()));
         }
         AssignTarget::Index { object, index } => {
-            collect_assignment_symbol_steps(object, steps);
+            collect_target_steps(object, steps);
             if let Some(key) = static_map_key(index) {
                 steps.push(AssignmentSymbolStep::Field(key));
             } else {

@@ -12,7 +12,7 @@ mod pathing;
 mod sequence;
 mod text;
 
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
 use std::collections::BTreeMap;
 
@@ -185,7 +185,19 @@ const CSV_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("write", "csv.write", Some(&[1])),
 ];
 
-pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
+const GLOBAL_BUILTIN_MODULES: &[&[ModuleItemSpec]] = &[
+    TEXT_MODULE_ITEMS,
+    NUMBERS_MODULE_ITEMS,
+    CONVERSION_MODULE_ITEMS,
+    COLLECTIONS_MODULE_ITEMS,
+    FORMAT_MODULE_ITEMS,
+    REGEX_MODULE_ITEMS,
+    IO_MODULE_ITEMS,
+    SYSTEM_MODULE_ITEMS,
+    DATETIME_MODULE_ITEMS,
+];
+
+pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
     let result = match name {
         "upper" => text::unary_string(args, name, |s| s.to_uppercase())?,
         "lower" => text::unary_string(args, name, |s| s.to_lowercase())?,
@@ -254,7 +266,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
                 Value::List(values) => values.contains(&args[1]),
                 Value::Map(values) => values.contains_key(&args[1].to_string()),
                 other => {
-                    return Err(DobraError::runtime(format!(
+                    return Err(NodiaError::runtime(format!(
                         "contains() does not accept {}",
                         other.type_name()
                     )));
@@ -277,7 +289,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
         "keys" => {
             expect_arity(&args, 1, "keys")?;
             let Value::Map(values) = &args[0] else {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "keys() expects map, got {}",
                     args[0].type_name()
                 )));
@@ -287,7 +299,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
         "values" => {
             expect_arity(&args, 1, "values")?;
             let Value::Map(values) = &args[0] else {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "values() expects map, got {}",
                     args[0].type_name()
                 )));
@@ -297,7 +309,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
         "entries" => {
             expect_arity(&args, 1, "entries")?;
             let Value::Map(values) = &args[0] else {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "entries() expects map, got {}",
                     args[0].type_name()
                 )));
@@ -322,7 +334,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
                 Value::List(value) => value.len(),
                 Value::Map(value) => value.len(),
                 other => {
-                    return Err(DobraError::runtime(format!(
+                    return Err(NodiaError::runtime(format!(
                         "len() does not accept {}",
                         other.type_name()
                     )));
@@ -432,7 +444,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
             let min = to_float(&args[1])?;
             let max = to_float(&args[2])?;
             if min > max {
-                return Err(DobraError::runtime(
+                return Err(NodiaError::runtime(
                     "clamp() min cannot be greater than max",
                 ));
             }
@@ -475,6 +487,16 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
     Ok(Some(result))
 }
 
+/// Returns the spec for a globally available builtin item.
+pub fn global_builtin_item(name: &str) -> Option<ModuleItemSpec> {
+    for module in GLOBAL_BUILTIN_MODULES {
+        if let Some(item) = module.iter().find(|(field, _, _)| *field == name) {
+            return Some(*item);
+        }
+    }
+    None
+}
+
 /// Returns the exported items for a standard-library module.
 pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
     match name {
@@ -493,11 +515,11 @@ pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
     }
 }
 
-pub(crate) fn expect_arity(args: &[Value], expected: usize, name: &str) -> DobraResult<()> {
+pub(crate) fn expect_arity(args: &[Value], expected: usize, name: &str) -> NodiaResult<()> {
     if args.len() == expected {
         Ok(())
     } else {
-        Err(DobraError::runtime(format!(
+        Err(NodiaError::runtime(format!(
             "{name}() expects {expected} argument(s), got {}",
             args.len()
         )))
@@ -508,9 +530,9 @@ pub(crate) fn expect_list<'a>(
     value: &'a Value,
     name: &str,
     position: &str,
-) -> DobraResult<&'a Vec<Value>> {
+) -> NodiaResult<&'a Vec<Value>> {
     let Value::List(values) = value else {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "{name}() expects list as {position} argument, got {}",
             value.type_name()
         )));
@@ -518,28 +540,28 @@ pub(crate) fn expect_list<'a>(
     Ok(values)
 }
 
-pub(crate) fn to_int(value: &Value) -> DobraResult<i64> {
+pub(crate) fn to_int(value: &Value) -> NodiaResult<i64> {
     match value {
         Value::Int(value) => Ok(*value),
         Value::Float(value) => Ok(*value as i64),
         Value::String(value) => value
             .parse::<i64>()
-            .map_err(|_| DobraError::runtime(format!("cannot convert '{value}' to int"))),
-        other => Err(DobraError::runtime(format!(
+            .map_err(|_| NodiaError::runtime(format!("cannot convert '{value}' to int"))),
+        other => Err(NodiaError::runtime(format!(
             "cannot convert {} to int",
             other.type_name()
         ))),
     }
 }
 
-pub(crate) fn to_float(value: &Value) -> DobraResult<f64> {
+pub(crate) fn to_float(value: &Value) -> NodiaResult<f64> {
     match value {
         Value::Int(value) => Ok(*value as f64),
         Value::Float(value) => Ok(*value),
         Value::String(value) => value
             .parse::<f64>()
-            .map_err(|_| DobraError::runtime(format!("cannot convert '{value}' to float"))),
-        other => Err(DobraError::runtime(format!(
+            .map_err(|_| NodiaError::runtime(format!("cannot convert '{value}' to float"))),
+        other => Err(NodiaError::runtime(format!(
             "cannot convert {} to float",
             other.type_name()
         ))),

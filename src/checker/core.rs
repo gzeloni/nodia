@@ -19,7 +19,7 @@ impl Checker {
         program: &Program,
         base_dir: Option<PathBuf>,
         positions: PositionIndex,
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         let mut state = State::new(self, base_dir, positions);
         state.predeclare_top_level(program)?;
         state.check_statements(&program.statements, ScopeMode::Top)
@@ -29,14 +29,14 @@ impl Checker {
         &mut self,
         path: &str,
         base_dir: Option<&Path>,
-    ) -> DobraResult<ModuleInfo> {
+    ) -> NodiaResult<ModuleInfo> {
         let resolved = resolve_use(path, base_dir)?;
         if let Some(info) = self.modules.get(&resolved) {
             return Ok(info.clone());
         }
 
         let source = fs::read_to_string(&resolved).map_err(|err| {
-            DobraError::io(format!("cannot read use '{}': {err}", resolved.display()))
+            NodiaError::io(format!("cannot read use '{}': {err}", resolved.display()))
         })?;
         let tokens = Lexer::new(&source)
             .tokenize()

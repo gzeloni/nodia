@@ -4,12 +4,12 @@
 //! Collection-oriented standard-library functions.
 
 use super::to_int;
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
 
-pub fn get(args: &[Value]) -> DobraResult<Value> {
+pub fn get(args: &[Value]) -> NodiaResult<Value> {
     if args.len() != 3 {
-        return Err(DobraError::runtime(format!(
+        return Err(NodiaError::runtime(format!(
             "get() expects 3 argument(s), got {}",
             args.len()
         )));
@@ -36,7 +36,7 @@ pub fn get(args: &[Value]) -> DobraResult<Value> {
                 .map(|ch| Value::String(ch.to_string()))
                 .unwrap_or(default))
         }
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "get() expects map, list or string as first argument, got {}",
             other.type_name()
         ))),

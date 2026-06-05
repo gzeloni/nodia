@@ -163,7 +163,7 @@ fn stdlib_source(source: &str) -> String {
     format!("{TEST_STDLIB_PRELUDE}\n{source}")
 }
 
-fn run_source(source: &str, input: BTreeMap<String, Value>) -> DobraResult<String> {
+fn run_source(source: &str, input: BTreeMap<String, Value>) -> NodiaResult<String> {
     crate::run_source(&stdlib_source(source), input)
 }
 
@@ -171,7 +171,7 @@ fn run_source_with_options(
     source: &str,
     input: BTreeMap<String, Value>,
     options: RuntimeOptions,
-) -> DobraResult<String> {
+) -> NodiaResult<String> {
     crate::run_source_with_options(&stdlib_source(source), input, options)
 }
 
@@ -181,6 +181,21 @@ fn emits_interpolated_input() {
     input.insert("name".to_string(), Value::String("Ana".to_string()));
     let output = run_source("val name = input.name\nemit \"Hello, {name}\"", input).unwrap();
     assert_eq!(output, "Hello, Ana");
+}
+
+#[test]
+fn global_builtins_work_without_prelude() {
+    let output = crate::run_source_with_options(
+        "emit upper(\"ana\")\nemit args[0]",
+        BTreeMap::new(),
+        RuntimeOptions {
+            args: vec!["one".to_string()],
+            ..RuntimeOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(output, "ANA\none");
 }
 
 #[test]

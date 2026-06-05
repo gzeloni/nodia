@@ -13,7 +13,7 @@ impl<'a> State<'a> {
         alias: Option<&str>,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         match target {
             UseTarget::Path(path) => {
                 let module = self.checker.load_module(path, self.base_dir.as_deref())?;
@@ -40,7 +40,7 @@ impl<'a> State<'a> {
         module: &ModuleInfo,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<HashMap<String, Symbol>> {
+    ) -> NodiaResult<HashMap<String, Symbol>> {
         self.selected_symbol_map(&module.symbols, pick, hide)
     }
 
@@ -49,7 +49,7 @@ impl<'a> State<'a> {
         name: &str,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<HashMap<String, Symbol>> {
+    ) -> NodiaResult<HashMap<String, Symbol>> {
         let Some(items) = stdlib::module_items(name) else {
             return Err(self.error_name("E4104", format!("unknown stdlib module '{name}'"), name));
         };
@@ -73,7 +73,7 @@ impl<'a> State<'a> {
         symbols: &HashMap<String, Symbol>,
         pick: &[String],
         hide: &[String],
-    ) -> DobraResult<HashMap<String, Symbol>> {
+    ) -> NodiaResult<HashMap<String, Symbol>> {
         let mut selected = HashMap::new();
         if pick.is_empty() {
             for (name, symbol) in symbols {
@@ -99,7 +99,7 @@ impl<'a> State<'a> {
         Ok(selected)
     }
 
-    pub(super) fn declare(&mut self, name: &str, symbol: Symbol) -> DobraResult<()> {
+    pub(super) fn declare(&mut self, name: &str, symbol: Symbol) -> NodiaResult<()> {
         let scope = self.scopes.last_mut().expect("checker always has a scope");
         if scope.contains_key(name) {
             return Err(self.error_name(
@@ -112,7 +112,7 @@ impl<'a> State<'a> {
         Ok(())
     }
 
-    pub(super) fn update_symbol(&mut self, name: &str, symbol: Symbol) -> DobraResult<()> {
+    pub(super) fn update_symbol(&mut self, name: &str, symbol: Symbol) -> NodiaResult<()> {
         for scope in self.scopes.iter_mut().rev() {
             if scope.contains_key(name) {
                 scope.insert(name.to_string(), symbol);
@@ -124,6 +124,14 @@ impl<'a> State<'a> {
 
     pub(super) fn lookup(&self, name: &str) -> Option<&Symbol> {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
+    }
+
+    pub(super) fn builtin_symbol(&self, name: &str) -> Option<Symbol> {
+        let (_, _, arities) = stdlib::global_builtin_item(name)?;
+        Some(match arities {
+            Some(arities) => Symbol::function_arities(arities, false),
+            None => Symbol::unknown(false),
+        })
     }
 
     pub(super) fn field_status(&self, object: &Expr, field: &str) -> FieldStatus {
@@ -142,7 +150,10 @@ impl<'a> State<'a> {
 
     pub(super) fn symbol_from_access(&self, expr: &Expr) -> Option<Symbol> {
         match expr {
-            Expr::Identifier(name) => self.lookup(name).cloned(),
+            Expr::Identifier(name) => self
+                .lookup(name)
+                .cloned()
+                .or_else(|| self.builtin_symbol(name)),
             Expr::Get { object, field } => match self.field_status(object, field) {
                 FieldStatus::Found(symbol) => Some(symbol),
                 FieldStatus::Missing | FieldStatus::Unknown => None,
@@ -177,7 +188,7 @@ impl<'a> State<'a> {
         name: &str,
         got: usize,
         expected: &[usize],
-    ) -> DobraResult<()> {
+    ) -> NodiaResult<()> {
         if expected.contains(&got) {
             return Ok(());
         }
@@ -198,7 +209,7 @@ impl<'a> State<'a> {
         code: &'static str,
         message: impl Into<String>,
         name: &str,
-    ) -> DobraError {
+    ) -> NodiaError {
         semantic(code, message, self.positions.identifier(name))
     }
 
@@ -207,7 +218,7 @@ impl<'a> State<'a> {
         code: &'static str,
         message: impl Into<String>,
         keyword: &'static str,
-    ) -> DobraError {
+    ) -> NodiaError {
         semantic(code, message, self.positions.keyword(keyword))
     }
 

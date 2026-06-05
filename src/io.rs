@@ -3,7 +3,7 @@
 
 //! File and stream helpers used by the runtime I/O built-ins.
 
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::value::StreamId;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -43,11 +43,11 @@ impl IoRegistry {
     }
 
     /// Opens a file stream in `read`, `write`, or `append` mode.
-    pub fn open(&mut self, path: &str, mode: &str, allow_write: bool) -> DobraResult<StreamId> {
+    pub fn open(&mut self, path: &str, mode: &str, allow_write: bool) -> NodiaResult<StreamId> {
         let stream = match mode {
             "read" => FileStream::Reader {
                 reader: BufReader::new(File::open(path).map_err(|err| {
-                    DobraError::io(format!("cannot open '{path}' for read: {err}"))
+                    NodiaError::io(format!("cannot open '{path}' for read: {err}"))
                 })?),
                 eof: false,
                 chunk_buffer: Vec::new(),
@@ -57,7 +57,7 @@ impl IoRegistry {
                 ensure_write_allowed(allow_write)?;
                 FileStream::Writer {
                     writer: BufWriter::new(File::create(path).map_err(|err| {
-                        DobraError::io(format!("cannot open '{path}' for write: {err}"))
+                        NodiaError::io(format!("cannot open '{path}' for write: {err}"))
                     })?),
                 }
             }
@@ -70,13 +70,13 @@ impl IoRegistry {
                             .append(true)
                             .open(path)
                             .map_err(|err| {
-                                DobraError::io(format!("cannot open '{path}' for append: {err}"))
+                                NodiaError::io(format!("cannot open '{path}' for append: {err}"))
                             })?,
                     ),
                 }
             }
             _ => {
-                return Err(DobraError::runtime(format!(
+                return Err(NodiaError::runtime(format!(
                     "open() mode must be 'read', 'write' or 'append', got '{mode}'"
                 )))
             }
@@ -89,68 +89,68 @@ impl IoRegistry {
     }
 
     /// Closes an open stream and flushes buffered writers.
-    pub fn close(&mut self, stream: StreamId) -> DobraResult<()> {
+    pub fn close(&mut self, stream: StreamId) -> NodiaResult<()> {
         let StreamId::File(id) = stream else {
             return Ok(());
         };
         let Some(mut stream) = self.streams.remove(&id) else {
-            return Err(DobraError::runtime(format!("stream {id} is closed")));
+            return Err(NodiaError::runtime(format!("stream {id} is closed")));
         };
         if let FileStream::Writer { writer } = &mut stream {
             writer.flush().map_err(|err| {
-                DobraError::io(format!("cannot flush stream {id} before close: {err}"))
+                NodiaError::io(format!("cannot flush stream {id} before close: {err}"))
             })?;
         }
         Ok(())
     }
 
     /// Flushes a writable stream.
-    pub fn flush(&mut self, stream: StreamId) -> DobraResult<()> {
+    pub fn flush(&mut self, stream: StreamId) -> NodiaResult<()> {
         let id = expect_file_stream(stream, "flush")?;
         let stream = self.stream_mut(id)?;
         match stream {
             FileStream::Writer { writer } => writer
                 .flush()
-                .map_err(|err| DobraError::io(format!("cannot flush stream {id}: {err}"))),
-            FileStream::Reader { .. } => Err(DobraError::runtime(
+                .map_err(|err| NodiaError::io(format!("cannot flush stream {id}: {err}"))),
+            FileStream::Reader { .. } => Err(NodiaError::runtime(
                 "flush() expects writable stream, got readable stream",
             )),
         }
     }
 
     /// Reports whether a readable stream has reached end-of-file.
-    pub fn eof(&mut self, stream: StreamId) -> DobraResult<bool> {
+    pub fn eof(&mut self, stream: StreamId) -> NodiaResult<bool> {
         let id = expect_file_stream(stream, "eof")?;
         let stream = self.stream_mut(id)?;
         match stream {
             FileStream::Reader { eof, .. } => Ok(*eof),
-            FileStream::Writer { .. } => Err(DobraError::runtime(
+            FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "eof() expects readable stream, got writable stream",
             )),
         }
     }
 
     /// Reads the remainder of a readable stream as UTF-8 text.
-    pub fn read_all(&mut self, stream: StreamId) -> DobraResult<String> {
+    pub fn read_all(&mut self, stream: StreamId) -> NodiaResult<String> {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
             FileStream::Reader { reader, eof, .. } => {
                 let mut out = Vec::with_capacity(remaining_file_hint(reader));
                 reader.read_to_end(&mut out).map_err(|err| {
-                    DobraError::io(format!("cannot read from stream {id}: {err}"))
+                    NodiaError::io(format!("cannot read from stream {id}: {err}"))
                 })?;
                 *eof = true;
                 into_utf8_string(out, &format!("cannot read from stream {id}"))
             }
-            FileStream::Writer { .. } => Err(DobraError::runtime(
+            FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "read() expects readable stream, got writable stream",
             )),
         }
     }
 
     /// Reads up to `size` bytes from a readable stream.
-    pub fn read_chunk(&mut self, stream: StreamId, size: usize) -> DobraResult<String> {
+    pub fn read_chunk(&mut self, stream: StreamId, size: usize) -> NodiaResult<String> {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
@@ -163,7 +163,7 @@ impl IoRegistry {
                 chunk_buffer.clear();
                 chunk_buffer.resize(size, 0);
                 let read = reader.read(chunk_buffer).map_err(|err| {
-                    DobraError::io(format!("cannot read from stream {id}: {err}"))
+                    NodiaError::io(format!("cannot read from stream {id}: {err}"))
                 })?;
                 if read == 0 {
                     *eof = true;
@@ -178,14 +178,14 @@ impl IoRegistry {
                     Err(err) => Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned()),
                 }
             }
-            FileStream::Writer { .. } => Err(DobraError::runtime(
+            FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "read() expects readable stream, got writable stream",
             )),
         }
     }
 
     /// Reads a single logical line without the trailing newline sequence.
-    pub fn read_line(&mut self, stream: StreamId) -> DobraResult<Option<String>> {
+    pub fn read_line(&mut self, stream: StreamId) -> NodiaResult<Option<String>> {
         let id = expect_file_stream(stream, "readln")?;
         let stream = self.stream_mut(id)?;
         match stream {
@@ -197,7 +197,7 @@ impl IoRegistry {
             } => {
                 line_buffer.clear();
                 let read = reader.read_line(line_buffer).map_err(|err| {
-                    DobraError::io(format!("cannot read line from stream {id}: {err}"))
+                    NodiaError::io(format!("cannot read line from stream {id}: {err}"))
                 })?;
                 if read == 0 {
                     *eof = true;
@@ -213,86 +213,86 @@ impl IoRegistry {
                 std::mem::swap(line_buffer, &mut line);
                 Ok(Some(line))
             }
-            FileStream::Writer { .. } => Err(DobraError::runtime(
+            FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "readln() expects readable stream, got writable stream",
             )),
         }
     }
 
     /// Writes text to a writable stream without appending a newline.
-    pub fn write(&mut self, stream: StreamId, text: &str) -> DobraResult<()> {
+    pub fn write(&mut self, stream: StreamId, text: &str) -> NodiaResult<()> {
         let id = expect_file_stream(stream, "write")?;
         let stream = self.stream_mut(id)?;
         match stream {
             FileStream::Writer { writer } => writer
                 .write_all(text.as_bytes())
-                .map_err(|err| DobraError::io(format!("cannot write to stream {id}: {err}"))),
-            FileStream::Reader { .. } => Err(DobraError::runtime(
+                .map_err(|err| NodiaError::io(format!("cannot write to stream {id}: {err}"))),
+            FileStream::Reader { .. } => Err(NodiaError::runtime(
                 "write() expects writable stream, got readable stream",
             )),
         }
     }
 
     /// Flushes every tracked writable stream.
-    pub fn flush_all(&mut self) -> DobraResult<()> {
+    pub fn flush_all(&mut self) -> NodiaResult<()> {
         for (id, stream) in &mut self.streams {
             if let FileStream::Writer { writer } = stream {
                 writer
                     .flush()
-                    .map_err(|err| DobraError::io(format!("cannot flush stream {id}: {err}")))?;
+                    .map_err(|err| NodiaError::io(format!("cannot flush stream {id}: {err}")))?;
             }
         }
         Ok(())
     }
 
-    fn stream_mut(&mut self, id: usize) -> DobraResult<&mut FileStream> {
+    fn stream_mut(&mut self, id: usize) -> NodiaResult<&mut FileStream> {
         self.streams
             .get_mut(&id)
-            .ok_or_else(|| DobraError::runtime(format!("stream {id} is closed")))
+            .ok_or_else(|| NodiaError::runtime(format!("stream {id} is closed")))
     }
 }
 
 /// Reads an entire file path into memory.
-pub fn read_path(path: &str) -> DobraResult<String> {
+pub fn read_path(path: &str) -> NodiaResult<String> {
     let mut file =
-        File::open(path).map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))?;
+        File::open(path).map_err(|err| NodiaError::io(format!("cannot read '{path}': {err}")))?;
     let mut bytes = Vec::with_capacity(file_size_hint(&file));
     file.read_to_end(&mut bytes)
-        .map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))?;
+        .map_err(|err| NodiaError::io(format!("cannot read '{path}': {err}")))?;
     into_utf8_string(bytes, &format!("cannot read '{path}'"))
 }
 
 /// Writes a full string to a file path, replacing existing content.
-pub fn write_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()> {
+pub fn write_path(path: &str, text: &str, allow_write: bool) -> NodiaResult<()> {
     ensure_write_allowed(allow_write)?;
-    fs::write(path, text).map_err(|err| DobraError::io(format!("cannot write '{path}': {err}")))
+    fs::write(path, text).map_err(|err| NodiaError::io(format!("cannot write '{path}': {err}")))
 }
 
 /// Appends a string to a file path.
-pub fn append_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()> {
+pub fn append_path(path: &str, text: &str, allow_write: bool) -> NodiaResult<()> {
     ensure_write_allowed(allow_write)?;
     let mut file = OpenOptions::new()
         .create(true)
         .append(true)
         .open(path)
-        .map_err(|err| DobraError::io(format!("cannot append '{path}': {err}")))?;
+        .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))?;
     file.write_all(text.as_bytes())
-        .map_err(|err| DobraError::io(format!("cannot append '{path}': {err}")))
+        .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))
 }
 
 /// Fails when filesystem writes are not enabled in runtime options.
-pub fn ensure_write_allowed(allow_write: bool) -> DobraResult<()> {
+pub fn ensure_write_allowed(allow_write: bool) -> NodiaResult<()> {
     if allow_write {
         Ok(())
     } else {
-        Err(DobraError::io("file write requires --allow-write").with_code("E3001"))
+        Err(NodiaError::io("file write requires --allow-write").with_code("E3001"))
     }
 }
 
-fn expect_file_stream(stream: StreamId, name: &str) -> DobraResult<usize> {
+fn expect_file_stream(stream: StreamId, name: &str) -> NodiaResult<usize> {
     match stream {
         StreamId::File(id) => Ok(id),
-        StreamId::Stdin | StreamId::Stdout | StreamId::Stderr => Err(DobraError::runtime(format!(
+        StreamId::Stdin | StreamId::Stdout | StreamId::Stderr => Err(NodiaError::runtime(format!(
             "{name}() cannot use {stream} through the file registry"
         ))),
     }
@@ -317,6 +317,6 @@ fn remaining_file_hint(reader: &mut BufReader<File>) -> usize {
         .unwrap_or(0)
 }
 
-fn into_utf8_string(bytes: Vec<u8>, context: &str) -> DobraResult<String> {
-    String::from_utf8(bytes).map_err(|err| DobraError::io(format!("{context}: {err}")))
+fn into_utf8_string(bytes: Vec<u8>, context: &str) -> NodiaResult<String> {
+    String::from_utf8(bytes).map_err(|err| NodiaError::io(format!("{context}: {err}")))
 }

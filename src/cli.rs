@@ -6,7 +6,7 @@
 use nodia::project;
 use nodia::{
     check_file, format_source, lex_source, parse_source, run_file_with_options,
-    run_source_with_options, DobraError, RuntimeOptions, Value,
+    run_source_with_options, NodiaError, RuntimeOptions, Value,
 };
 use std::collections::BTreeMap;
 use std::env;
@@ -76,7 +76,7 @@ impl CliError {
         }
     }
 
-    fn language_runtime(err: DobraError) -> Self {
+    fn language_runtime(err: NodiaError) -> Self {
         Self {
             code: err.exit_status.unwrap_or(EXIT_LANGUAGE),
             message: err.render(),

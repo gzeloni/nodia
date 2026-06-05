@@ -23,7 +23,7 @@ val split = __text.split
 val split_regex = __text.split_regex
 "#;
 
-fn check_stdlib_source(source: &str) -> crate::DobraResult<()> {
+fn check_stdlib_source(source: &str) -> crate::NodiaResult<()> {
     check_source(&format!("{TEST_STDLIB_PRELUDE}\n{source}"))
 }
 
@@ -44,6 +44,17 @@ emit split_regex("ana   bruno", regex { one_or_more whitespace })
 "#;
 
     assert!(check_stdlib_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_global_builtins_without_use() {
+    let source = r#"emit upper("ana")
+emit args
+emit stdout
+exit(0)
+"#;
+
+    assert!(check_source(source).is_ok());
 }
 
 #[test]

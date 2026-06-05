@@ -4,50 +4,50 @@
 //! Filesystem path standard-library functions.
 
 use super::expect_arity;
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
 use std::env;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
-pub fn basename(args: &[Value]) -> DobraResult<Value> {
+pub fn basename(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "basename")?;
     let path = expect_string(&args[0], "basename", "first")?;
     Ok(Value::String(path_basename(&path)))
 }
 
-pub fn dirname(args: &[Value]) -> DobraResult<Value> {
+pub fn dirname(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "dirname")?;
     let path = expect_string(&args[0], "dirname", "first")?;
     Ok(Value::String(path_dirname(&path)))
 }
 
-pub fn exists(args: &[Value]) -> DobraResult<Value> {
+pub fn exists(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "exists")?;
     let path = expect_string(&args[0], "exists", "first")?;
     Ok(Value::Bool(Path::new(&path).exists()))
 }
 
-pub fn is_file(args: &[Value]) -> DobraResult<Value> {
+pub fn is_file(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "is_file")?;
     let path = expect_string(&args[0], "is_file", "first")?;
     Ok(Value::Bool(Path::new(&path).is_file()))
 }
 
-pub fn is_dir(args: &[Value]) -> DobraResult<Value> {
+pub fn is_dir(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "is_dir")?;
     let path = expect_string(&args[0], "is_dir", "first")?;
     Ok(Value::Bool(Path::new(&path).is_dir()))
 }
 
-pub fn list_dir(args: &[Value]) -> DobraResult<Value> {
+pub fn list_dir(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "list_dir")?;
     let path = expect_string(&args[0], "list_dir", "first")?;
     let names = sorted_dir_entry_names(Path::new(&path), "list_dir")?;
     Ok(Value::List(names.into_iter().map(Value::String).collect()))
 }
 
-pub fn glob(args: &[Value]) -> DobraResult<Value> {
+pub fn glob(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "glob")?;
     let pattern = expect_string(&args[0], "glob", "first")?;
     let matches = expand_glob(&pattern)?;
@@ -56,10 +56,10 @@ pub fn glob(args: &[Value]) -> DobraResult<Value> {
     ))
 }
 
-fn expect_string(value: &Value, name: &str, position: &str) -> DobraResult<String> {
+fn expect_string(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
     match value {
         Value::String(value) => Ok(value.clone()),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "{name}() expects string as {position} argument, got {}",
             other.type_name()
         ))),
@@ -113,31 +113,31 @@ fn trim_trailing_separators(path: &str) -> &str {
     &path[..end]
 }
 
-fn sorted_dir_entry_names(path: &Path, name: &str) -> DobraResult<Vec<String>> {
+fn sorted_dir_entry_names(path: &Path, name: &str) -> NodiaResult<Vec<String>> {
     let mut entries = fs::read_dir(path)
-        .map_err(|err| DobraError::io(format!("{name}() cannot read '{}': {err}", path.display())))?
+        .map_err(|err| NodiaError::io(format!("{name}() cannot read '{}': {err}", path.display())))?
         .map(|entry| {
             entry
                 .map(|entry| entry.file_name().to_string_lossy().to_string())
                 .map_err(|err| {
-                    DobraError::io(format!(
+                    NodiaError::io(format!(
                         "{name}() cannot read entry in '{}': {err}",
                         path.display()
                     ))
                 })
         })
-        .collect::<DobraResult<Vec<_>>>()?;
+        .collect::<NodiaResult<Vec<_>>>()?;
     entries.sort();
     Ok(entries)
 }
 
-fn expand_glob(pattern: &str) -> DobraResult<Vec<String>> {
+fn expand_glob(pattern: &str) -> NodiaResult<Vec<String>> {
     let output_absolute = Path::new(pattern).is_absolute();
     let root = if output_absolute {
         absolute_root(pattern)
     } else {
         env::current_dir()
-            .map_err(|err| DobraError::io(format!("glob() cannot read current dir: {err}")))?
+            .map_err(|err| NodiaError::io(format!("glob() cannot read current dir: {err}")))?
     };
     let segments = split_pattern_segments(pattern);
     let mut matches = Vec::new();
@@ -154,7 +154,7 @@ fn glob_walk(
     output_absolute: bool,
     relative_root: &Path,
     matches: &mut Vec<String>,
-) -> DobraResult<()> {
+) -> NodiaResult<()> {
     if index == segments.len() {
         if current.exists() {
             matches.push(render_glob_path(current, output_absolute, relative_root));
@@ -179,7 +179,7 @@ fn glob_walk(
             if entry
                 .file_type()
                 .map_err(|err| {
-                    DobraError::io(format!(
+                    NodiaError::io(format!(
                         "glob() cannot inspect '{}': {err}",
                         entry.path().display()
                     ))
@@ -212,7 +212,7 @@ fn glob_walk(
                     || entry
                         .file_type()
                         .map_err(|err| {
-                            DobraError::io(format!(
+                            NodiaError::io(format!(
                                 "glob() cannot inspect '{}': {err}",
                                 path.display()
                             ))
@@ -247,18 +247,18 @@ fn glob_walk(
     Ok(())
 }
 
-fn sorted_dir_entries(path: &Path, name: &str) -> DobraResult<Vec<fs::DirEntry>> {
+fn sorted_dir_entries(path: &Path, name: &str) -> NodiaResult<Vec<fs::DirEntry>> {
     let mut entries = fs::read_dir(path)
-        .map_err(|err| DobraError::io(format!("{name}() cannot read '{}': {err}", path.display())))?
+        .map_err(|err| NodiaError::io(format!("{name}() cannot read '{}': {err}", path.display())))?
         .map(|entry| {
             entry.map_err(|err| {
-                DobraError::io(format!(
+                NodiaError::io(format!(
                     "{name}() cannot read entry in '{}': {err}",
                     path.display()
                 ))
             })
         })
-        .collect::<DobraResult<Vec<_>>>()?;
+        .collect::<NodiaResult<Vec<_>>>()?;
     entries.sort_by_key(|entry| entry.file_name().to_string_lossy().to_string());
     Ok(entries)
 }

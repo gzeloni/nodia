@@ -6,7 +6,7 @@
 use super::validation::validate_flag_delta;
 use super::*;
 
-pub(super) fn render_sequence(items: &[RegexNode]) -> DobraResult<String> {
+pub(super) fn render_sequence(items: &[RegexNode]) -> NodiaResult<String> {
     let mut out = String::new();
     for item in items {
         out.push_str(&render_node(item)?);
@@ -14,7 +14,7 @@ pub(super) fn render_sequence(items: &[RegexNode]) -> DobraResult<String> {
     Ok(out)
 }
 
-pub(super) fn render_node(node: &RegexNode) -> DobraResult<String> {
+pub(super) fn render_node(node: &RegexNode) -> NodiaResult<String> {
     match node {
         RegexNode::Sequence(items) => render_sequence(items),
         RegexNode::Literal(value) => Ok(escape_regex_literal(value)),
@@ -74,7 +74,7 @@ pub(super) fn render_node(node: &RegexNode) -> DobraResult<String> {
     }
 }
 
-pub(super) fn render_char_set(set: &RegexCharSet) -> DobraResult<String> {
+pub(super) fn render_char_set(set: &RegexCharSet) -> NodiaResult<String> {
     let mut out = String::from("[");
     if set.negated {
         out.push('^');
@@ -86,7 +86,7 @@ pub(super) fn render_char_set(set: &RegexCharSet) -> DobraResult<String> {
     Ok(out)
 }
 
-pub(super) fn render_char_set_item(item: &RegexCharSetItem) -> DobraResult<String> {
+pub(super) fn render_char_set_item(item: &RegexCharSetItem) -> NodiaResult<String> {
     match item {
         RegexCharSetItem::Char(ch) => Ok(escape_char_set_char(*ch)),
         RegexCharSetItem::Range(start, end) => Ok(format!(
@@ -99,7 +99,7 @@ pub(super) fn render_char_set_item(item: &RegexCharSetItem) -> DobraResult<Strin
     }
 }
 
-pub(super) fn render_repeat_target(target: &RegexNode) -> DobraResult<String> {
+pub(super) fn render_repeat_target(target: &RegexNode) -> NodiaResult<String> {
     let rendered = render_node(target)?;
     if repeat_target_is_atomic(target) {
         Ok(rendered)
@@ -137,7 +137,7 @@ pub(super) fn render_global_flags(flags: &[RegexFlag]) -> String {
 pub(super) fn render_scoped_flag_prefix(
     enable: &[RegexFlag],
     disable: &[RegexFlag],
-) -> DobraResult<String> {
+) -> NodiaResult<String> {
     validate_flag_delta(enable, disable)?;
 
     let mut out = String::from("(?");

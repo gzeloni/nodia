@@ -58,7 +58,7 @@ impl Runtime {
     }
 
     /// Executes a parsed program and returns emitted output without the trailing newline.
-    pub fn run(&mut self, program: &Program) -> DobraResult<String> {
+    pub fn run(&mut self, program: &Program) -> NodiaResult<String> {
         for statement in &program.statements {
             let flow = match self.execute(statement) {
                 Ok(flow) => flow,
@@ -70,16 +70,16 @@ impl Runtime {
             };
             match flow {
                 Flow::None => self.publish_statement(statement)?,
-                Flow::Return(_) => return Err(DobraError::runtime("return outside function")),
-                Flow::Break => return Err(DobraError::runtime("break outside loop")),
-                Flow::Continue => return Err(DobraError::runtime("continue outside loop")),
+                Flow::Return(_) => return Err(NodiaError::runtime("return outside function")),
+                Flow::Break => return Err(NodiaError::runtime("break outside loop")),
+                Flow::Continue => return Err(NodiaError::runtime("continue outside loop")),
             }
         }
         self.io.borrow_mut().flush_all()?;
         Ok(self.output.trim_end_matches('\n').to_string())
     }
 
-    pub(super) fn execute_block(&mut self, statements: &[Stmt]) -> DobraResult<Flow> {
+    pub(super) fn execute_block(&mut self, statements: &[Stmt]) -> NodiaResult<Flow> {
         self.scopes.push(HashMap::new());
         for statement in statements {
             let flow = self.execute(statement)?;
@@ -92,7 +92,7 @@ impl Runtime {
         Ok(Flow::None)
     }
 
-    pub(super) fn execute(&mut self, statement: &Stmt) -> DobraResult<Flow> {
+    pub(super) fn execute(&mut self, statement: &Stmt) -> NodiaResult<Flow> {
         match statement {
             Stmt::Comment(_) => Ok(Flow::None),
             Stmt::Use {
@@ -170,7 +170,7 @@ impl Runtime {
                 while self.eval(condition)?.truthy() {
                     iterations += 1;
                     if iterations > 100_000 {
-                        return Err(DobraError::runtime("while loop exceeded 100000 iterations"));
+                        return Err(NodiaError::runtime("while loop exceeded 100000 iterations"));
                     }
                     match self.execute_block(body)? {
                         Flow::None | Flow::Continue => {}

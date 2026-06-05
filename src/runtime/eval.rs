@@ -6,7 +6,7 @@
 use super::*;
 
 impl Runtime {
-    pub(super) fn eval(&mut self, expr: &Expr) -> DobraResult<Value> {
+    pub(super) fn eval(&mut self, expr: &Expr) -> NodiaResult<Value> {
         match expr {
             Expr::String { value, interpolate } => {
                 if *interpolate {
@@ -21,7 +21,8 @@ impl Runtime {
             Expr::Identifier(name) => {
                 let value = self
                     .get(name)
-                    .ok_or_else(|| DobraError::runtime(format!("undefined variable '{name}'")))?;
+                    .or_else(|| self.builtin_value(name))
+                    .ok_or_else(|| NodiaError::runtime(format!("undefined variable '{name}'")))?;
                 self.resolve_value(value)
             }
             Expr::Unary { op, expr } => {
@@ -30,7 +31,7 @@ impl Runtime {
                     UnaryOp::Negate => match value {
                         Value::Int(value) => Ok(Value::Int(-value)),
                         Value::Float(value) => Ok(Value::Float(-value)),
-                        other => Err(DobraError::runtime(format!(
+                        other => Err(NodiaError::runtime(format!(
                             "cannot negate {}",
                             other.type_name()
                         ))),
@@ -45,11 +46,11 @@ impl Runtime {
                 match object {
                     Value::Map(map) => {
                         let value = map.get(field).cloned().ok_or_else(|| {
-                            DobraError::runtime(format!("field '{field}' not found"))
+                            NodiaError::runtime(format!("field '{field}' not found"))
                         })?;
                         self.resolve_value(value)
                     }
-                    other => Err(DobraError::runtime(format!(
+                    other => Err(NodiaError::runtime(format!(
                         "cannot access field on {}",
                         other.type_name()
                     ))),
@@ -63,7 +64,7 @@ impl Runtime {
             Expr::List(values) => values
                 .iter()
                 .map(|expr| self.eval(expr))
-                .collect::<DobraResult<Vec<_>>>()
+                .collect::<NodiaResult<Vec<_>>>()
                 .map(Value::List),
             Expr::Map(pairs) => {
                 let mut map = BTreeMap::new();
@@ -75,11 +76,11 @@ impl Runtime {
         }
     }
 
-    pub(super) fn resolve_value(&self, value: Value) -> DobraResult<Value> {
+    pub(super) fn resolve_value(&self, value: Value) -> NodiaResult<Value> {
         match value {
             Value::UseBinding(module, name) => {
                 module.borrow().exports.get(&name).cloned().ok_or_else(|| {
-                    DobraError::runtime(format!("used binding '{name}' is not initialized yet"))
+                    NodiaError::runtime(format!("used binding '{name}' is not initialized yet"))
                 })
             }
             other => Ok(other),
@@ -91,7 +92,7 @@ impl Runtime {
         left: &Expr,
         op: BinaryOp,
         right: &Expr,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         if op == BinaryOp::And {
             let left = self.eval(left)?;
             return if left.truthy() {
@@ -127,14 +128,14 @@ impl Runtime {
         }
     }
 
-    pub(super) fn call(&mut self, callee: &Expr, args: &[Expr]) -> DobraResult<Value> {
+    pub(super) fn call(&mut self, callee: &Expr, args: &[Expr]) -> NodiaResult<Value> {
         let arg_values = args
             .iter()
             .map(|arg| self.eval(arg))
-            .collect::<DobraResult<Vec<_>>>()?;
+            .collect::<NodiaResult<Vec<_>>>()?;
 
         if let Expr::Identifier(name) = callee {
-            if let Some(value) = self.get(name) {
+            if let Some(value) = self.get(name).or_else(|| self.builtin_value(name)) {
                 return self.call_value(self.resolve_value(value)?, arg_values);
             }
         }
@@ -147,13 +148,13 @@ impl Runtime {
         &mut self,
         callee: Value,
         arg_values: Vec<Value>,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         match callee {
             Value::BuiltinFunction(name) => self
                 .call_builtin_name(&name, &arg_values)?
-                .ok_or_else(|| DobraError::runtime(format!("builtin '{name}' is not callable"))),
+                .ok_or_else(|| NodiaError::runtime(format!("builtin '{name}' is not callable"))),
             Value::Function(function) => self.invoke_function(&function, arg_values),
-            other => Err(DobraError::runtime(format!(
+            other => Err(NodiaError::runtime(format!(
                 "{} is not callable",
                 other.type_name()
             ))),
@@ -164,7 +165,7 @@ impl Runtime {
         &mut self,
         name: &str,
         args: &[Value],
-    ) -> DobraResult<Option<Value>> {
+    ) -> NodiaResult<Option<Value>> {
         if let Some(result) = self.call_io_builtin(name, args)? {
             return Ok(Some(result));
         }
@@ -178,12 +179,12 @@ impl Runtime {
         &mut self,
         function: &Function,
         arg_values: Vec<Value>,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         let arg_count = arg_values.len();
         self.invoke_function_args(function, arg_count, arg_values)
     }
 
-    pub(super) fn invoke_callable1(&mut self, callee: Value, value: Value) -> DobraResult<Value> {
+    pub(super) fn invoke_callable1(&mut self, callee: Value, value: Value) -> NodiaResult<Value> {
         self.call_value(callee, vec![value])
     }
 
@@ -192,7 +193,7 @@ impl Runtime {
         callee: Value,
         left: Value,
         right: Value,
-    ) -> DobraResult<Value> {
+    ) -> NodiaResult<Value> {
         self.call_value(callee, vec![left, right])
     }
 
@@ -201,12 +202,12 @@ impl Runtime {
         function: &Function,
         arg_count: usize,
         arg_values: I,
-    ) -> DobraResult<Value>
+    ) -> NodiaResult<Value>
     where
         I: IntoIterator<Item = Value>,
     {
         if function.params.len() != arg_count {
-            return Err(DobraError::runtime(format!(
+            return Err(NodiaError::runtime(format!(
                 "function expects {} argument(s), got {}",
                 function.params.len(),
                 arg_count
@@ -228,8 +229,8 @@ impl Runtime {
         match flow {
             Flow::Return(value) => Ok(value),
             Flow::None => Ok(Value::Null),
-            Flow::Break => Err(DobraError::runtime("break inside function without loop")),
-            Flow::Continue => Err(DobraError::runtime("continue inside function without loop")),
+            Flow::Break => Err(NodiaError::runtime("break inside function without loop")),
+            Flow::Continue => Err(NodiaError::runtime("continue inside function without loop")),
         }
     }
 }

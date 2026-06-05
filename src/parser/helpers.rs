@@ -21,18 +21,18 @@ impl Parser {
         }
     }
 
-    pub(super) fn expect_identifier(&mut self, message: &str) -> DobraResult<String> {
+    pub(super) fn expect_identifier(&mut self, message: &str) -> NodiaResult<String> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Identifier(name) => Ok(name),
-            _ => Err(DobraError::new(message, token.line, token.column)),
+            _ => Err(NodiaError::new(message, token.line, token.column)),
         }
     }
 
-    pub(super) fn expect_name_like(&mut self, message: &str) -> DobraResult<String> {
+    pub(super) fn expect_name_like(&mut self, message: &str) -> NodiaResult<String> {
         let token = self.advance().clone();
         self.name_like_from_kind(&token.kind)
-            .ok_or_else(|| DobraError::new(message, token.line, token.column))
+            .ok_or_else(|| NodiaError::new(message, token.line, token.column))
     }
 
     pub(super) fn name_like_from_kind(&self, kind: &TokenKind) -> Option<String> {
@@ -83,11 +83,11 @@ impl Parser {
         }
     }
 
-    pub(super) fn expect_equal(&mut self) -> DobraResult<()> {
+    pub(super) fn expect_equal(&mut self) -> NodiaResult<()> {
         self.expect(TokenKind::Equal, "expected '='")
     }
 
-    pub(super) fn expect(&mut self, kind: TokenKind, message: &str) -> DobraResult<()> {
+    pub(super) fn expect(&mut self, kind: TokenKind, message: &str) -> NodiaResult<()> {
         if self.check(&kind) {
             self.advance();
             Ok(())
@@ -164,11 +164,11 @@ impl Parser {
         &self.tokens[self.pos - 1]
     }
 
-    pub(super) fn error_here(&self, message: &str) -> DobraError {
-        DobraError::new(message, self.peek().line, self.peek().column)
+    pub(super) fn error_here(&self, message: &str) -> NodiaError {
+        NodiaError::new(message, self.peek().line, self.peek().column)
     }
 
-    pub(super) fn parameter_list(&mut self, start_message: &str) -> DobraResult<Vec<String>> {
+    pub(super) fn parameter_list(&mut self, start_message: &str) -> NodiaResult<Vec<String>> {
         self.expect(TokenKind::LeftParen, start_message)?;
         self.skip_separators();
         let mut params = Vec::new();
@@ -189,14 +189,14 @@ impl Parser {
         Ok(params)
     }
 
-    pub(super) fn lambda_expression(&mut self) -> DobraResult<Expr> {
+    pub(super) fn lambda_expression(&mut self) -> NodiaResult<Expr> {
         let params = self.parameter_list("expected '(' after lambda")?;
         self.skip_newlines();
         let body = self.lambda_body()?;
         Ok(Expr::Lambda { params, body })
     }
 
-    pub(super) fn lambda_body(&mut self) -> DobraResult<Vec<Stmt>> {
+    pub(super) fn lambda_body(&mut self) -> NodiaResult<Vec<Stmt>> {
         let mut body = self.block()?;
         if let Some(last) = body.last_mut() {
             if let Stmt::Expr(expr) = last.clone() {

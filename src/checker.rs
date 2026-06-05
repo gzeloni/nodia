@@ -4,7 +4,7 @@
 //! Semantic validation for parsed Nodia programs.
 
 use crate::ast::{AssignTarget, Expr, ForBinding, Program, Stmt, UseTarget};
-use crate::error::{DobraError, DobraResult};
+use crate::error::{NodiaError, NodiaResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::regex;
@@ -48,7 +48,7 @@ struct PositionIndex {
 type Scope = HashMap<String, Symbol>;
 
 /// Validates a parsed program without file-system context.
-pub fn check_program(program: &Program) -> DobraResult<()> {
+pub fn check_program(program: &Program) -> NodiaResult<()> {
     Checker::new().check_program(program, None, PositionIndex::default())
 }
 
@@ -57,12 +57,12 @@ pub fn check_program_with_tokens(
     program: &Program,
     tokens: &[Token],
     base_dir: Option<PathBuf>,
-) -> DobraResult<()> {
+) -> NodiaResult<()> {
     Checker::new().check_program(program, base_dir, PositionIndex::from_tokens(tokens))
 }
 
 /// Validates a parsed program relative to a file-system path.
-pub fn check_program_at_path(program: &Program, path: &Path) -> DobraResult<()> {
+pub fn check_program_at_path(program: &Program, path: &Path) -> NodiaResult<()> {
     Checker::new().check_program(
         program,
         path.parent().map(Path::to_path_buf),
@@ -71,9 +71,9 @@ pub fn check_program_at_path(program: &Program, path: &Path) -> DobraResult<()> 
 }
 
 /// Reads, parses, and validates a source file.
-pub fn check_file(path: &Path) -> DobraResult<()> {
+pub fn check_file(path: &Path) -> NodiaResult<()> {
     let source = fs::read_to_string(path)
-        .map_err(|err| DobraError::io(format!("cannot read '{}': {err}", path.display())))?;
+        .map_err(|err| NodiaError::io(format!("cannot read '{}': {err}", path.display())))?;
     let tokens = Lexer::new(&source)
         .tokenize()
         .map_err(|err| err.with_file(path.display().to_string()))?;

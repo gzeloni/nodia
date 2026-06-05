@@ -9,7 +9,7 @@ use super::*;
 pub(super) fn validate_sequence(
     items: &[RegexNode],
     named_groups: &mut HashSet<String>,
-) -> DobraResult<()> {
+) -> NodiaResult<()> {
     for item in items {
         validate_node(item, named_groups)?;
     }
@@ -19,7 +19,7 @@ pub(super) fn validate_sequence(
 pub(super) fn validate_node(
     node: &RegexNode,
     named_groups: &mut HashSet<String>,
-) -> DobraResult<()> {
+) -> NodiaResult<()> {
     match node {
         RegexNode::Sequence(items) => {
             if items.is_empty() {
@@ -75,14 +75,14 @@ pub(super) fn validate_node(
 pub(super) fn validate_target_sequence(
     items: &[RegexNode],
     target: RegexTarget,
-) -> DobraResult<()> {
+) -> NodiaResult<()> {
     for item in items {
         validate_target_node(item, target)?;
     }
     Ok(())
 }
 
-pub(super) fn validate_target_node(node: &RegexNode, target: RegexTarget) -> DobraResult<()> {
+pub(super) fn validate_target_node(node: &RegexNode, target: RegexTarget) -> NodiaResult<()> {
     match node {
         RegexNode::Group {
             kind: RegexGroupKind::Atomic,
@@ -147,7 +147,7 @@ pub(super) fn validate_target_node(node: &RegexNode, target: RegexTarget) -> Dob
     }
 }
 
-pub(super) fn validate_flags(flags: &[RegexFlag], context: &str) -> DobraResult<()> {
+pub(super) fn validate_flags(flags: &[RegexFlag], context: &str) -> NodiaResult<()> {
     let mut seen = HashSet::new();
     for flag in flags {
         if !seen.insert(*flag) {
@@ -160,7 +160,7 @@ pub(super) fn validate_flags(flags: &[RegexFlag], context: &str) -> DobraResult<
     Ok(())
 }
 
-pub(super) fn validate_flag_delta(enable: &[RegexFlag], disable: &[RegexFlag]) -> DobraResult<()> {
+pub(super) fn validate_flag_delta(enable: &[RegexFlag], disable: &[RegexFlag]) -> NodiaResult<()> {
     validate_flags(enable, "with_flags")?;
     validate_flags(disable, "without_flags")?;
     if enable.is_empty() && disable.is_empty() {
@@ -179,7 +179,7 @@ pub(super) fn validate_flag_delta(enable: &[RegexFlag], disable: &[RegexFlag]) -
     Ok(())
 }
 
-pub(super) fn validate_reference(reference: &RegexReference) -> DobraResult<()> {
+pub(super) fn validate_reference(reference: &RegexReference) -> NodiaResult<()> {
     if matches!(reference, RegexReference::Group(0)) {
         Err(regex_error("same_as_group expects an index starting at 1"))
     } else {
@@ -187,7 +187,7 @@ pub(super) fn validate_reference(reference: &RegexReference) -> DobraResult<()> 
     }
 }
 
-pub(super) fn validate_quantifier(kind: RegexQuantifierKind) -> DobraResult<()> {
+pub(super) fn validate_quantifier(kind: RegexQuantifierKind) -> NodiaResult<()> {
     if let RegexQuantifierKind::Between(min, max) = kind {
         if min > max {
             return Err(regex_error(
@@ -198,7 +198,7 @@ pub(super) fn validate_quantifier(kind: RegexQuantifierKind) -> DobraResult<()> 
     Ok(())
 }
 
-pub(super) fn validate_repeat_target(target: &RegexNode) -> DobraResult<()> {
+pub(super) fn validate_repeat_target(target: &RegexNode) -> NodiaResult<()> {
     match target {
         RegexNode::Anchor(anchor) => Err(regex_error(format!(
             "'{}' cannot be quantified",
@@ -215,7 +215,7 @@ pub(super) fn validate_repeat_target(target: &RegexNode) -> DobraResult<()> {
     }
 }
 
-pub(super) fn validate_char_set(set: &RegexCharSet) -> DobraResult<()> {
+pub(super) fn validate_char_set(set: &RegexCharSet) -> NodiaResult<()> {
     if set.items.is_empty() {
         return Err(regex_error("char_set requires at least one item"));
     }

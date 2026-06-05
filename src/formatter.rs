@@ -280,7 +280,7 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -
     let rendered = match expr {
         Expr::Literal(value) => format_literal(value, indent, width),
         Expr::String { value, interpolate } => {
-            format_source_string_literal(value, *interpolate, indent, width)
+            format_string_literal(value, *interpolate, indent, width)
         }
         Expr::Lambda { params, body } => format_lambda(params, body, indent),
         Expr::Regex(pattern) => format_regex(pattern, indent),
@@ -367,7 +367,7 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 value.to_string()
             }
         }
-        Value::String(value) => format_source_string_literal(value, false, indent, width),
+        Value::String(value) => format_string_literal(value, false, indent, width),
         Value::List(values) => {
             let exprs = values
                 .iter()
@@ -686,7 +686,7 @@ fn format_regex_flag_list(flags: &[RegexFlag]) -> String {
         .join(", ")
 }
 
-fn format_source_string_literal(
+fn format_string_literal(
     value: &str,
     interpolate: bool,
     indent: usize,

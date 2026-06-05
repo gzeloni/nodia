@@ -6,11 +6,11 @@
 use super::*;
 
 impl Parser {
-    pub(super) fn expression(&mut self) -> DobraResult<Expr> {
+    pub(super) fn expression(&mut self) -> NodiaResult<Expr> {
         self.or()
     }
 
-    pub(super) fn or(&mut self) -> DobraResult<Expr> {
+    pub(super) fn or(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.and()?;
         while self.match_kind(&TokenKind::Or) {
             self.skip_separators();
@@ -24,7 +24,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn and(&mut self) -> DobraResult<Expr> {
+    pub(super) fn and(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.equality()?;
         while self.match_kind(&TokenKind::And) {
             self.skip_separators();
@@ -38,7 +38,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn equality(&mut self) -> DobraResult<Expr> {
+    pub(super) fn equality(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.comparison()?;
         loop {
             let op = if self.match_kind(&TokenKind::EqualEqual) {
@@ -60,7 +60,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn comparison(&mut self) -> DobraResult<Expr> {
+    pub(super) fn comparison(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.term()?;
         loop {
             let op = if self.match_kind(&TokenKind::Less) {
@@ -86,7 +86,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn term(&mut self) -> DobraResult<Expr> {
+    pub(super) fn term(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.factor()?;
         loop {
             let op = if self.match_kind(&TokenKind::Plus) {
@@ -108,7 +108,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn factor(&mut self) -> DobraResult<Expr> {
+    pub(super) fn factor(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.unary()?;
         loop {
             let op = if self.match_kind(&TokenKind::Star) {
@@ -132,7 +132,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn unary(&mut self) -> DobraResult<Expr> {
+    pub(super) fn unary(&mut self) -> NodiaResult<Expr> {
         if self.match_kind(&TokenKind::Minus) {
             self.skip_separators();
             return Ok(Expr::Unary {
@@ -150,7 +150,7 @@ impl Parser {
         self.call()
     }
 
-    pub(super) fn call(&mut self) -> DobraResult<Expr> {
+    pub(super) fn call(&mut self) -> NodiaResult<Expr> {
         let mut expr = self.primary()?;
         loop {
             if self.match_kind(&TokenKind::LeftParen) {
@@ -196,7 +196,7 @@ impl Parser {
         Ok(expr)
     }
 
-    pub(super) fn primary(&mut self) -> DobraResult<Expr> {
+    pub(super) fn primary(&mut self) -> NodiaResult<Expr> {
         let token = self.advance().clone();
         match token.kind {
             TokenKind::Null => Ok(Expr::Literal(Value::Null)),
@@ -224,7 +224,7 @@ impl Parser {
             }
             TokenKind::LeftBracket => self.list_literal(),
             TokenKind::LeftBrace => self.map_literal(),
-            _ => Err(DobraError::new(
+            _ => Err(NodiaError::new(
                 "expected expression",
                 token.line,
                 token.column,
@@ -232,7 +232,7 @@ impl Parser {
         }
     }
 
-    pub(super) fn list_literal(&mut self) -> DobraResult<Expr> {
+    pub(super) fn list_literal(&mut self) -> NodiaResult<Expr> {
         let mut values = Vec::new();
         self.skip_separators();
         if !self.check(&TokenKind::RightBracket) {
@@ -252,7 +252,7 @@ impl Parser {
         Ok(Expr::List(values))
     }
 
-    pub(super) fn map_literal(&mut self) -> DobraResult<Expr> {
+    pub(super) fn map_literal(&mut self) -> NodiaResult<Expr> {
         let mut pairs = Vec::new();
         self.skip_separators();
         if !self.check(&TokenKind::RightBrace) {
@@ -260,7 +260,7 @@ impl Parser {
                 let key = match self.advance().kind.clone() {
                     TokenKind::String(name) | TokenKind::RawString(name) => name,
                     kind => self.name_like_from_kind(&kind).ok_or_else(|| {
-                        DobraError::new(
+                        NodiaError::new(
                             format!("expected map key, got {kind:?}"),
                             self.previous().line,
                             self.previous().column,

@@ -6,7 +6,7 @@
 use super::*;
 use std::cmp::Ordering;
 
-pub(super) fn slice(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn slice(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 3, "slice")?;
     let start = to_int(&args[1])?;
     let end = to_int(&args[2])?;
@@ -20,14 +20,14 @@ pub(super) fn slice(args: &[Value]) -> DobraResult<Value> {
             let (start, end) = normalize_bounds(chars.len(), start, end);
             Ok(Value::String(chars[start..end].iter().collect()))
         }
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "slice() expects list or string, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub(super) fn reverse(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn reverse(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "reverse")?;
     match &args[0] {
         Value::List(values) => {
@@ -36,21 +36,21 @@ pub(super) fn reverse(args: &[Value]) -> DobraResult<Value> {
             Ok(Value::List(values))
         }
         Value::String(value) => Ok(Value::String(value.chars().rev().collect())),
-        other => Err(DobraError::runtime(format!(
+        other => Err(NodiaError::runtime(format!(
             "reverse() expects list or string, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub(super) fn sort(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn sort(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "sort")?;
     let mut values = expect_list(&args[0], "sort", "first")?.clone();
     values.sort_by(compare_values);
     Ok(Value::List(values))
 }
 
-pub(super) fn unique(args: &[Value]) -> DobraResult<Value> {
+pub(super) fn unique(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 1, "unique")?;
     let values = expect_list(&args[0], "unique", "first")?;
     let mut out = Vec::new();

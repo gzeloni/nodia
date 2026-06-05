@@ -18,10 +18,10 @@ pub(super) fn char_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].chars().count()
 }
 
-pub(super) fn regex_engine_error(err: fancy_regex::Error) -> DobraError {
-    DobraError::runtime(format!("regex engine error: {err}"))
+pub(super) fn regex_engine_error(err: fancy_regex::Error) -> NodiaError {
+    NodiaError::runtime(format!("regex engine error: {err}"))
 }
 
-pub(super) fn regex_error(message: impl Into<String>) -> DobraError {
-    DobraError::semantic(message).with_code("E4200")
+pub(super) fn regex_error(message: impl Into<String>) -> NodiaError {
+    NodiaError::semantic(message).with_code("E4200")
 }
