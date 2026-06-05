@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Runtime bindings for I/O, process, and environment built-ins.
+
 use super::*;
 
 impl Runtime {

@@ -1,3 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Public library API for the Nodia language toolchain.
+//!
+//! The crate exposes the same high-level pipeline used by the CLI:
+//! lex source text, build an AST, validate semantics, format programs,
+//! and execute scripts with runtime input.
+
 pub mod ast;
 pub mod checker;
 pub mod error;
@@ -23,34 +32,41 @@ pub use runtime::RuntimeOptions;
 pub use token::Token;
 pub use value::Value;
 
+/// Tokenizes Nodia source text into a flat stream of lexical tokens.
 pub fn lex_source(source: &str) -> DobraResult<Vec<Token>> {
     lexer::Lexer::new(source).tokenize()
 }
 
+/// Parses Nodia source text into an abstract syntax tree.
 pub fn parse_source(source: &str) -> DobraResult<Program> {
     let tokens = lex_source(source)?;
     parser::Parser::new(tokens).parse_program()
 }
 
+/// Runs semantic validation over Nodia source text without executing it.
 pub fn check_source(source: &str) -> DobraResult<()> {
     let tokens = lex_source(source)?;
     let program = parser::Parser::new(tokens.clone()).parse_program()?;
     checker::check_program_with_tokens(&program, &tokens, None)
 }
 
+/// Reads, parses, and semantically validates a source file.
 pub fn check_file(path: &Path) -> DobraResult<()> {
     checker::check_file(path)
 }
 
+/// Formats Nodia source text into the canonical project style.
 pub fn format_source(source: &str) -> DobraResult<String> {
     let program = parse_source(source)?;
     Ok(formatter::format_program(&program))
 }
 
+/// Executes source text with default runtime options.
 pub fn run_source(source: &str, input: BTreeMap<String, Value>) -> DobraResult<String> {
     run_source_with_options(source, input, RuntimeOptions::default())
 }
 
+/// Executes source text with explicit runtime options.
 pub fn run_source_with_options(
     source: &str,
     input: BTreeMap<String, Value>,
@@ -63,10 +79,12 @@ pub fn run_source_with_options(
     runtime.run(&program)
 }
 
+/// Executes a source file with default runtime options.
 pub fn run_file(path: &Path, input: BTreeMap<String, Value>) -> DobraResult<String> {
     run_file_with_options(path, input, RuntimeOptions::default())
 }
 
+/// Executes a source file with explicit runtime options.
 pub fn run_file_with_options(
     path: &Path,
     input: BTreeMap<String, Value>,

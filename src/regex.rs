@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Regex AST, validation, rendering, and runtime helpers for the native regex DSL.
+
 use crate::error::{DobraError, DobraResult};
 use fancy_regex::{Captures, Regex};
 use std::collections::{BTreeMap, HashSet};
@@ -14,12 +19,16 @@ pub use self::api::{
     compile, compile_text, render, render_for_target, validate, validate_for_target,
 };
 
+/// Full regex literal made of top-level flags and body nodes.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegexPattern {
+    /// Flags enabled for the whole pattern.
     pub flags: Vec<RegexFlag>,
+    /// Top-level regex nodes in evaluation order.
     pub body: Vec<RegexNode>,
 }
 
+/// Regex flags supported by the DSL and renderer.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RegexFlag {
     CaseInsensitive,
@@ -31,6 +40,7 @@ pub enum RegexFlag {
 }
 
 impl RegexFlag {
+    /// Resolves a DSL flag name into its enum representation.
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "case_insensitive" => Self::CaseInsensitive,
@@ -43,6 +53,7 @@ impl RegexFlag {
         })
     }
 
+    /// Returns the stable DSL name for the flag.
     pub fn name(self) -> &'static str {
         match self {
             Self::CaseInsensitive => "case_insensitive",
@@ -66,31 +77,46 @@ impl RegexFlag {
     }
 }
 
+/// Regex AST node used by the parser and renderer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegexNode {
+    /// Nested sequence used to preserve grouping in the AST.
     Sequence(Vec<RegexNode>),
+    /// Literal text that must be escaped for the target regex engine.
     Literal(String),
+    /// Raw regex text inserted as-is.
     Raw(String),
+    /// Zero-width anchor.
     Anchor(RegexAnchor),
+    /// Character class shorthand.
     Class(RegexClass),
+    /// Classic `.` wildcard.
     AnyChar,
+    /// Dot-all wildcard that matches any codepoint.
     AnyCodepoint,
+    /// Quantified target with an explicit greediness mode.
     Quantifier {
         target: Box<RegexNode>,
         kind: RegexQuantifierKind,
         mode: RegexQuantifierMode,
     },
+    /// Capturing, non-capturing, named, or atomic group.
     Group {
         kind: RegexGroupKind,
         body: Vec<RegexNode>,
     },
+    /// Alternation represented as explicit branches.
     Alternation(Vec<Vec<RegexNode>>),
+    /// Explicit character set.
     CharSet(RegexCharSet),
+    /// Lookaround assertion.
     Lookaround {
         kind: RegexLookaroundKind,
         body: Vec<RegexNode>,
     },
+    /// Backreference by index or name.
     Reference(RegexReference),
+    /// Scoped flag delta for a sub-sequence.
     ScopedFlags {
         enable: Vec<RegexFlag>,
         disable: Vec<RegexFlag>,
@@ -98,6 +124,7 @@ pub enum RegexNode {
     },
 }
 
+/// Anchor kinds accepted by the regex DSL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RegexAnchor {
     Start,
@@ -107,6 +134,7 @@ pub enum RegexAnchor {
 }
 
 impl RegexAnchor {
+    /// Resolves a DSL anchor name into its enum representation.
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "start" => Self::Start,
@@ -117,6 +145,7 @@ impl RegexAnchor {
         })
     }
 
+    /// Returns the stable DSL name for the anchor.
     pub fn name(self) -> &'static str {
         match self {
             Self::Start => "start",
@@ -136,6 +165,7 @@ impl RegexAnchor {
     }
 }
 
+/// Character classes supported by the regex DSL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum RegexClass {
     Digit,
@@ -155,6 +185,7 @@ pub enum RegexClass {
 }
 
 impl RegexClass {
+    /// Resolves a DSL class name into its enum representation.
     pub fn from_name(name: &str) -> Option<Self> {
         Some(match name {
             "digit" => Self::Digit,
@@ -175,6 +206,7 @@ impl RegexClass {
         })
     }
 
+    /// Returns the stable DSL name for the class.
     pub fn name(self) -> &'static str {
         match self {
             Self::Digit => "digit",
@@ -233,6 +265,7 @@ impl RegexClass {
     }
 }
 
+/// Quantifier evaluation modes supported by the regex engine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegexQuantifierMode {
     Greedy,
@@ -241,6 +274,7 @@ pub enum RegexQuantifierMode {
 }
 
 impl RegexQuantifierMode {
+    /// Returns the stable DSL name for the quantifier mode.
     pub fn name(self) -> &'static str {
         match self {
             Self::Greedy => "greedy",
@@ -258,6 +292,7 @@ impl RegexQuantifierMode {
     }
 }
 
+/// Quantifier shapes supported by the regex DSL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegexQuantifierKind {
     Optional,
@@ -269,6 +304,7 @@ pub enum RegexQuantifierKind {
 }
 
 impl RegexQuantifierKind {
+    /// Formats the quantifier as it appears in the DSL.
     pub fn format_keyword(self) -> String {
         match self {
             Self::Optional => "optional".to_string(),
@@ -292,6 +328,7 @@ impl RegexQuantifierKind {
     }
 }
 
+/// Group kinds supported by the regex DSL.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegexGroupKind {
     Capture,
@@ -301,6 +338,7 @@ pub enum RegexGroupKind {
 }
 
 impl RegexGroupKind {
+    /// Returns the stable DSL name for the group kind.
     pub fn name(&self) -> &'static str {
         match self {
             Self::Capture => "group",
@@ -311,6 +349,7 @@ impl RegexGroupKind {
     }
 }
 
+/// Lookaround assertion kinds supported by the regex DSL.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegexLookaroundKind {
     FollowedBy,
@@ -320,6 +359,7 @@ pub enum RegexLookaroundKind {
 }
 
 impl RegexLookaroundKind {
+    /// Returns the stable DSL name for the lookaround kind.
     pub fn name(self) -> &'static str {
         match self {
             Self::FollowedBy => "followed_by",
@@ -339,26 +379,38 @@ impl RegexLookaroundKind {
     }
 }
 
+/// Character set literal used by [`RegexNode::CharSet`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct RegexCharSet {
+    /// Whether the set is negated.
     pub negated: bool,
+    /// Items included in the set.
     pub items: Vec<RegexCharSetItem>,
 }
 
+/// Item inside a character set literal.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegexCharSetItem {
+    /// Single character member.
     Char(char),
+    /// Inclusive character range.
     Range(char, char),
+    /// Nested character class shorthand.
     Class(RegexClass),
+    /// Raw target-specific set fragment.
     Raw(String),
 }
 
+/// Backreference target in the regex DSL.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegexReference {
+    /// Named capturing group reference.
     Named(String),
+    /// Numeric capturing group reference.
     Group(usize),
 }
 
+/// Rendering target used for cross-engine validation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RegexTarget {
     Classic,
@@ -370,6 +422,7 @@ pub enum RegexTarget {
 }
 
 impl RegexTarget {
+    /// Returns the stable target name used by diagnostics and docs.
     pub fn name(self) -> &'static str {
         match self {
             Self::Classic => "classic",
@@ -382,18 +435,25 @@ impl RegexTarget {
     }
 }
 
+/// Compiled regex value used by the runtime.
 #[derive(Clone)]
 pub struct RuntimeRegex {
     rendered: String,
     engine: Rc<Regex>,
 }
 
+/// Rich match result returned by runtime regex operations.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RegexMatch {
+    /// Full matched text.
     pub text: String,
+    /// Start offset in Unicode scalar values.
     pub start: usize,
+    /// End offset in Unicode scalar values.
     pub end: usize,
+    /// Indexed capture groups, excluding the whole match.
     pub groups: Vec<Option<String>>,
+    /// Named capture groups.
     pub named: BTreeMap<String, Option<String>>,
 }
 

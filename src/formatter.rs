@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Canonical source formatter for the Nodia AST.
+
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::regex::{
     RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
@@ -8,6 +13,7 @@ use crate::value::Value;
 const INDENT: &str = "  ";
 const LINE_WIDTH: usize = 60;
 
+/// Formats a parsed program using the single canonical style supported by Nodia.
 pub fn format_program(program: &Program) -> String {
     let mut formatter = Formatter::default();
     formatter.write_statements(&program.statements);

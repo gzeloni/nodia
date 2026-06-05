@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Command-line interface for the `nodia` executable.
+
 use nodia::project;
 use nodia::{
     check_file, format_source, lex_source, parse_source, run_file_with_options,

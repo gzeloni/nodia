@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Symbol resolution for local scopes, modules, and standard-library namespaces.
+
 use super::helpers::*;
 use super::*;
 

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Built-in standard-library function registry used by the checker and runtime.
+
 mod collections;
 mod data;
 mod datetime;
@@ -11,6 +16,7 @@ use crate::error::{DobraError, DobraResult};
 use crate::value::Value;
 use std::collections::BTreeMap;
 
+/// Export specification for a standard-library module item.
 pub type ModuleItemSpec = (&'static str, &'static str, Option<&'static [usize]>);
 
 const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -469,6 +475,7 @@ pub fn call(name: &str, args: &[Value]) -> DobraResult<Option<Value>> {
     Ok(Some(result))
 }
 
+/// Returns the exported items for a standard-library module.
 pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
     match name {
         "text" => Some(TEXT_MODULE_ITEMS),

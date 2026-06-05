@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Text and regex-backed standard-library helpers.
+
 use super::*;
 use crate::regex::{self, RegexMatch, RuntimeRegex};
 use std::collections::BTreeMap;

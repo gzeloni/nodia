@@ -1,19 +1,34 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Error types shared by the lexer, parser, checker, runtime, and CLI.
+
 use std::fmt;
 
+/// Result type used throughout the crate.
 pub type DobraResult<T> = Result<T, DobraError>;
 
+/// Primary error type returned by the library and runtime layers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DobraError {
+    /// Stable error code for machine-readable consumers.
     pub code: String,
+    /// Human-readable description of the failure.
     pub message: String,
+    /// One-based line number when the error is tied to source text.
     pub line: usize,
+    /// One-based column number when the error is tied to source text.
     pub column: usize,
+    /// Optional file name attached during file-based operations.
     pub file: Option<String>,
+    /// Optional process exit status used by runtime `exit(...)`.
     pub exit_status: Option<i32>,
+    /// Optional output captured before a controlled runtime exit.
     pub output: Option<String>,
 }
 
 impl DobraError {
+    /// Creates a syntax-oriented error with source coordinates.
     pub fn new(message: impl Into<String>, line: usize, column: usize) -> Self {
         Self {
             code: "E1000".to_string(),
@@ -26,6 +41,7 @@ impl DobraError {
         }
     }
 
+    /// Creates a runtime error without source coordinates.
     pub fn runtime(message: impl Into<String>) -> Self {
         Self {
             code: "E2000".to_string(),
@@ -38,6 +54,7 @@ impl DobraError {
         }
     }
 
+    /// Creates an I/O error without source coordinates.
     pub fn io(message: impl Into<String>) -> Self {
         Self {
             code: "E3000".to_string(),
@@ -50,10 +67,12 @@ impl DobraError {
         }
     }
 
+    /// Creates a semantic error without precise coordinates.
     pub fn semantic(message: impl Into<String>) -> Self {
         Self::semantic_at(message, 0, 0)
     }
 
+    /// Creates a semantic error with source coordinates.
     pub fn semantic_at(message: impl Into<String>, line: usize, column: usize) -> Self {
         Self {
             code: "E4000".to_string(),
@@ -66,6 +85,7 @@ impl DobraError {
         }
     }
 
+    /// Creates a control-flow error that maps to a process exit status.
     pub fn exit(status: i32) -> Self {
         Self {
             code: "EXIT".to_string(),
@@ -78,16 +98,19 @@ impl DobraError {
         }
     }
 
+    /// Replaces the error code.
     pub fn with_code(mut self, code: impl Into<String>) -> Self {
         self.code = code.into();
         self
     }
 
+    /// Attaches a file name to the error.
     pub fn with_file(mut self, file: impl Into<String>) -> Self {
         self.file = Some(file.into());
         self
     }
 
+    /// Attaches a file name only when one is not already present.
     pub fn with_file_if_missing(mut self, file: impl Into<String>) -> Self {
         if self.file.is_none() {
             self.file = Some(file.into());
@@ -95,11 +118,13 @@ impl DobraError {
         self
     }
 
+    /// Stores output that should be preserved on controlled exits.
     pub fn with_output(mut self, output: impl Into<String>) -> Self {
         self.output = Some(output.into());
         self
     }
 
+    /// Renders the error in the same human-readable format used by the CLI.
     pub fn render(&self) -> String {
         if let Some(status) = self.exit_status {
             return format!("exit {status}");
@@ -113,6 +138,7 @@ impl DobraError {
         format!("error[{}]: {}{}", self.code, self.message, location)
     }
 
+    /// Serializes the error into a compact JSON object.
     pub fn to_json(&self) -> String {
         format!(
             "{{\"code\":\"{}\",\"message\":\"{}\",\"file\":{},\"line\":{},\"column\":{}}}",

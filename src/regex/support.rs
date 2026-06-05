@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Internal helpers shared across regex validation and execution.
+
 use super::*;
 
 pub(super) fn replacement_name_is_valid(name: &str) -> bool {

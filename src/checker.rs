@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Semantic validation for parsed Nodia programs.
+
 use crate::ast::{AssignTarget, Expr, ForBinding, Program, Stmt, UseTarget};
 use crate::error::{DobraError, DobraResult};
 use crate::lexer::Lexer;
@@ -42,10 +47,12 @@ struct PositionIndex {
 
 type Scope = HashMap<String, Symbol>;
 
+/// Validates a parsed program without file-system context.
 pub fn check_program(program: &Program) -> DobraResult<()> {
     Checker::new().check_program(program, None, PositionIndex::default())
 }
 
+/// Validates a parsed program using its original tokens for better diagnostics.
 pub fn check_program_with_tokens(
     program: &Program,
     tokens: &[Token],
@@ -54,6 +61,7 @@ pub fn check_program_with_tokens(
     Checker::new().check_program(program, base_dir, PositionIndex::from_tokens(tokens))
 }
 
+/// Validates a parsed program relative to a file-system path.
 pub fn check_program_at_path(program: &Program, path: &Path) -> DobraResult<()> {
     Checker::new().check_program(
         program,
@@ -62,6 +70,7 @@ pub fn check_program_at_path(program: &Program, path: &Path) -> DobraResult<()> 
     )
 }
 
+/// Reads, parses, and validates a source file.
 pub fn check_file(path: &Path) -> DobraResult<()> {
     let source = fs::read_to_string(path)
         .map_err(|err| DobraError::io(format!("cannot read '{}': {err}", path.display())))?;

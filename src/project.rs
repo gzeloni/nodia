@@ -1,13 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Project discovery and initialization helpers for `nodia.toml`.
+
 use std::fs;
 use std::io;
 use std::path::{Path, PathBuf};
 
+/// Parsed subset of project configuration used by the CLI.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ProjectConfig {
+    /// Human-readable project name.
     pub name: String,
+    /// Entry-point source file resolved relative to the config file.
     pub entry: PathBuf,
 }
 
+/// Searches upward for the nearest `nodia.toml` file.
 pub fn find_project_config(start: &Path) -> Option<PathBuf> {
     let mut current = if start.is_file() {
         start.parent()?
@@ -23,6 +32,7 @@ pub fn find_project_config(start: &Path) -> Option<PathBuf> {
     }
 }
 
+/// Reads a project configuration file from disk.
 pub fn read_project_config(path: &Path) -> io::Result<ProjectConfig> {
     let content = fs::read_to_string(path)?;
     let mut name = None;
@@ -48,6 +58,7 @@ pub fn read_project_config(path: &Path) -> io::Result<ProjectConfig> {
     })
 }
 
+/// Creates a minimal project layout in the target directory.
 pub fn init_project(dir: &Path) -> io::Result<()> {
     let src = dir.join("src");
     fs::create_dir_all(&src)?;

@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Regex AST rendering to textual patterns.
+
 use super::validation::validate_flag_delta;
 use super::*;
 

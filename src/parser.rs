@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Recursive-descent parser for the Nodia grammar.
+
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::error::{DobraError, DobraResult};
 use crate::regex::{
@@ -13,16 +18,19 @@ mod helpers;
 mod regex;
 mod statements;
 
+/// Parser over an already-tokenized Nodia source stream.
 pub struct Parser {
     tokens: Vec<Token>,
     pos: usize,
 }
 
 impl Parser {
+    /// Creates a parser from a token stream.
     pub fn new(tokens: Vec<Token>) -> Self {
         Self { tokens, pos: 0 }
     }
 
+    /// Parses the full input as a program.
     pub fn parse_program(&mut self) -> DobraResult<Program> {
         let mut statements = Vec::new();
         self.skip_newlines();
@@ -34,6 +42,7 @@ impl Parser {
         Ok(Program { statements })
     }
 
+    /// Parses a single expression and rejects trailing tokens.
     pub fn parse_expression_only(&mut self) -> DobraResult<Expr> {
         self.skip_separators();
         let expr = self.expression()?;

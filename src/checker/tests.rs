@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Regression tests for semantic checking.
+
 use crate::check_source;
 
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text

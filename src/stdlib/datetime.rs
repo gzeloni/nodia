@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Datetime-oriented standard-library functions backed by [`crate::temporal`].
+
 use super::expect_arity;
 use crate::error::{DobraError, DobraResult};
 use crate::temporal::{

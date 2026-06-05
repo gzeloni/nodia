@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Runtime value model shared by the checker, interpreter, and standard library.
+
 use crate::ast::Stmt;
 use crate::regex::RuntimeRegex;
 use crate::temporal::{DateTimeValue, DateValue, DurationValue};
@@ -7,32 +12,49 @@ use std::fmt;
 use std::path::PathBuf;
 use std::rc::Rc;
 
+/// Shared reference to a loaded module namespace.
 pub type ModuleRef = Rc<RefCell<Module>>;
+/// Shared reference to a mutable runtime binding cell.
 pub type BindingRef = Rc<RefCell<SharedBinding>>;
 
+/// Stream handles exposed to runtime built-ins.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum StreamId {
+    /// Standard input stream.
     Stdin,
+    /// Standard output stream.
     Stdout,
+    /// Standard error stream.
     Stderr,
+    /// Runtime-managed file stream.
     File(usize),
 }
 
+/// Loaded module state cached by the runtime.
 #[derive(Debug, Clone)]
 pub struct Module {
+    /// Canonical file path of the module.
     pub path: PathBuf,
+    /// Names declared at module top level.
     pub declared: Vec<String>,
+    /// Exported binding values.
     pub exports: BTreeMap<String, Value>,
+    /// Exported binding mutability by name.
     pub mutability: BTreeMap<String, bool>,
+    /// Whether the module body has already been executed.
     pub loaded: bool,
 }
 
+/// Shared mutable binding cell.
 #[derive(Clone)]
 pub struct SharedBinding {
+    /// Current bound value.
     pub value: Value,
+    /// Whether assignments are allowed.
     pub mutable: bool,
 }
 
+/// Runtime value representation.
 #[derive(Debug, Clone)]
 pub enum Value {
     Null,
@@ -52,14 +74,19 @@ pub enum Value {
     Function(Function),
 }
 
+/// User-defined function value with captured bindings.
 #[derive(Clone)]
 pub struct Function {
+    /// Parameter names in declaration order.
     pub params: Vec<String>,
+    /// Function body statements.
     pub body: Vec<Stmt>,
+    /// Closed-over bindings from outer scopes.
     pub captures: BTreeMap<String, BindingRef>,
 }
 
 impl Value {
+    /// Evaluates the value using Nodia truthiness rules.
     pub fn truthy(&self) -> bool {
         match self {
             Value::Null => false,
@@ -80,6 +107,7 @@ impl Value {
         }
     }
 
+    /// Returns the user-visible runtime type name.
     pub fn type_name(&self) -> &'static str {
         match self {
             Value::Null => "null",

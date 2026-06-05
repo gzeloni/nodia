@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Date, datetime, duration, and formatting helpers used by the standard library.
+
 use crate::error::{DobraError, DobraResult};
 use std::cmp::min;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -41,11 +46,13 @@ const MONTH_LONG: [&str; 12] = [
     "December",
 ];
 
+/// Calendar date stored as days since the Unix epoch.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DateValue {
     days_since_epoch: i32,
 }
 
+/// Offset-aware datetime value with nanosecond precision.
 #[derive(Debug, Clone, Copy)]
 pub struct DateTimeValue {
     date: DateValue,
@@ -54,31 +61,46 @@ pub struct DateTimeValue {
     offset_minutes: i32,
 }
 
+/// Signed duration stored in total nanoseconds.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub struct DurationValue {
     total_nanoseconds: i128,
 }
 
+/// Expanded calendar components for a [`DateValue`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateParts {
+    /// Four-digit or extended year value.
     pub year: i32,
+    /// Month in the range `1..=12`.
     pub month: u8,
+    /// Day in the range `1..=31`.
     pub day: u8,
 }
 
+/// Expanded datetime components for a [`DateTimeValue`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DateTimeParts {
+    /// Four-digit or extended year value.
     pub year: i32,
+    /// Month in the range `1..=12`.
     pub month: u8,
+    /// Day in the range `1..=31`.
     pub day: u8,
+    /// Hour in the range `0..=23`.
     pub hour: u8,
+    /// Minute in the range `0..=59`.
     pub minute: u8,
+    /// Second in the range `0..=59`.
     pub second: u8,
+    /// Fractional second in nanoseconds.
     pub nanosecond: u32,
+    /// Fixed offset from UTC in minutes.
     pub offset_minutes: i32,
 }
 
 impl DateValue {
+    /// Creates a validated calendar date.
     pub fn new(year: i32, month: u8, day: u8) -> DobraResult<Self> {
         validate_month(month)?;
         let last_day = days_in_month(year, month);
@@ -93,45 +115,55 @@ impl DateValue {
         })
     }
 
+    /// Reconstructs a date from its internal day count.
     pub fn from_days_since_epoch(days_since_epoch: i32) -> Self {
         Self { days_since_epoch }
     }
 
+    /// Returns the current date at the given UTC offset in minutes.
     pub fn today(offset_minutes: i32) -> DobraResult<Self> {
         Ok(DateTimeValue::now(offset_minutes)?.date())
     }
 
+    /// Parses an ISO 8601 calendar date such as `2026-06-04`.
     pub fn parse_iso(text: &str) -> DobraResult<Self> {
         let (year, month, day) = parse_date_fields(text)?;
         Self::new(year, month, day)
     }
 
+    /// Expands the date into calendar parts.
     pub fn parts(self) -> DateParts {
         let (year, month, day) = civil_from_days(self.days_since_epoch as i64);
         DateParts { year, month, day }
     }
 
+    /// Returns the internal day count since the Unix epoch.
     pub fn days_since_epoch(self) -> i32 {
         self.days_since_epoch
     }
 
+    /// Returns the calendar year.
     pub fn year(self) -> i32 {
         self.parts().year
     }
 
+    /// Returns the calendar month in the range `1..=12`.
     pub fn month(self) -> u8 {
         self.parts().month
     }
 
+    /// Returns the day of month in the range `1..=31`.
     pub fn day(self) -> u8 {
         self.parts().day
     }
 
+    /// Adds a whole number of days.
     pub fn add_days(self, days: i64) -> DobraResult<Self> {
         let next = self.days_since_epoch as i64 + days;
         Ok(Self::from_days_since_epoch(i32_from_i64(next)?))
     }
 
+    /// Adds calendar months while clamping the day to the destination month.
     pub fn add_months(self, months: i32) -> DobraResult<Self> {
         let parts = self.parts();
         let total = parts.year as i64 * 12 + (parts.month as i64 - 1) + months as i64;
@@ -141,6 +173,7 @@ impl DateValue {
         Self::new(i32_from_i64(year)?, month, day)
     }
 
+    /// Adds calendar years while preserving month and clamping the day when needed.
     pub fn add_years(self, years: i32) -> DobraResult<Self> {
         let parts = self.parts();
         let year = parts.year.checked_add(years).ok_or_else(|| {
@@ -150,26 +183,32 @@ impl DateValue {
         Self::new(year, parts.month, day)
     }
 
+    /// Returns the ISO weekday number where Monday is `1`.
     pub fn weekday(self) -> u8 {
         ((self.days_since_epoch as i64 + 3).rem_euclid(7) + 1) as u8
     }
 
+    /// Returns the abbreviated English weekday name.
     pub fn weekday_short_name(self) -> &'static str {
         WEEKDAY_SHORT[self.weekday() as usize - 1]
     }
 
+    /// Returns the full English weekday name.
     pub fn weekday_long_name(self) -> &'static str {
         WEEKDAY_LONG[self.weekday() as usize - 1]
     }
 
+    /// Returns the abbreviated English month name.
     pub fn month_short_name(self) -> &'static str {
         MONTH_SHORT[self.month() as usize - 1]
     }
 
+    /// Returns the full English month name.
     pub fn month_long_name(self) -> &'static str {
         MONTH_LONG[self.month() as usize - 1]
     }
 
+    /// Returns the ordinal day within the year.
     pub fn ordinal_day(self) -> u16 {
         let parts = self.parts();
         let mut ordinal = parts.day as u16;
@@ -179,6 +218,7 @@ impl DateValue {
         ordinal
     }
 
+    /// Returns the ISO week-year and week number.
     pub fn iso_week(self) -> (i32, u8) {
         let weekday = self.weekday() as i64;
         let thursday = self
@@ -194,15 +234,18 @@ impl DateValue {
         (iso_year, week)
     }
 
+    /// Returns the number of days in the current month.
     pub fn days_in_month(self) -> u8 {
         let parts = self.parts();
         days_in_month(parts.year, parts.month)
     }
 
+    /// Reports whether the current year is a leap year.
     pub fn is_leap_year(self) -> bool {
         is_leap_year(self.year())
     }
 
+    /// Formats the date as ISO 8601 text.
     pub fn isoformat(self) -> String {
         let parts = self.parts();
         format!(
@@ -213,6 +256,7 @@ impl DateValue {
         )
     }
 
+    /// Formats the date using a restricted `strftime`-style pattern set.
     pub fn strftime(self, pattern: &str) -> DobraResult<String> {
         let parts = self.parts();
         format_strftime(
@@ -233,6 +277,7 @@ impl DateValue {
 }
 
 impl DateTimeValue {
+    /// Creates a validated datetime with a fixed UTC offset in minutes.
     pub fn new(
         year: i32,
         month: u8,
@@ -256,6 +301,7 @@ impl DateTimeValue {
         })
     }
 
+    /// Returns the current datetime at the given UTC offset in minutes.
     pub fn now(offset_minutes: i32) -> DobraResult<Self> {
         validate_offset(offset_minutes)?;
         let duration = SystemTime::now()
@@ -265,6 +311,7 @@ impl DateTimeValue {
         Self::from_unix_total_nanos(total, offset_minutes)
     }
 
+    /// Builds a datetime from Unix seconds plus a nanosecond fraction.
     pub fn from_unix_seconds(
         unix_seconds: i64,
         nanosecond: u32,
@@ -276,6 +323,7 @@ impl DateTimeValue {
         Self::from_unix_total_nanos(total, offset_minutes)
     }
 
+    /// Builds a datetime from Unix milliseconds.
     pub fn from_unix_milliseconds(
         unix_milliseconds: i128,
         offset_minutes: i32,
@@ -284,6 +332,7 @@ impl DateTimeValue {
         Self::from_unix_total_nanos(unix_milliseconds * NANOS_PER_MILLISECOND, offset_minutes)
     }
 
+    /// Parses an ISO 8601 datetime with an explicit offset.
     pub fn parse_iso(text: &str) -> DobraResult<Self> {
         let trimmed = text.trim();
         let split = trimmed.find(['T', 't', ' ']).ok_or_else(|| {
@@ -305,82 +354,102 @@ impl DateTimeValue {
         )
     }
 
+    /// Returns the calendar date component.
     pub fn date(self) -> DateValue {
         self.date
     }
 
+    /// Returns the calendar year.
     pub fn year(self) -> i32 {
         self.date.year()
     }
 
+    /// Returns the calendar month in the range `1..=12`.
     pub fn month(self) -> u8 {
         self.date.month()
     }
 
+    /// Returns the day of month in the range `1..=31`.
     pub fn day(self) -> u8 {
         self.date.day()
     }
 
+    /// Returns the hour in the range `0..=23`.
     pub fn hour(self) -> u8 {
         (self.seconds_of_day / 3600) as u8
     }
 
+    /// Returns the minute in the range `0..=59`.
     pub fn minute(self) -> u8 {
         ((self.seconds_of_day % 3600) / 60) as u8
     }
 
+    /// Returns the second in the range `0..=59`.
     pub fn second(self) -> u8 {
         (self.seconds_of_day % 60) as u8
     }
 
+    /// Returns the nanosecond fraction.
     pub fn nanosecond(self) -> u32 {
         self.nanosecond
     }
 
+    /// Returns the fixed UTC offset in minutes.
     pub fn offset_minutes(self) -> i32 {
         self.offset_minutes
     }
 
+    /// Returns the ISO weekday number where Monday is `1`.
     pub fn weekday(self) -> u8 {
         self.date.weekday()
     }
 
+    /// Returns the abbreviated English weekday name.
     pub fn weekday_short_name(self) -> &'static str {
         self.date.weekday_short_name()
     }
 
+    /// Returns the full English weekday name.
     pub fn weekday_long_name(self) -> &'static str {
         self.date.weekday_long_name()
     }
 
+    /// Returns the abbreviated English month name.
     pub fn month_short_name(self) -> &'static str {
         self.date.month_short_name()
     }
 
+    /// Returns the full English month name.
     pub fn month_long_name(self) -> &'static str {
         self.date.month_long_name()
     }
 
+    /// Returns the ordinal day within the year.
     pub fn ordinal_day(self) -> u16 {
         self.date.ordinal_day()
     }
 
+    /// Returns the ISO week-year and week number.
     pub fn iso_week(self) -> (i32, u8) {
         self.date.iso_week()
     }
 
+    /// Returns the number of days in the current month.
     pub fn days_in_month(self) -> u8 {
         self.date.days_in_month()
     }
 
+    /// Reports whether the current year is a leap year.
     pub fn is_leap_year(self) -> bool {
         self.date.is_leap_year()
     }
 
+    /// Re-expresses the same absolute instant with a different offset.
     pub fn with_offset(self, offset_minutes: i32) -> DobraResult<Self> {
         Self::from_unix_total_nanos(self.to_unix_total_nanos(), offset_minutes)
     }
 
+    /// Adds a whole number of days without changing the local time fields.
     pub fn add_days(self, days: i64) -> DobraResult<Self> {
         Ok(Self {
             date: self.date.add_days(days)?,
@@ -388,6 +457,7 @@ impl DateTimeValue {
         })
     }
 
+    /// Adds calendar months while clamping the day when needed.
     pub fn add_months(self, months: i32) -> DobraResult<Self> {
         Ok(Self {
             date: self.date.add_months(months)?,
@@ -395,6 +465,7 @@ impl DateTimeValue {
         })
     }
 
+    /// Adds calendar years while clamping the day when needed.
     pub fn add_years(self, years: i32) -> DobraResult<Self> {
         Ok(Self {
             date: self.date.add_years(years)?,
@@ -402,6 +473,7 @@ impl DateTimeValue {
         })
     }
 
+    /// Adds an exact duration in nanoseconds.
     pub fn add_duration(self, duration: DurationValue) -> DobraResult<Self> {
         Self::from_unix_total_nanos(
             self.to_unix_total_nanos()
@@ -411,12 +483,14 @@ impl DateTimeValue {
         )
     }
 
+    /// Computes the signed duration between two absolute instants.
     pub fn diff(self, other: Self) -> DurationValue {
         DurationValue::from_total_nanoseconds(
             self.to_unix_total_nanos() - other.to_unix_total_nanos(),
         )
     }
 
+    /// Returns the earliest representable time on the same local day.
     pub fn start_of_day(self) -> Self {
         Self {
             seconds_of_day: 0,
@@ -425,6 +499,7 @@ impl DateTimeValue {
         }
     }
 
+    /// Returns the latest representable time on the same local day.
     pub fn end_of_day(self) -> Self {
         Self {
             seconds_of_day: (SECONDS_PER_DAY - 1) as u32,
@@ -433,6 +508,7 @@ impl DateTimeValue {
         }
     }
 
+    /// Returns Unix time in seconds, preserving sub-second precision when needed.
     pub fn unix_seconds(self) -> ValueNumber {
         if self.nanosecond == 0 {
             ValueNumber::Int(self.to_unix_seconds())
@@ -443,6 +519,7 @@ impl DateTimeValue {
         }
     }
 
+    /// Returns Unix time in milliseconds, preserving fractional precision when needed.
     pub fn unix_milliseconds(self) -> ValueNumber {
         let total = self.to_unix_total_nanos() / NANOS_PER_MILLISECOND;
         if self.nanosecond % 1_000_000 == 0 {
@@ -452,6 +529,7 @@ impl DateTimeValue {
         }
     }
 
+    /// Formats the datetime as ISO 8601 text.
     pub fn isoformat(self) -> String {
         let date = self.date.isoformat();
         let mut out = format!(
@@ -468,6 +546,7 @@ impl DateTimeValue {
         out
     }
 
+    /// Formats the datetime using a restricted `strftime`-style pattern set.
     pub fn strftime(self, pattern: &str) -> DobraResult<String> {
         format_strftime(
             pattern,
@@ -534,10 +613,12 @@ impl Ord for DateTimeValue {
 }
 
 impl DurationValue {
+    /// Creates a duration directly from total nanoseconds.
     pub fn from_total_nanoseconds(total_nanoseconds: i128) -> Self {
         Self { total_nanoseconds }
     }
 
+    /// Creates a duration by summing calendar-free duration components.
     pub fn from_parts(
         weeks: i64,
         days: i64,
@@ -561,6 +642,7 @@ impl DurationValue {
         Ok(Self::from_total_nanoseconds(total))
     }
 
+    /// Parses an ISO 8601 duration such as `PT1H30M`.
     pub fn parse_iso(text: &str) -> DobraResult<Self> {
         let trimmed = text.trim();
         if trimmed.is_empty() {
@@ -644,22 +726,27 @@ impl DurationValue {
         }))
     }
 
+    /// Returns the total duration in nanoseconds.
     pub fn total_nanoseconds(self) -> i128 {
         self.total_nanoseconds
     }
 
+    /// Returns the total duration in seconds as a floating-point value.
     pub fn total_seconds(self) -> f64 {
         self.total_nanoseconds as f64 / NANOS_PER_SECOND as f64
     }
 
+    /// Returns the total duration in milliseconds as a floating-point value.
     pub fn total_milliseconds(self) -> f64 {
         self.total_nanoseconds as f64 / NANOS_PER_MILLISECOND as f64
     }
 
+    /// Returns the whole-day component using Euclidean division.
     pub fn whole_days(self) -> i64 {
         (self.total_nanoseconds.div_euclid(NANOS_PER_DAY)) as i64
     }
 
+    /// Formats the duration as ISO 8601 text.
     pub fn isoformat(self) -> String {
         if self.total_nanoseconds == 0 {
             return "PT0S".to_string();
@@ -704,9 +791,12 @@ impl DurationValue {
     }
 }
 
+/// Numeric return type used when temporal conversions may be integral or fractional.
 #[derive(Debug, Clone, Copy)]
 pub enum ValueNumber {
+    /// Integer-valued result.
     Int(i64),
+    /// Floating-point result.
     Float(f64),
 }
 
@@ -719,6 +809,7 @@ struct TimeParts {
     offset_minutes: Option<i32>,
 }
 
+/// Parses a UTC offset written as `Z`, `+HH`, `+HHMM`, or `+HH:MM`.
 pub fn parse_offset_text(text: &str) -> DobraResult<i32> {
     if text == "Z" || text == "z" {
         return Ok(0);
@@ -755,10 +846,12 @@ pub fn parse_offset_text(text: &str) -> DobraResult<i32> {
     Ok(total * sign)
 }
 
+/// Reports whether a Gregorian year is a leap year.
 pub fn is_leap_year(year: i32) -> bool {
     (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
 }
 
+/// Returns the number of days in a Gregorian month.
 pub fn days_in_month(year: i32, month: u8) -> u8 {
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,

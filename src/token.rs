@@ -1,18 +1,29 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Lexical token definitions for the Nodia grammar.
+
 use std::fmt;
 
+/// Token annotated with its starting source position.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Token {
+    /// Token category and literal payload, when applicable.
     pub kind: TokenKind,
+    /// One-based line number.
     pub line: usize,
+    /// One-based column number.
     pub column: usize,
 }
 
 impl Token {
+    /// Creates a token at the given source position.
     pub fn new(kind: TokenKind, line: usize, column: usize) -> Self {
         Self { kind, line, column }
     }
 }
 
+/// Token kinds recognized by the lexer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
     Val,
@@ -89,6 +100,7 @@ pub enum TokenKind {
 }
 
 impl TokenKind {
+    /// Returns the stable display name for this token kind.
     pub fn name(&self) -> &'static str {
         match self {
             TokenKind::Val => "Val",
@@ -165,6 +177,7 @@ impl TokenKind {
         }
     }
 
+    /// Returns the literal payload when the token carries one.
     pub fn literal(&self) -> Option<String> {
         match self {
             TokenKind::Identifier(value)
@@ -188,6 +201,7 @@ impl fmt::Display for TokenKind {
     }
 }
 
+/// Maps a source word to its reserved-keyword token kind.
 pub fn keyword_kind(text: &str) -> Option<TokenKind> {
     Some(match text {
         "val" => TokenKind::Val,

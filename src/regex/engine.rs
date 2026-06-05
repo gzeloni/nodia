@@ -1,15 +1,23 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Runtime regex execution and match conversion helpers.
+
 use super::support::*;
 use super::*;
 
 impl RuntimeRegex {
+    /// Returns the rendered regex text used to compile this value.
     pub fn rendered(&self) -> &str {
         &self.rendered
     }
 
+    /// Tests whether the regex matches anywhere in the input text.
     pub fn is_match(&self, text: &str) -> DobraResult<bool> {
         self.engine.is_match(text).map_err(regex_engine_error)
     }
 
+    /// Tests whether the regex matches the entire input text.
     pub fn is_full_match(&self, text: &str) -> DobraResult<bool> {
         let captures = self.engine.captures(text).map_err(regex_engine_error)?;
         Ok(captures
@@ -17,6 +25,7 @@ impl RuntimeRegex {
             .is_some_and(|matched| matched.start() == 0 && matched.end() == text.len()))
     }
 
+    /// Returns the first match, if any.
     pub fn find(&self, text: &str) -> DobraResult<Option<RegexMatch>> {
         let captures = self.engine.captures(text).map_err(regex_engine_error)?;
         captures
@@ -24,6 +33,7 @@ impl RuntimeRegex {
             .transpose()
     }
 
+    /// Returns every non-overlapping match in the input text.
     pub fn find_all(&self, text: &str) -> DobraResult<Vec<RegexMatch>> {
         let mut matches = Vec::new();
         for captures in self.engine.captures_iter(text) {
@@ -33,6 +43,7 @@ impl RuntimeRegex {
         Ok(matches)
     }
 
+    /// Replaces every match using Nodia replacement placeholders.
     pub fn replace_all(&self, text: &str, replacement: &str) -> DobraResult<String> {
         let translated = self.translate_replacement(replacement)?;
         self.engine
@@ -41,6 +52,7 @@ impl RuntimeRegex {
             .map_err(regex_engine_error)
     }
 
+    /// Splits input text on regex matches.
     pub fn split(&self, text: &str) -> DobraResult<Vec<String>> {
         self.engine
             .split(text)

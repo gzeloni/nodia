@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Runtime state and execution engine for Nodia programs.
+
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::error::{DobraError, DobraResult};
 use crate::io::{self as fsio, IoRegistry};
@@ -23,11 +28,16 @@ mod state;
 type ModuleCache = Rc<RefCell<HashMap<PathBuf, ModuleRef>>>;
 type IoState = Rc<RefCell<IoRegistry>>;
 
+/// Runtime capabilities and process-like context passed into execution.
 #[derive(Debug, Clone, Default)]
 pub struct RuntimeOptions {
+    /// Enables built-ins that write to the filesystem.
     pub allow_write: bool,
+    /// Enables environment-variable access.
     pub allow_env: bool,
+    /// Enables subprocess execution.
     pub allow_process: bool,
+    /// Positional arguments exposed through the standard library.
     pub args: Vec<String>,
 }
 
@@ -44,6 +54,7 @@ enum TargetStep {
     Index(Value),
 }
 
+/// Interpreter for already-parsed Nodia programs.
 pub struct Runtime {
     scopes: Vec<HashMap<String, BindingRef>>,
     output: String,

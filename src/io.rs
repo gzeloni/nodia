@@ -1,9 +1,15 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! File and stream helpers used by the runtime I/O built-ins.
+
 use crate::error::{DobraError, DobraResult};
 use crate::value::StreamId;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
 
+/// Registry of open file-backed streams managed by the runtime.
 pub struct IoRegistry {
     next_file_id: usize,
     streams: HashMap<usize, FileStream>,
@@ -28,6 +34,7 @@ enum FileStream {
 }
 
 impl IoRegistry {
+    /// Creates an empty stream registry.
     pub fn new() -> Self {
         Self {
             next_file_id: 1,
@@ -35,6 +42,7 @@ impl IoRegistry {
         }
     }
 
+    /// Opens a file stream in `read`, `write`, or `append` mode.
     pub fn open(&mut self, path: &str, mode: &str, allow_write: bool) -> DobraResult<StreamId> {
         let stream = match mode {
             "read" => FileStream::Reader {
@@ -80,6 +88,7 @@ impl IoRegistry {
         Ok(StreamId::File(id))
     }
 
+    /// Closes an open stream and flushes buffered writers.
     pub fn close(&mut self, stream: StreamId) -> DobraResult<()> {
         let StreamId::File(id) = stream else {
             return Ok(());
@@ -95,6 +104,7 @@ impl IoRegistry {
         Ok(())
     }
 
+    /// Flushes a writable stream.
     pub fn flush(&mut self, stream: StreamId) -> DobraResult<()> {
         let id = expect_file_stream(stream, "flush")?;
         let stream = self.stream_mut(id)?;
@@ -108,6 +118,7 @@ impl IoRegistry {
         }
     }
 
+    /// Reports whether a readable stream has reached end-of-file.
     pub fn eof(&mut self, stream: StreamId) -> DobraResult<bool> {
         let id = expect_file_stream(stream, "eof")?;
         let stream = self.stream_mut(id)?;
@@ -119,6 +130,7 @@ impl IoRegistry {
         }
     }
 
+    /// Reads the remainder of a readable stream as UTF-8 text.
     pub fn read_all(&mut self, stream: StreamId) -> DobraResult<String> {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
@@ -137,6 +149,7 @@ impl IoRegistry {
         }
     }
 
+    /// Reads up to `size` bytes from a readable stream.
     pub fn read_chunk(&mut self, stream: StreamId, size: usize) -> DobraResult<String> {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
@@ -171,6 +184,7 @@ impl IoRegistry {
         }
     }
 
+    /// Reads a single logical line without the trailing newline sequence.
     pub fn read_line(&mut self, stream: StreamId) -> DobraResult<Option<String>> {
         let id = expect_file_stream(stream, "readln")?;
         let stream = self.stream_mut(id)?;
@@ -205,6 +219,7 @@ impl IoRegistry {
         }
     }
 
+    /// Writes text to a writable stream without appending a newline.
     pub fn write(&mut self, stream: StreamId, text: &str) -> DobraResult<()> {
         let id = expect_file_stream(stream, "write")?;
         let stream = self.stream_mut(id)?;
@@ -218,6 +233,7 @@ impl IoRegistry {
         }
     }
 
+    /// Flushes every tracked writable stream.
     pub fn flush_all(&mut self) -> DobraResult<()> {
         for (id, stream) in &mut self.streams {
             if let FileStream::Writer { writer } = stream {
@@ -236,6 +252,7 @@ impl IoRegistry {
     }
 }
 
+/// Reads an entire file path into memory.
 pub fn read_path(path: &str) -> DobraResult<String> {
     let mut file =
         File::open(path).map_err(|err| DobraError::io(format!("cannot read '{path}': {err}")))?;
@@ -245,11 +262,13 @@ pub fn read_path(path: &str) -> DobraResult<String> {
     into_utf8_string(bytes, &format!("cannot read '{path}'"))
 }
 
+/// Writes a full string to a file path, replacing existing content.
 pub fn write_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()> {
     ensure_write_allowed(allow_write)?;
     fs::write(path, text).map_err(|err| DobraError::io(format!("cannot write '{path}': {err}")))
 }
 
+/// Appends a string to a file path.
 pub fn append_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()> {
     ensure_write_allowed(allow_write)?;
     let mut file = OpenOptions::new()
@@ -261,6 +280,7 @@ pub fn append_path(path: &str, text: &str, allow_write: bool) -> DobraResult<()>
         .map_err(|err| DobraError::io(format!("cannot append '{path}': {err}")))
 }
 
+/// Fails when filesystem writes are not enabled in runtime options.
 pub fn ensure_write_allowed(allow_write: bool) -> DobraResult<()> {
     if allow_write {
         Ok(())

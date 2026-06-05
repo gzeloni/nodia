@@ -1,14 +1,21 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Public regex validation, rendering, and compilation helpers.
+
 use super::rendering::*;
 use super::support::*;
 use super::validation::*;
 use super::*;
 
+/// Validates a regex AST for semantic correctness.
 pub fn validate(pattern: &RegexPattern) -> DobraResult<()> {
     validate_flags(&pattern.flags, "regex")?;
     let mut named_groups = HashSet::new();
     validate_sequence(&pattern.body, &mut named_groups)
 }
 
+/// Validates a regex AST against a specific output target.
 pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraResult<()> {
     validate(pattern)?;
     validate_target_sequence(&pattern.body, target)?;
@@ -29,10 +36,12 @@ pub fn validate_for_target(pattern: &RegexPattern, target: RegexTarget) -> Dobra
     Ok(())
 }
 
+/// Renders a regex AST to classic regex text.
 pub fn render(pattern: &RegexPattern) -> DobraResult<String> {
     render_for_target(pattern, RegexTarget::Classic)
 }
 
+/// Renders a regex AST for a specific target after validation.
 pub fn render_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraResult<String> {
     validate_for_target(pattern, target)?;
     let mut out = String::new();
@@ -43,11 +52,13 @@ pub fn render_for_target(pattern: &RegexPattern, target: RegexTarget) -> DobraRe
     Ok(out)
 }
 
+/// Compiles a validated regex AST into a runtime regex value.
 pub fn compile(pattern: &RegexPattern) -> DobraResult<RuntimeRegex> {
     let rendered = render(pattern)?;
     compile_text(&rendered)
 }
 
+/// Compiles raw regex text into a runtime regex value.
 pub fn compile_text(rendered: &str) -> DobraResult<RuntimeRegex> {
     let engine = Regex::new(rendered)
         .map_err(|err| DobraError::runtime(format!("cannot compile regex '{rendered}': {err}")))?;

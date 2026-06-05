@@ -1,6 +1,12 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Lexer implementation for Nodia source text.
+
 use crate::error::{DobraError, DobraResult};
 use crate::token::{keyword_kind, Token, TokenKind};
 
+/// Stateful tokenizer that walks source text and emits [`Token`] values.
 pub struct Lexer {
     chars: Vec<char>,
     pos: usize,
@@ -9,6 +15,7 @@ pub struct Lexer {
 }
 
 impl Lexer {
+    /// Creates a lexer for the provided source text.
     pub fn new(source: &str) -> Self {
         Self {
             chars: source.chars().collect(),
@@ -18,6 +25,7 @@ impl Lexer {
         }
     }
 
+    /// Consumes the source text and returns the full token stream.
     pub fn tokenize(mut self) -> DobraResult<Vec<Token>> {
         let mut tokens = Vec::new();
         while let Some(ch) = self.peek() {

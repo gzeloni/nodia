@@ -1,14 +1,22 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Core runtime construction and top-level statement execution.
+
 use super::*;
 
 impl Runtime {
+    /// Creates a runtime with default options and no base directory.
     pub fn new(input: BTreeMap<String, Value>) -> Self {
         Self::with_options(input, None, RuntimeOptions::default())
     }
 
+    /// Creates a runtime with a fixed base directory for module resolution.
     pub fn with_base_dir(input: BTreeMap<String, Value>, base_dir: Option<PathBuf>) -> Self {
         Self::with_options(input, base_dir, RuntimeOptions::default())
     }
 
+    /// Creates a runtime with explicit execution options.
     pub fn with_options(
         input: BTreeMap<String, Value>,
         base_dir: Option<PathBuf>,
@@ -49,6 +57,7 @@ impl Runtime {
         }
     }
 
+    /// Executes a parsed program and returns emitted output without the trailing newline.
     pub fn run(&mut self, program: &Program) -> DobraResult<String> {
         for statement in &program.statements {
             let flow = match self.execute(statement) {

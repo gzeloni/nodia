@@ -1,3 +1,8 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2023-2025 Gustavo Zeloni <gustavo@gzeloni.dev>
+
+//! Text formatting standard-library functions.
+
 use super::{expect_arity, expect_list, to_float, to_int};
 use crate::error::{DobraError, DobraResult};
 use crate::value::Value;
