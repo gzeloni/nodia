@@ -519,25 +519,6 @@ impl Runtime {
         })
     }
 
-    pub(super) fn builtin_value(&self, name: &str) -> Option<Value> {
-        match name {
-            "args" => Some(Value::List(
-                self.options
-                    .args
-                    .iter()
-                    .cloned()
-                    .map(Value::String)
-                    .collect(),
-            )),
-            "stdin" => Some(Value::Stream(StreamId::Stdin)),
-            "stdout" => Some(Value::Stream(StreamId::Stdout)),
-            "stderr" => Some(Value::Stream(StreamId::Stderr)),
-            _ => stdlib::global_builtin_item(name).and_then(|(_, export_name, arities)| {
-                arities.map(|_| Value::BuiltinFunction(export_name.to_string()))
-            }),
-        }
-    }
-
     pub(super) fn root_get(&self, name: &str) -> Option<Value> {
         self.scopes.first().and_then(|scope| {
             scope

@@ -382,9 +382,19 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
-        Value::Date(value) => format!("parse_date({})", quote_string(&value.isoformat())),
-        Value::DateTime(value) => format!("parse_datetime({})", quote_string(&value.isoformat())),
-        Value::Duration(value) => format!("parse_duration({})", quote_string(&value.isoformat())),
+        Value::Date(value) => format!("datetime.parse_date({})", quote_string(&value.isoformat())),
+        Value::DateTime(value) => {
+            format!(
+                "datetime.parse_datetime({})",
+                quote_string(&value.isoformat())
+            )
+        }
+        Value::Duration(value) => {
+            format!(
+                "datetime.parse_duration({})",
+                quote_string(&value.isoformat())
+            )
+        }
         Value::Regex(regex) => quote_string(regex.rendered()),
         Value::Stream(stream) => stream.to_string(),
         Value::UseBinding(_, name) => format!("<use {name}>"),
@@ -686,12 +696,7 @@ fn format_regex_flag_list(flags: &[RegexFlag]) -> String {
         .join(", ")
 }
 
-fn format_string_literal(
-    value: &str,
-    interpolate: bool,
-    indent: usize,
-    width: usize,
-) -> String {
+fn format_string_literal(value: &str, interpolate: bool, indent: usize, width: usize) -> String {
     if !interpolate && value.contains('\n') && !value.contains("\"\"\"") {
         return format!("\"\"\"{}\"\"\"", value);
     }
@@ -819,7 +824,11 @@ fn current_line_width(indent: usize) -> usize {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{lexer::Lexer, parser::Parser};
+    use crate::{
+        lexer::Lexer,
+        parser::Parser,
+        temporal::{DateTimeValue, DateValue, DurationValue},
+    };
 
     #[test]
     fn formats_basic_program() {
@@ -834,12 +843,12 @@ mod tests {
 
     #[test]
     fn keeps_nested_calls_inline_when_they_fit_line_width() {
-        let source = "emit bullet(\"replace\", replace(\"text/math/files\", \"/\", \" -> \"))";
+        let source = "emit bullet(\"replace\", text.replace(\"text/math/files\", \"/\", \" -> \"))";
         let tokens = Lexer::new(source).tokenize().unwrap();
         let program = Parser::new(tokens).parse_program().unwrap();
         let formatted = format_program(&program);
 
-        assert!(formatted.contains("replace(\"text/math/files\", \"/\", \" -> \"),"));
+        assert!(formatted.contains("text.replace(\"text/math/files\", \"/\", \" -> \"),"));
         assert!(formatted
             .lines()
             .filter(|line| !line.starts_with('#'))
@@ -875,7 +884,7 @@ mod tests {
     #[test]
     fn preserves_keyword_field_access() {
         let source = r#"val m={from:"x",val:"y"}
-val hit=find("42",regex{named val{one_or_more digit}})
+val hit=re.find("42",regex{named val{one_or_more digit}})
 emit m.from
 emit hit.named.val"#;
         let tokens = Lexer::new(source).tokenize().unwrap();
@@ -884,5 +893,27 @@ emit hit.named.val"#;
 
         assert!(formatted.contains("emit m.from"));
         assert!(formatted.contains("emit hit.named.val"));
+    }
+
+    #[test]
+    fn formats_temporal_values_with_datetime_namespace() {
+        let date = Expr::Literal(Value::Date(DateValue::parse_iso("2024-02-29").unwrap()));
+        let datetime = Expr::Literal(Value::DateTime(
+            DateTimeValue::parse_iso("2024-02-29T12:00:00Z").unwrap(),
+        ));
+        let duration = Expr::Literal(Value::Duration(DurationValue::parse_iso("PT15M").unwrap()));
+
+        assert_eq!(
+            format_expr_for_line(&date, 0, 0),
+            r#"datetime.parse_date("2024-02-29")"#
+        );
+        assert_eq!(
+            format_expr_for_line(&datetime, 0, 0),
+            r#"datetime.parse_datetime("2024-02-29T12:00:00Z")"#
+        );
+        assert_eq!(
+            format_expr_for_line(&duration, 0, 0),
+            r#"datetime.parse_duration("PT15M")"#
+        );
     }
 }

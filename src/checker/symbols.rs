@@ -126,14 +126,6 @@ impl<'a> State<'a> {
         self.scopes.iter().rev().find_map(|scope| scope.get(name))
     }
 
-    pub(super) fn builtin_symbol(&self, name: &str) -> Option<Symbol> {
-        let (_, target, arities) = stdlib::global_builtin_item(name)?;
-        Some(match arities {
-            Some(arities) => Symbol::builtin_function(target, arities),
-            None => Symbol::unknown(false),
-        })
-    }
-
     pub(super) fn field_status(&self, object: &Expr, field: &str) -> FieldStatus {
         let Some(symbol) = self.symbol_from_access(object) else {
             return FieldStatus::Unknown;
@@ -150,10 +142,7 @@ impl<'a> State<'a> {
 
     pub(super) fn symbol_from_access(&self, expr: &Expr) -> Option<Symbol> {
         match expr {
-            Expr::Identifier(name) => self
-                .lookup(name)
-                .cloned()
-                .or_else(|| self.builtin_symbol(name)),
+            Expr::Identifier(name) => self.lookup(name).cloned(),
             Expr::Get { object, field } => match self.field_status(object, field) {
                 FieldStatus::Found(symbol) => Some(symbol),
                 FieldStatus::Missing | FieldStatus::Unknown => None,

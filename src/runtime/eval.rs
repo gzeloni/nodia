@@ -21,7 +21,6 @@ impl Runtime {
             Expr::Identifier(name) => {
                 let value = self
                     .get(name)
-                    .or_else(|| self.builtin_value(name))
                     .ok_or_else(|| NodiaError::runtime(format!("undefined variable '{name}'")))?;
                 self.resolve_value(value)
             }
@@ -135,7 +134,7 @@ impl Runtime {
             .collect::<NodiaResult<Vec<_>>>()?;
 
         if let Expr::Identifier(name) = callee {
-            if let Some(value) = self.get(name).or_else(|| self.builtin_value(name)) {
+            if let Some(value) = self.get(name) {
                 return self.call_value(self.resolve_value(value)?, arg_values);
             }
         }

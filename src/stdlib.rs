@@ -37,6 +37,9 @@ const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("ends", "ends", Some(&[2])),
     ("indent", "indent", Some(&[2])),
     ("dedent", "dedent", Some(&[1])),
+    ("byte_len", "byte_len", Some(&[1])),
+    ("byte_offset", "byte_offset", Some(&[2])),
+    ("scalar_offset", "scalar_offset", Some(&[2])),
 ];
 
 const NUMBERS_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -185,18 +188,6 @@ const CSV_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("write", "csv.write", Some(&[1])),
 ];
 
-const GLOBAL_BUILTIN_MODULES: &[&[ModuleItemSpec]] = &[
-    TEXT_MODULE_ITEMS,
-    NUMBERS_MODULE_ITEMS,
-    CONVERSION_MODULE_ITEMS,
-    COLLECTIONS_MODULE_ITEMS,
-    FORMAT_MODULE_ITEMS,
-    REGEX_MODULE_ITEMS,
-    IO_MODULE_ITEMS,
-    SYSTEM_MODULE_ITEMS,
-    DATETIME_MODULE_ITEMS,
-];
-
 pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
     let result = match name {
         "upper" => text::unary_string(args, name, |s| s.to_uppercase())?,
@@ -286,6 +277,9 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             expect_arity(&args, 1, "dedent")?;
             Value::String(text::dedent(&args[0].to_string()))
         }
+        "byte_len" => text::byte_len(args)?,
+        "byte_offset" => text::byte_offset(args)?,
+        "scalar_offset" => text::scalar_offset(args)?,
         "keys" => {
             expect_arity(&args, 1, "keys")?;
             let Value::Map(values) = &args[0] else {
@@ -485,16 +479,6 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         _ => return Ok(None),
     };
     Ok(Some(result))
-}
-
-/// Returns the spec for a globally available builtin item.
-pub fn global_builtin_item(name: &str) -> Option<ModuleItemSpec> {
-    for module in GLOBAL_BUILTIN_MODULES {
-        if let Some(item) = module.iter().find(|(field, _, _)| *field == name) {
-            return Some(*item);
-        }
-    }
-    None
 }
 
 /// Returns the exported items for a standard-library module.

@@ -20,13 +20,9 @@ impl<'a> State<'a> {
             }
             Expr::Lambda { params, body } => self.check_function(params, body),
             Expr::Regex(pattern) => regex::validate(pattern),
-            Expr::Identifier(name) => {
-                if self.lookup(name).is_some() || self.builtin_symbol(name).is_some() {
-                    Ok(())
-                } else {
-                    Err(self.error_name("E4100", format!("undefined variable '{name}'"), name))
-                }
-            }
+            Expr::Identifier(name) => self.lookup(name).map(|_| ()).ok_or_else(|| {
+                self.error_name("E4100", format!("undefined variable '{name}'"), name)
+            }),
             Expr::Unary { expr, .. } => self.check_expr(expr),
             Expr::Binary { left, right, .. } => {
                 self.check_expr(left)?;
@@ -74,11 +70,7 @@ impl<'a> State<'a> {
         self.check_builtin_call_diagnostics(callee, args)?;
 
         if let Some(name) = direct_identifier(callee) {
-            if let Some(symbol) = self
-                .lookup(name)
-                .cloned()
-                .or_else(|| self.builtin_symbol(name))
-            {
+            if let Some(symbol) = self.lookup(name).cloned() {
                 if let SymbolKind::Function { arities, .. } = &symbol.kind {
                     self.check_arity(name, args.len(), arities)?;
                 }
@@ -315,11 +307,7 @@ impl<'a> State<'a> {
             Expr::Identifier(name) => self
                 .lookup(name)
                 .and_then(Symbol::builtin_target)
-                .map(str::to_string)
-                .or_else(|| {
-                    self.builtin_symbol(name)
-                        .and_then(|symbol| symbol.builtin_target().map(str::to_string))
-                }),
+                .map(str::to_string),
             Expr::Get { object, field } => match self.field_status(object, field) {
                 FieldStatus::Found(symbol) => symbol.builtin_target().map(str::to_string),
                 FieldStatus::Missing | FieldStatus::Unknown => None,

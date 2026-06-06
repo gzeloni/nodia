@@ -3,8 +3,10 @@
 
 //! Text and regex-backed standard-library helpers.
 
-use super::*;
+use super::expect_arity;
 use crate::regex::{self, RegexMatch, RuntimeRegex};
+use crate::value::Value;
+use crate::{NodiaError, NodiaResult};
 use std::collections::BTreeMap;
 
 pub(super) fn unary_string(
@@ -186,4 +188,87 @@ pub(super) fn dedent(text: &str) -> String {
         })
         .collect::<Vec<_>>()
         .join("\n")
+}
+
+pub(super) fn byte_len(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 1, "byte_len")?;
+    let text = expect_string(&args[0], "byte_len", "first")?;
+    Ok(Value::Int(text.len() as i64))
+}
+
+pub(super) fn byte_offset(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "byte_offset")?;
+    let text = expect_string(&args[0], "byte_offset", "first")?;
+    let offset = expect_non_negative_offset(&args[1], "byte_offset", "second")?;
+    Ok(Value::Int(
+        scalar_to_byte_offset(text, offset, "byte_offset")? as i64,
+    ))
+}
+
+pub(super) fn scalar_offset(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "scalar_offset")?;
+    let text = expect_string(&args[0], "scalar_offset", "first")?;
+    let offset = expect_non_negative_offset(&args[1], "scalar_offset", "second")?;
+    Ok(Value::Int(
+        byte_to_scalar_offset(text, offset, "scalar_offset")? as i64,
+    ))
+}
+
+fn expect_string<'a>(value: &'a Value, name: &str, position: &str) -> NodiaResult<&'a str> {
+    match value {
+        Value::String(text) => Ok(text),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects string as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn expect_non_negative_offset(value: &Value, name: &str, position: &str) -> NodiaResult<usize> {
+    match value {
+        Value::Int(value) if *value >= 0 => Ok(*value as usize),
+        Value::Int(_) => Err(NodiaError::runtime(format!(
+            "{name}() expects non-negative int as {position} argument"
+        ))),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects int as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn scalar_to_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+    let scalar_len = text.chars().count();
+    if offset > scalar_len {
+        return Err(NodiaError::runtime(format!(
+            "{name}() scalar offset {offset} is out of range for text with {scalar_len} scalar value(s)"
+        )));
+    }
+
+    if offset == scalar_len {
+        return Ok(text.len());
+    }
+
+    Ok(text
+        .char_indices()
+        .nth(offset)
+        .map(|(offset, _)| offset)
+        .unwrap_or(text.len()))
+}
+
+fn byte_to_scalar_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+    if offset > text.len() {
+        return Err(NodiaError::runtime(format!(
+            "{name}() byte offset {offset} is out of range for text with {} byte(s)",
+            text.len()
+        )));
+    }
+
+    if !text.is_char_boundary(offset) {
+        return Err(NodiaError::runtime(format!(
+            "{name}() byte offset {offset} does not point to a UTF-8 boundary"
+        )));
+    }
+
+    Ok(text[..offset].chars().count())
 }
