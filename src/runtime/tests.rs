@@ -7,8 +7,6 @@ use super::*;
 use std::fs;
 
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
-use numbers as __numbers
-use conversion as __conv
 use collections as __col
 use format as __fmt
 use re as __re
@@ -17,146 +15,6 @@ use system as __sys
 use datetime as __dt
 use json as __json
 use csv as __csv
-
-val upper = __text.upper
-val uppercase = __text.upper
-val lower = __text.lower
-val lowercase = __text.lower
-val capitalize = __text.capitalize
-val trim = __text.trim
-val replace = __text.replace
-val replace_all = __text.replace_all
-val split = __text.split
-val split_regex = __text.split_regex
-val join = __text.join
-val lines = __text.lines
-val unlines = __text.unlines
-val words = __text.words
-val contains = __text.contains
-val starts = __text.starts
-val starts_with = __text.starts
-val ends = __text.ends
-val ends_with = __text.ends
-val indent = __text.indent
-val dedent = __text.dedent
-
-val int = __numbers.int
-val float = __numbers.float
-val range = __numbers.range
-val abs = __numbers.abs
-val floor = __numbers.floor
-val ceil = __numbers.ceil
-val round = __numbers.round
-val sqrt = __numbers.sqrt
-val pow = __numbers.pow
-val min = __numbers.min
-val max = __numbers.max
-val clamp = __numbers.clamp
-val sum = __numbers.sum
-val avg = __numbers.avg
-
-val string = __conv.string
-val bool = __conv.bool
-
-val len = __col.len
-val keys = __col.keys
-val values = __col.values
-val entries = __col.entries
-val get = __col.get
-val push = __col.push
-val pop = __col.pop
-val first = __col.first
-val last = __col.last
-val slice = __col.slice
-val reverse = __col.reverse
-val sort = __col.sort
-val unique = __col.unique
-val map = __col.map
-val filter = __col.filter
-val reduce = __col.reduce
-val group_by = __col.group_by
-val sort_by = __col.sort_by
-
-val format = __fmt.format
-val pad_left = __fmt.pad_left
-val pad_right = __fmt.pad_right
-val fixed = __fmt.fixed
-
-val test = __re.test
-val full_match = __re.full_match
-val find = __re.find
-val find_all = __re.find_all
-
-val stdin = __io.stdin
-val stdout = __io.stdout
-val stderr = __io.stderr
-val open = __io.open
-val close = __io.close
-val flush = __io.flush
-val eof = __io.eof
-val read = __io.read
-val readln = __io.readln
-val write = __io.write
-val writeln = __io.writeln
-val append = __io.append
-val basename = __io.basename
-val dirname = __io.dirname
-val exists = __io.exists
-val is_file = __io.is_file
-val is_dir = __io.is_dir
-val list_dir = __io.list_dir
-val glob = __io.glob
-
-val args = __sys.args
-val env = __sys.env
-val exit = __sys.exit
-val exec = __sys.exec
-
-val now = __dt.now
-val today = __dt.today
-val date = __dt.date
-val datetime = __dt.datetime
-val duration = __dt.duration
-val parse_date = __dt.parse_date
-val parse_datetime = __dt.parse_datetime
-val parse_duration = __dt.parse_duration
-val isoformat = __dt.isoformat
-val strftime = __dt.strftime
-val from_unix = __dt.from_unix
-val from_unix_ms = __dt.from_unix_ms
-val unix_seconds = __dt.unix_seconds
-val unix_ms = __dt.unix_ms
-val year = __dt.year
-val month = __dt.month
-val day = __dt.day
-val hour = __dt.hour
-val minute = __dt.minute
-val second = __dt.second
-val nanosecond = __dt.nanosecond
-val weekday = __dt.weekday
-val weekday_name = __dt.weekday_name
-val month_name = __dt.month_name
-val ordinal_day = __dt.ordinal_day
-val iso_week = __dt.iso_week
-val offset_minutes = __dt.offset_minutes
-val days_in_month = __dt.days_in_month
-val is_leap_year = __dt.is_leap_year
-val date_only = __dt.date_only
-val with_offset = __dt.with_offset
-val add_days = __dt.add_days
-val add_months = __dt.add_months
-val add_years = __dt.add_years
-val add_duration = __dt.add_duration
-val diff_days = __dt.diff_days
-val diff_seconds = __dt.diff_seconds
-val diff_duration = __dt.diff_duration
-val start_of_day = __dt.start_of_day
-val end_of_day = __dt.end_of_day
-
-val json_parse = __json.read
-val json_stringify = __json.write
-val csv_read = __csv.read
-val csv_write = __csv.write
 "#;
 
 fn stdlib_source(source: &str) -> String {
@@ -184,18 +42,24 @@ fn emits_interpolated_input() {
 }
 
 #[test]
-fn global_builtins_work_without_prelude() {
-    let output = crate::run_source_with_options(
-        "emit upper(\"ana\")\nemit args[0]",
+fn stdlib_globals_require_use() {
+    let err = crate::run_source_with_options(
+        "emit upper(\"ana\")",
         BTreeMap::new(),
-        RuntimeOptions {
-            args: vec!["one".to_string()],
-            ..RuntimeOptions::default()
-        },
+        RuntimeOptions::default(),
     )
-    .unwrap();
+    .unwrap_err();
+    assert!(err.message.contains("undefined variable 'upper'"));
 
-    assert_eq!(output, "ANA\none");
+    let err =
+        crate::run_source_with_options("emit args[0]", BTreeMap::new(), RuntimeOptions::default())
+            .unwrap_err();
+    assert!(err.message.contains("undefined variable 'args'"));
+
+    let err =
+        crate::run_source_with_options("emit stdout", BTreeMap::new(), RuntimeOptions::default())
+            .unwrap_err();
+    assert!(err.message.contains("undefined variable 'stdout'"));
 }
 
 #[test]
@@ -309,7 +173,7 @@ for (name, total) in counts {
   emit "{name}={total}"
 }
 
-for (name, total) in entries(counts) {
+for (name, total) in __col.entries(counts) {
   emit "{name}:{total}"
 }
 "#;
@@ -423,18 +287,18 @@ fn file_streams_read_and_write_lines() {
     fs::write(&input, "ana\nbruno\n").unwrap();
 
     let source = format!(
-        r#"val src = open("{}", "read")
-val out = open("{}", "write")
+        r#"val src = __io.open("{}", "read")
+val out = __io.open("{}", "write")
 
-var line = readln(src)
+var line = __io.readln(src)
 while line != null {{
-  writeln(out, upper(line))
-  line = readln(src)
+  __io.writeln(out, __text.upper(line))
+  line = __io.readln(src)
 }}
 
-close(src)
-close(out)
-emit read("{}")
+__io.close(src)
+__io.close(out)
+emit __io.read("{}")
 "#,
         input.display(),
         output.display(),
@@ -463,10 +327,10 @@ fn readln_handles_final_line_without_trailing_newline() {
     fs::write(&input, "ana\r\nbruno").unwrap();
 
     let source = format!(
-        r#"val src = open("{}", "read")
-emit readln(src)
-emit readln(src)
-emit readln(src)
+        r#"val src = __io.open("{}", "read")
+emit __io.readln(src)
+emit __io.readln(src)
+emit __io.readln(src)
 "#,
         input.display(),
     );
@@ -484,13 +348,13 @@ fn file_reads_support_path_and_chunked_stream_access() {
     fs::write(&input, "abcdef").unwrap();
 
     let source = format!(
-        r#"emit read("{}")
-val src = open("{}", "read")
-emit read(src, 2)
-emit read(src, 2)
-emit read(src, 10)
-emit read(src, 10)
-emit eof(src)
+        r#"emit __io.read("{}")
+val src = __io.open("{}", "read")
+emit __io.read(src, 2)
+emit __io.read(src, 2)
+emit __io.read(src, 10)
+emit __io.read(src, 10)
+emit __io.eof(src)
 "#,
         input.display(),
         input.display(),
@@ -509,14 +373,14 @@ fn chunked_reads_keep_utf8_scalar_boundaries_and_zero_size_is_a_no_op() {
     fs::write(&input, "aéb").unwrap();
 
     let source = format!(
-        r#"val src = open("{}", "read")
-emit read(src, 0)
-emit eof(src)
-emit read(src, 1)
-emit read(src, 1)
-emit read(src, 1)
-emit read(src, 1)
-emit eof(src)
+        r#"val src = __io.open("{}", "read")
+emit __io.read(src, 0)
+emit __io.eof(src)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.eof(src)
 "#,
         input.display(),
     );
@@ -534,7 +398,7 @@ fn file_reads_reject_invalid_utf8_consistently() {
     let bad_path = dir.join("bad-path.bin");
     fs::write(&bad_path, [0xff, b'a']).unwrap();
     let err = run_source(
-        &format!(r#"emit read("{}")"#, bad_path.display()),
+        &format!(r#"emit __io.read("{}")"#, bad_path.display()),
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -545,8 +409,8 @@ fn file_reads_reject_invalid_utf8_consistently() {
     fs::write(&bad_chunk, [0xff, b'a']).unwrap();
     let err = run_source(
         &format!(
-            r#"val src = open("{}", "read")
-emit read(src, 1)
+            r#"val src = __io.open("{}", "read")
+emit __io.read(src, 1)
 "#,
             bad_chunk.display(),
         ),
@@ -560,8 +424,8 @@ emit read(src, 1)
     fs::write(&bad_line, [b'a', 0xff, b'\n']).unwrap();
     let err = run_source(
         &format!(
-            r#"val src = open("{}", "read")
-emit readln(src)
+            r#"val src = __io.open("{}", "read")
+emit __io.readln(src)
 "#,
             bad_line.display(),
         ),
@@ -579,7 +443,7 @@ fn file_writes_require_permission() {
     let dir = std::env::temp_dir().join(format!("nodia-io-denied-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
     let output = dir.join("output.txt");
-    let source = format!("write(\"{}\", \"blocked\")", output.display());
+    let source = format!("__io.write(\"{}\", \"blocked\")", output.display());
 
     let err = run_source_with_options(
         &source,
@@ -609,17 +473,17 @@ fn path_and_fs_builtins_cover_lexical_and_directory_queries() {
     fs::write(&nested_file, "b").unwrap();
 
     let source = format!(
-        r#"emit basename("{alpha}")
-emit basename("/")
-emit dirname("{alpha}")
-emit dirname("plain.txt")
-emit exists("{alpha}")
-emit exists("{missing}")
-emit is_file("{alpha}")
-emit is_dir("{dir}")
-emit list_dir("{dir}")
-emit glob("{dir}/*.txt")
-emit glob("{dir}/**/*.txt")
+        r#"emit __io.basename("{alpha}")
+emit __io.basename("/")
+emit __io.dirname("{alpha}")
+emit __io.dirname("plain.txt")
+emit __io.exists("{alpha}")
+emit __io.exists("{missing}")
+emit __io.is_file("{alpha}")
+emit __io.is_dir("{dir}")
+emit __io.list_dir("{dir}")
+emit __io.glob("{dir}/*.txt")
+emit __io.glob("{dir}/**/*.txt")
 "#,
         alpha = alpha.display(),
         missing = dir.join("missing.txt").display(),
@@ -706,15 +570,15 @@ fn regex_builtins_execute_against_regex_values() {
   }
 }
 
-val hit = find("go to https://example.com now", pat)
-emit test("go to https://example.com now", pat)
-emit full_match("https://example.com", pat)
+val hit = __re.find("go to https://example.com now", pat)
+emit __re.test("go to https://example.com now", pat)
+emit __re.full_match("https://example.com", pat)
 emit hit.text
 emit hit.named.scheme
 emit hit.named.host
 emit hit.start
 emit hit.end
-emit len(find_all("http://a https://b", pat))
+emit __col.len(__re.find_all("http://a https://b", pat))
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -726,7 +590,7 @@ emit len(find_all("http://a https://b", pat))
 
 #[test]
 fn regex_find_reports_char_offsets() {
-    let source = r#"val hit = find("é ana", regex {
+    let source = r#"val hit = __re.find("é ana", regex {
   named word {
     one_or_more letter
   }
@@ -743,13 +607,13 @@ emit hit.end
 #[test]
 fn regex_offsets_align_with_slice_on_unicode_scalar_positions() {
     let source = r#"val text = "éx"
-val hit = find(text, regex {
+val hit = __re.find(text, regex {
   "x"
 })
 
 emit hit.start
 emit hit.end
-emit slice(text, 0, hit.start)
+emit __col.slice(text, 0, hit.start)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -757,9 +621,39 @@ emit slice(text, 0, hit.start)
 }
 
 #[test]
+fn text_semantics_expose_explicit_byte_offsets() {
+    let source = r#"val text = "aéb"
+emit __col.len(text)
+emit __text.byte_len(text)
+emit __text.byte_offset(text, 0)
+emit __text.byte_offset(text, 1)
+emit __text.byte_offset(text, 2)
+emit __text.byte_offset(text, 3)
+emit __text.scalar_offset(text, 0)
+emit __text.scalar_offset(text, 1)
+emit __text.scalar_offset(text, 3)
+emit __text.scalar_offset(text, 4)
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "3\n4\n0\n1\n3\n4\n0\n1\n2\n3");
+}
+
+#[test]
+fn text_semantics_reject_invalid_offset_boundaries() {
+    let err = run_source(r#"emit __text.scalar_offset("é", 1)"#, BTreeMap::new()).unwrap_err();
+    assert!(err.message.contains("does not point to a UTF-8 boundary"));
+
+    let err = run_source(r#"emit __text.byte_offset("é", 2)"#, BTreeMap::new()).unwrap_err();
+    assert!(err
+        .message
+        .contains("scalar offset 2 is out of range for text with 1 scalar value(s)"));
+}
+
+#[test]
 fn regex_builtins_accept_string_patterns() {
-    let source = r#"emit test("abc-42", "^[a-z]+-\\d+$")
-emit full_match("abc-42", "^[a-z]+-\\d+$")
+    let source = r#"emit __re.test("abc-42", "^[a-z]+-\\d+$")
+emit __re.full_match("abc-42", "^[a-z]+-\\d+$")
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -768,9 +662,9 @@ emit full_match("abc-42", "^[a-z]+-\\d+$")
 
 #[test]
 fn text_builtins_polymorphize_regex_needles() {
-    let source = r#"emit contains("abc42def", regex { one_or_more digit })
-emit starts("42x", regex { one_or_more digit })
-emit ends("x42", regex { one_or_more digit })
+    let source = r#"emit __text.contains("abc42def", regex { one_or_more digit })
+emit __text.starts("42x", regex { one_or_more digit })
+emit __text.ends("x42", regex { one_or_more digit })
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -792,12 +686,12 @@ val digits = regex {
     one_or_more digit
   }
 }
-val hit = find("42", digits)
+val hit = __re.find("42", digits)
 
 emit m.from
 emit m.val
 emit hit.named.val
-emit replace("ana-ana", mirror, "[$(val)]")
+emit __text.replace("ana-ana", mirror, "[$(val)]")
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -831,12 +725,12 @@ val url = regex {
   }
 }
 
-emit replace(text, url, "<$(scheme):$(host)>")
-emit replace_all(text, url, "<$(host)>")
-emit split("ana   bruno\tcarla", regex {
+emit __text.replace(text, url, "<$(scheme):$(host)>")
+emit __text.replace_all(text, url, "<$(host)>")
+emit __text.split("ana   bruno\tcarla", regex {
   one_or_more whitespace
 })
-emit split_regex("ana   bruno\tcarla", regex {
+emit __text.split_regex("ana   bruno\tcarla", regex {
   one_or_more whitespace
 })
 "#;
@@ -850,7 +744,7 @@ emit split_regex("ana   bruno\tcarla", regex {
 
 #[test]
 fn regex_replace_reports_missing_capture_names() {
-    let source = r#"emit replace("ana", regex {
+    let source = r#"emit __text.replace("ana", regex {
   named word {
     one_or_more letter
   }
@@ -865,7 +759,7 @@ fn regex_replace_reports_missing_capture_names() {
 
 #[test]
 fn regex_replace_expands_unmatched_branch_capture_to_empty_string() {
-    let source = r#"emit replace("ana 42", regex {
+    let source = r#"emit __text.replace("ana 42", regex {
   either {
     branch {
       named word {
@@ -888,8 +782,8 @@ fn regex_replace_expands_unmatched_branch_capture_to_empty_string() {
 #[test]
 fn regex_replace_handles_zero_width_matches_predictably() {
     let output = run_source(
-        r#"emit replace("abc", regex { start }, "<")
-emit replace("abc", regex { end }, ">")
+        r#"emit __text.replace("abc", regex { start }, "<")
+emit __text.replace("abc", regex { end }, ">")
 "#,
         BTreeMap::new(),
     )
@@ -901,7 +795,7 @@ emit replace("abc", regex { end }, ">")
 #[test]
 fn nested_string_values_render_with_quotes() {
     let output = run_source(
-        r#"emit split("/usr/local/bin", "/")
+        r#"emit __text.split("/usr/local/bin", "/")
 emit {name: "Ana", "full name": "Ana Maria", empty: ""}
 "#,
         BTreeMap::new(),
@@ -917,10 +811,10 @@ emit {name: "Ana", "full name": "Ana Maria", empty: ""}
 #[test]
 fn json_builtins_parse_and_stringify_structured_values() {
     let output = run_source(
-            r#"val parsed = json_parse("{{\"name\":\"Ana\",\"flags\":[true,false],\"meta\":{{\"count\":2}},\"note\":\"line\\nnext\"}}")
+            r#"val parsed = __json.read("{{\"name\":\"Ana\",\"flags\":[true,false],\"meta\":{{\"count\":2}},\"note\":\"line\\nnext\"}}")
 emit parsed.name
 emit parsed.flags
-emit json_stringify(parsed)
+emit __json.write(parsed)
 "#,
             BTreeMap::new(),
         )
@@ -935,7 +829,7 @@ emit json_stringify(parsed)
 #[test]
 fn json_read_rejects_duplicate_object_keys() {
     let err = run_source(
-        r#"emit json_parse(r'{"name":"Ana","name":"Bia"}')"#,
+        r#"emit __json.read(r'{"name":"Ana","name":"Bia"}')"#,
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -947,7 +841,7 @@ fn json_read_rejects_duplicate_object_keys() {
 #[test]
 fn json_stringify_supports_pretty_print() {
     let output = run_source(
-        r#"emit json_stringify({
+        r#"emit __json.write({
   name: "Ana",
   scores: [1, 2],
 }, 2)
@@ -965,7 +859,7 @@ fn json_stringify_supports_pretty_print() {
 #[test]
 fn json_stringify_zero_indent_stays_compact() {
     let output = run_source(
-        r#"emit json_stringify({
+        r#"emit __json.write({
   name: "Ana",
   age: 30,
 }, 0)
@@ -980,7 +874,7 @@ fn json_stringify_zero_indent_stays_compact() {
 #[test]
 fn json_stringify_accepts_indent_option_map() {
     let output = run_source(
-        r#"emit json_stringify({
+        r#"emit __json.write({
   name: "Ana",
   scores: [1, 2],
 }, {indent: 2})
@@ -998,7 +892,7 @@ fn json_stringify_accepts_indent_option_map() {
 #[test]
 fn json_stringify_rejects_unknown_option_keys() {
     let err = run_source(
-        r#"emit json_stringify({name: "Ana"}, {indent: 2, mode: "wide"})"#,
+        r#"emit __json.write({name: "Ana"}, {indent: 2, mode: "wide"})"#,
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -1010,10 +904,10 @@ fn json_stringify_rejects_unknown_option_keys() {
 #[test]
 fn csv_builtins_read_headers_and_write_maps() {
     let output = run_source(
-        r#"val rows = csv_read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
+        r#"val rows = __csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
 emit rows[0].name
 emit rows[1].name
-emit csv_write(rows)
+emit __csv.write(rows)
 "#,
         BTreeMap::new(),
     )
@@ -1025,11 +919,11 @@ emit csv_write(rows)
 #[test]
 fn csv_read_supports_header_and_type_options() {
     let output = run_source(
-        r#"val users = csv_read("name,age,active\nAna,30,true", {
+        r#"val users = __csv.read("name,age,active\nAna,30,true", {
   header: true,
   types: true,
 })
-val rows = csv_read("1,2\n3,4", {types: true})
+val rows = __csv.read("1,2\n3,4", {types: true})
 emit users[0].age + 2
 emit users[0].active and true
 emit rows[1][0] + rows[1][1]
@@ -1044,7 +938,7 @@ emit rows[1][0] + rows[1][1]
 #[test]
 fn csv_read_rejects_unknown_options_and_duplicate_headers() {
     let err = run_source(
-        r#"emit csv_read("name,age\nAna,30", {header: true, skip_empty: true})"#,
+        r#"emit __csv.read("name,age\nAna,30", {header: true, skip_empty: true})"#,
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -1052,7 +946,7 @@ fn csv_read_rejects_unknown_options_and_duplicate_headers() {
     assert!(err.message.contains("does not accept option 'skip_empty'"));
 
     let err = run_source(
-        r#"emit csv_read("name,name\nAna,30", true)"#,
+        r#"emit __csv.read("name,name\nAna,30", true)"#,
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -1063,10 +957,10 @@ fn csv_read_rejects_unknown_options_and_duplicate_headers() {
 #[test]
 fn csv_handles_embedded_newlines_and_escaped_quotes() {
     let output = run_source(
-        r#"val rows = csv_read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true)
+        r#"val rows = __csv.read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true)
 emit rows[0].note
 emit rows[1].note
-emit csv_write(rows)
+emit __csv.write(rows)
 "#,
         BTreeMap::new(),
     )
@@ -1081,7 +975,7 @@ emit csv_write(rows)
 #[test]
 fn csv_write_uses_sorted_union_headers_and_empty_fields_for_missing_keys() {
     let output = run_source(
-        r#"emit csv_write([
+        r#"emit __csv.write([
   {role: "dev", name: "Ana"},
   {team: "core", name: "Bia"},
 ])"#,
@@ -1103,7 +997,7 @@ val rows = table.read("name,age\nAna,30", {header: true, types: true})
 emit decode(r'{"ok":true}').ok
 emit rows[0].age + 1
 emit encode(rows[0], 2)
-emit map(encode, [{n: 1}, {n: 2}])
+emit __col.map(encode, [{n: 1}, {n: 2}])
 "#,
         BTreeMap::new(),
     )
@@ -1172,12 +1066,12 @@ fn stdlib_data_modules_work_from_file_execution() {
 fn get_builtin_returns_default_for_missing_entries() {
     let output = run_source(
         r#"var counts = {}
-counts["ana"] = get(counts, "ana", 0) + 1
-counts["bia"] = get(counts, "bia", 0) + 1
-emit get(counts, "ana", 0)
-emit get(counts, "carla", 0)
-emit get(["a", "b"], 3, "missing")
-emit get("nodia", -1, "?")
+counts["ana"] = __col.get(counts, "ana", 0) + 1
+counts["bia"] = __col.get(counts, "bia", 0) + 1
+emit __col.get(counts, "ana", 0)
+emit __col.get(counts, "carla", 0)
+emit __col.get(["a", "b"], 3, "missing")
+emit __col.get("nodia", -1, "?")
 "#,
         BTreeMap::new(),
     )
@@ -1192,11 +1086,11 @@ fn text_indexing_and_slicing_follow_current_contract() {
         r#"emit ["a", "b", "c"][-1]
 emit "nodia"[0]
 emit "nodia"[-1]
-emit get("nodia", -1, "?")
-emit slice("nodia", -99, 99)
-emit len(slice("nodia", 4, 2))
-emit slice("éx", 0, 1)
-emit slice("éx", 0, 2)
+emit __col.get("nodia", -1, "?")
+emit __col.slice("nodia", -99, 99)
+emit __col.len(__col.slice("nodia", 4, 2))
+emit __col.slice("éx", 0, 1)
+emit __col.slice("éx", 0, 2)
 "#,
         BTreeMap::new(),
     )
@@ -1219,7 +1113,7 @@ fn interpolation_handles_nested_braces_and_inner_string_literals() {
     let output = run_source(
         r#"emit "{ {name: \"Ana\"}[\"name\"] }"
 emit "{regex { one_or_more digit }}"
-emit "{replace(\"xx\", \"x\", \"}\")}"
+emit "{__text.replace(\"xx\", \"x\", \"}\")}"
 "#,
         BTreeMap::new(),
     )
@@ -1231,10 +1125,10 @@ emit "{replace(\"xx\", \"x\", \"}\")}"
 #[test]
 fn formatting_builtins_cover_padding_and_numeric_output() {
     let output = run_source(
-        r#"emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
-emit pad_left("42", 5, "0")
-emit pad_right("ok", 5, ".")
-emit fixed(3.14159, 3)
+        r#"emit __fmt.format("%05d %.2f %-6s", [7, 3.5, "ok"])
+emit __fmt.pad_left("42", 5, "0")
+emit __fmt.pad_right("ok", 5, ".")
+emit __fmt.fixed(3.14159, 3)
 "#,
         BTreeMap::new(),
     )
@@ -1246,9 +1140,9 @@ emit fixed(3.14159, 3)
 #[test]
 fn formatting_builtins_cover_percent_string_precision_and_multichar_padding() {
     let output = run_source(
-        r#"emit format("%% %.3s", ["Nodia"])
-emit pad_left("7", 5, "ab")
-emit pad_right("7", 5, "ab")
+        r#"emit __fmt.format("%% %.3s", ["Nodia"])
+emit __fmt.pad_left("7", 5, "ab")
+emit __fmt.pad_right("7", 5, "ab")
 "#,
         BTreeMap::new(),
     )
@@ -1264,7 +1158,7 @@ fn args_binding_and_env_builtin_work_with_runtime_options() {
 
     let output = run_source_with_options(
             &format!(
-                "emit args\nemit args[1]\nemit env(\"{key}\")\nemit env(\"{key}_MISSING\", \"fallback\")\n"
+                "emit __sys.args\nemit __sys.args[1]\nemit __sys.env(\"{key}\")\nemit __sys.env(\"{key}_MISSING\", \"fallback\")\n"
             ),
             BTreeMap::new(),
             RuntimeOptions {
@@ -1281,14 +1175,14 @@ fn args_binding_and_env_builtin_work_with_runtime_options() {
 
 #[test]
 fn env_builtin_requires_permission() {
-    let err = run_source("emit env(\"HOME\")", BTreeMap::new()).unwrap_err();
+    let err = run_source("emit __sys.env(\"HOME\")", BTreeMap::new()).unwrap_err();
     assert_eq!(err.code, "E3002");
 }
 
 #[test]
 fn exit_builtin_returns_special_exit_error_with_output() {
     let err = run_source_with_options(
-        "emit \"before\"\nexit(7)\nemit \"after\"\n",
+        "emit \"before\"\n__sys.exit(7)\nemit \"after\"\n",
         BTreeMap::new(),
         RuntimeOptions::default(),
     )
@@ -1301,7 +1195,7 @@ fn exit_builtin_returns_special_exit_error_with_output() {
 #[test]
 fn exec_builtin_returns_stdout_stderr_and_status() {
     let output = run_source_with_options(
-        r#"val result = exec("/bin/sh", [
+        r#"val result = __sys.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
@@ -1323,7 +1217,7 @@ emit result.status
 #[test]
 fn exec_builtin_returns_recoverable_error_for_missing_binary() {
     let output = run_source_with_options(
-        r#"val result = exec("nonexistent_xyz", [])
+        r#"val result = __sys.exec("nonexistent_xyz", [])
 emit result.status
 emit result.stdout == ""
 emit result.stderr == ""
@@ -1343,7 +1237,7 @@ emit result.error != ""
 #[test]
 fn exec_builtin_requires_permission() {
     let err = run_source(
-        r#"emit exec("/bin/sh", [
+        r#"emit __sys.exec("/bin/sh", [
   "-c",
   "exit 0",
 ]).status
@@ -1387,12 +1281,12 @@ val users = [
   {name: "Caio", age: 25},
 ]
 
-emit map(double, [1, 2, 3])
-emit filter(odd, [1, 2, 3, 4])
-emit reduce(add, 0, [1, 2, 3, 4])
-emit group_by(bucket, [3, 12, 8, 20])
-emit sort_by(age, users)[0].name
-emit sort_by(age, users)[2].name
+emit __col.map(double, [1, 2, 3])
+emit __col.filter(odd, [1, 2, 3, 4])
+emit __col.reduce(add, 0, [1, 2, 3, 4])
+emit __col.group_by(bucket, [3, 12, 8, 20])
+emit __col.sort_by(age, users)[0].name
+emit __col.sort_by(age, users)[2].name
 "#,
         BTreeMap::new(),
     )
@@ -1408,9 +1302,9 @@ emit sort_by(age, users)[2].name
 fn lambda_expressions_work_inline_and_capture_bindings() {
     let output = run_source(
         r#"val factor = 3
-emit map(lambda(x) { x * factor }, [1, 2, 3])
-emit filter(lambda(x) { x % 2 != 0 }, [1, 2, 3, 4])
-emit reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
+emit __col.map(lambda(x) { x * factor }, [1, 2, 3])
+emit __col.filter(lambda(x) { x % 2 != 0 }, [1, 2, 3, 4])
+emit __col.reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
 "#,
         BTreeMap::new(),
     )
@@ -1422,7 +1316,7 @@ emit reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
 #[test]
 fn raw_and_triple_strings_preserve_literal_braces() {
     let output = run_source(
-        r#"val doc = json_parse(r'{"a":1,"tpl":"hello {world}"}')
+        r#"val doc = __json.read(r'{"a":1,"tpl":"hello {world}"}')
 emit doc.a
 emit doc.tpl
 emit """{"nested":true}"""
@@ -1439,7 +1333,7 @@ fn scientific_notation_literals_work_in_source_and_json() {
     let output = run_source(
         r#"emit 1e3
 emit 1.5e2
-emit json_stringify({big: 1e10})
+emit __json.write({big: 1e10})
 "#,
         BTreeMap::new(),
     )
@@ -1451,8 +1345,8 @@ emit json_stringify({big: 1e10})
 #[test]
 fn temporal_builtins_parse_format_and_expose_components() {
     let output = run_source(
-        r#"val d = date(2026, 5, 27)
-val dt = datetime({
+        r#"val d = __dt.date(2026, 5, 27)
+val dt = __dt.datetime({
   year: 2026,
   month: 5,
   day: 27,
@@ -1463,16 +1357,16 @@ val dt = datetime({
   offset: "+05:30",
 })
 
-emit isoformat(d)
-emit isoformat(dt)
-emit strftime(dt, "%F %T %:z")
-emit weekday_name(parse_date("2024-02-29"))
-emit month_name(parse_date("2024-02-29"))
-emit ordinal_day(parse_date("2024-02-29"))
-emit iso_week(parse_date("2021-01-01")).week
-emit offset_minutes(dt)
-emit days_in_month(2024, 2)
-emit is_leap_year(2024)
+emit __dt.isoformat(d)
+emit __dt.isoformat(dt)
+emit __dt.strftime(dt, "%F %T %:z")
+emit __dt.weekday_name(__dt.parse_date("2024-02-29"))
+emit __dt.month_name(__dt.parse_date("2024-02-29"))
+emit __dt.ordinal_day(__dt.parse_date("2024-02-29"))
+emit __dt.iso_week(__dt.parse_date("2021-01-01")).week
+emit __dt.offset_minutes(dt)
+emit __dt.days_in_month(2024, 2)
+emit __dt.is_leap_year(2024)
 "#,
         BTreeMap::new(),
     )
@@ -1487,21 +1381,21 @@ emit is_leap_year(2024)
 #[test]
 fn temporal_builtins_cover_epoch_arithmetic_and_json() {
     let output = run_source(
-        r#"val end_of_jan = date(2024, 1, 31)
-val stamp = parse_datetime("2024-01-31T23:00:00Z")
-val jump = duration({hours: 2, minutes: 30})
+        r#"val end_of_jan = __dt.date(2024, 1, 31)
+val stamp = __dt.parse_datetime("2024-01-31T23:00:00Z")
+val jump = __dt.duration({hours: 2, minutes: 30})
 
-emit isoformat(add_months(end_of_jan, 1))
-emit isoformat(add_duration(stamp, jump))
-emit isoformat(from_unix(0.5))
-emit unix_seconds(from_unix(0.5))
-emit isoformat(from_unix_ms(1500))
-emit diff_days(date(2024, 3, 5), date(2024, 3, 1))
-emit diff_seconds(parse_datetime("1970-01-01T00:00:01.5Z"), parse_datetime("1970-01-01T00:00:00Z"))
-emit json_stringify({
-  d: date(2024, 2, 29),
-  dt: parse_datetime("2024-02-29T12:00:00Z"),
-  dur: duration({minutes: 90}),
+emit __dt.isoformat(__dt.add_months(end_of_jan, 1))
+emit __dt.isoformat(__dt.add_duration(stamp, jump))
+emit __dt.isoformat(__dt.from_unix(0.5))
+emit __dt.unix_seconds(__dt.from_unix(0.5))
+emit __dt.isoformat(__dt.from_unix_ms(1500))
+emit __dt.diff_days(__dt.date(2024, 3, 5), __dt.date(2024, 3, 1))
+emit __dt.diff_seconds(__dt.parse_datetime("1970-01-01T00:00:01.5Z"), __dt.parse_datetime("1970-01-01T00:00:00Z"))
+emit __json.write({
+  d: __dt.date(2024, 2, 29),
+  dt: __dt.parse_datetime("2024-02-29T12:00:00Z"),
+  dur: __dt.duration({minutes: 90}),
 })
 "#,
         BTreeMap::new(),
@@ -1517,14 +1411,14 @@ emit json_stringify({
 #[test]
 fn temporal_values_compare_and_sort_consistently() {
     let output = run_source(
-        r#"emit sort([
-  date(2024, 1, 3),
-  date(2024, 1, 1),
-  date(2024, 1, 2),
+        r#"emit __col.sort([
+  __dt.date(2024, 1, 3),
+  __dt.date(2024, 1, 1),
+  __dt.date(2024, 1, 2),
 ])
-emit parse_datetime("2024-01-01T00:00:00+02:00") == parse_datetime("2023-12-31T22:00:00Z")
-emit parse_datetime("2024-01-01T00:00:00Z") < parse_datetime("2024-01-02T00:00:00Z")
-emit parse_duration("PT90S") > parse_duration("PT1M")
+emit __dt.parse_datetime("2024-01-01T00:00:00+02:00") == __dt.parse_datetime("2023-12-31T22:00:00Z")
+emit __dt.parse_datetime("2024-01-01T00:00:00Z") < __dt.parse_datetime("2024-01-02T00:00:00Z")
+emit __dt.parse_duration("PT90S") > __dt.parse_duration("PT1M")
 "#,
         BTreeMap::new(),
     )

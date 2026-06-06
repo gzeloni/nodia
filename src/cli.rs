@@ -777,13 +777,13 @@ mod tests {
     #[test]
     fn split_script_args_keeps_source_and_trailing_args_separate() {
         let (source, script_args) = split_script_args(vec![
-            "emit args".to_string(),
+            "use system\nemit system.args".to_string(),
             "--".to_string(),
             "one".to_string(),
             "two".to_string(),
         ]);
 
-        assert_eq!(source, vec!["emit args".to_string()]);
+        assert_eq!(source, vec!["use system\nemit system.args".to_string()]);
         assert_eq!(script_args, vec!["one".to_string(), "two".to_string()]);
     }
 
@@ -798,7 +798,7 @@ mod tests {
         let code = run(vec![
             "nodia".to_string(),
             "-e".to_string(),
-            "emit \"before\"\nexit(7)".to_string(),
+            "use system\nemit \"before\"\nsystem.exit(7)".to_string(),
         ]);
 
         assert_eq!(code, 7);
