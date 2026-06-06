@@ -55,11 +55,11 @@ impl<'a> State<'a> {
         };
         let symbols = items
             .iter()
-            .map(|(field, _, arities)| {
+            .map(|(field, target, arities)| {
                 (
                     (*field).to_string(),
                     match arities {
-                        Some(arities) => Symbol::function_arities(arities, false),
+                        Some(arities) => Symbol::builtin_function(target, arities),
                         None => Symbol::unknown(false),
                     },
                 )
@@ -127,9 +127,9 @@ impl<'a> State<'a> {
     }
 
     pub(super) fn builtin_symbol(&self, name: &str) -> Option<Symbol> {
-        let (_, _, arities) = stdlib::global_builtin_item(name)?;
+        let (_, target, arities) = stdlib::global_builtin_item(name)?;
         Some(match arities {
-            Some(arities) => Symbol::function_arities(arities, false),
+            Some(arities) => Symbol::builtin_function(target, arities),
             None => Symbol::unknown(false),
         })
     }
@@ -166,6 +166,7 @@ impl<'a> State<'a> {
         let kind = match expr {
             Expr::Lambda { params, .. } => SymbolKind::Function {
                 arities: vec![params.len()],
+                builtin_target: None,
             },
             Expr::Map(pairs) => {
                 let mut fields = HashMap::new();

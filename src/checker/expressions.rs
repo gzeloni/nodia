@@ -3,6 +3,8 @@
 
 //! Expression-level semantic checks.
 
+use crate::interpolation::{self, Chunk as InterpolationChunk};
+
 use super::helpers::*;
 use super::*;
 
@@ -77,7 +79,7 @@ impl<'a> State<'a> {
                 .cloned()
                 .or_else(|| self.builtin_symbol(name))
             {
-                if let SymbolKind::Function { arities } = &symbol.kind {
+                if let SymbolKind::Function { arities, .. } = &symbol.kind {
                     self.check_arity(name, args.len(), arities)?;
                 }
                 return Ok(());
@@ -88,7 +90,7 @@ impl<'a> State<'a> {
         if let Expr::Get { object, field } = callee {
             match self.field_status(object, field) {
                 FieldStatus::Found(symbol) => {
-                    if let SymbolKind::Function { arities } = symbol.kind {
+                    if let SymbolKind::Function { arities, .. } = symbol.kind {
                         self.check_arity(field, args.len(), &arities)?;
                     }
                     self.check_expr(object)?;
@@ -250,27 +252,14 @@ impl<'a> State<'a> {
     }
 
     pub(super) fn check_interpolations(&mut self, raw: &str) -> NodiaResult<()> {
-        let chars = raw.chars().collect::<Vec<_>>();
-        let mut index = 0;
-        while index < chars.len() {
-            if chars[index] == '{' {
-                if chars.get(index + 1) == Some(&'{') {
-                    index += 2;
-                    continue;
-                }
-                let start = index + 1;
-                let mut end = start;
-                while end < chars.len() && chars[end] != '}' {
-                    end += 1;
-                }
-                if end == chars.len() {
-                    return Err(semantic("E4106", "unterminated interpolation", None));
-                }
-                let expr_text = chars[start..end].iter().collect::<String>();
+        for chunk in
+            interpolation::parse_chunks(raw).map_err(|message| semantic("E4106", message, None))?
+        {
+            if let InterpolationChunk::Expr(expr_text) = chunk {
                 if expr_text.trim().is_empty() {
                     return Err(semantic("E4106", "empty interpolation", None));
                 }
-                let tokens = Lexer::new(&expr_text).tokenize().map_err(|err| {
+                let tokens = Lexer::new(expr_text).tokenize().map_err(|err| {
                     semantic(
                         "E4106",
                         format!("invalid interpolation: {}", err.message),
@@ -285,11 +274,6 @@ impl<'a> State<'a> {
                     )
                 })?;
                 self.check_expr(&expr)?;
-                index = end + 1;
-            } else if chars[index] == '}' && chars.get(index + 1) == Some(&'}') {
-                index += 2;
-            } else {
-                index += 1;
             }
         }
         Ok(())
@@ -314,31 +298,60 @@ impl<'a> State<'a> {
     }
 
     fn check_builtin_call_diagnostics(&self, callee: &Expr, args: &[Expr]) -> NodiaResult<()> {
-        let Some(name) = direct_identifier(callee) else {
+        let Some(target) = self.builtin_call_target(callee) else {
             return Ok(());
         };
-        if !matches!(name, "replace" | "replace_all") || self.lookup(name).is_some() {
-            return Ok(());
+        match target.as_str() {
+            "replace" | "replace_all" => self.check_replace_call_diagnostics(args),
+            "test" | "full_match" | "find" | "find_all" => {
+                self.check_regex_match_pattern_diagnostics(args)
+            }
+            _ => Ok(()),
         }
+    }
+
+    fn builtin_call_target(&self, callee: &Expr) -> Option<String> {
+        match callee {
+            Expr::Identifier(name) => self
+                .lookup(name)
+                .and_then(Symbol::builtin_target)
+                .map(str::to_string)
+                .or_else(|| {
+                    self.builtin_symbol(name)
+                        .and_then(|symbol| symbol.builtin_target().map(str::to_string))
+                }),
+            Expr::Get { object, field } => match self.field_status(object, field) {
+                FieldStatus::Found(symbol) => symbol.builtin_target().map(str::to_string),
+                FieldStatus::Missing | FieldStatus::Unknown => None,
+            },
+            _ => None,
+        }
+    }
+
+    fn check_replace_call_diagnostics(&self, args: &[Expr]) -> NodiaResult<()> {
         if args.len() != 3 {
             return Ok(());
         }
 
-        let Expr::String {
-            value: replacement,
-            interpolate,
-        } = &args[2]
-        else {
+        let Some(replacement) = static_string_literal(&args[2]) else {
             return Ok(());
         };
-        if *interpolate && replacement.contains(['{', '}']) {
-            return Ok(());
-        }
 
         match &args[1] {
             Expr::Regex(pattern) => regex::validate_replacement(pattern, replacement),
-            Expr::String { .. } => regex::validate_replacement_syntax(replacement),
             _ => Ok(()),
         }
+    }
+
+    fn check_regex_match_pattern_diagnostics(&self, args: &[Expr]) -> NodiaResult<()> {
+        if args.len() != 2 {
+            return Ok(());
+        }
+
+        let Some(pattern) = static_string_literal(&args[1]) else {
+            return Ok(());
+        };
+
+        regex::validate_text(pattern)
     }
 }

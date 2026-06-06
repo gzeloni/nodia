@@ -68,6 +68,13 @@ pub fn compile_text(rendered: &str) -> NodiaResult<RuntimeRegex> {
     })
 }
 
+/// Validates raw regex text using semantic regex diagnostics.
+pub fn validate_text(rendered: &str) -> NodiaResult<()> {
+    Regex::new(rendered)
+        .map(|_| ())
+        .map_err(|err| regex_error(format!("cannot compile regex '{rendered}': {err}")))
+}
+
 /// Validates replacement placeholder syntax without capture-shape checks.
 pub fn validate_replacement_syntax(replacement: &str) -> NodiaResult<()> {
     parse_replacement_chunks(replacement)
@@ -82,7 +89,14 @@ pub fn validate_replacement(pattern: &RegexPattern, replacement: &str) -> NodiaR
     let mut names = HashSet::new();
     let mut capture_len = 1usize;
     collect_capture_contract(&pattern.body, &mut capture_len, &mut names);
+    validate_chunks_against_capture_contract(chunks, capture_len, &names)
+}
 
+fn validate_chunks_against_capture_contract(
+    chunks: Vec<ReplacementChunk>,
+    capture_len: usize,
+    names: &HashSet<String>,
+) -> NodiaResult<()> {
     for chunk in chunks {
         match chunk {
             ReplacementChunk::CaptureIndex { index, .. } if index >= capture_len => {

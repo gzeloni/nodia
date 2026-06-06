@@ -29,7 +29,10 @@ struct Symbol {
 #[derive(Debug, Clone)]
 enum SymbolKind {
     Unknown,
-    Function { arities: Vec<usize> },
+    Function {
+        arities: Vec<usize>,
+        builtin_target: Option<String>,
+    },
     Map(HashMap<String, Symbol>),
     Namespace(HashMap<String, Symbol>),
 }

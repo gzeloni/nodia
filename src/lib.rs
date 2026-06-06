@@ -11,6 +11,7 @@ pub mod ast;
 pub mod checker;
 pub mod error;
 pub mod formatter;
+mod interpolation;
 pub mod io;
 pub mod lexer;
 pub mod parser;

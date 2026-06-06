@@ -18,10 +18,19 @@ impl Symbol {
     }
 
     pub(super) fn function_arities(arities: &[usize], mutable: bool) -> Self {
+        Self::function_symbol(arities, mutable, None)
+    }
+
+    pub(super) fn builtin_function(target: &str, arities: &[usize]) -> Self {
+        Self::function_symbol(arities, false, Some(target.to_string()))
+    }
+
+    fn function_symbol(arities: &[usize], mutable: bool, builtin_target: Option<String>) -> Self {
         Self {
             mutable,
             kind: SymbolKind::Function {
                 arities: arities.to_vec(),
+                builtin_target,
             },
         }
     }
@@ -30,6 +39,16 @@ impl Symbol {
         Self {
             mutable: false,
             kind: SymbolKind::Namespace(symbols),
+        }
+    }
+
+    pub(super) fn builtin_target(&self) -> Option<&str> {
+        match &self.kind {
+            SymbolKind::Function {
+                builtin_target: Some(target),
+                ..
+            } => Some(target.as_str()),
+            _ => None,
         }
     }
 }
@@ -95,6 +114,7 @@ pub(super) fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     let kind = match expr {
         Expr::Lambda { params, .. } => SymbolKind::Function {
             arities: vec![params.len()],
+            builtin_target: None,
         },
         Expr::Map(pairs) => {
             let mut fields = HashMap::new();
@@ -206,10 +226,7 @@ pub(super) fn assignment_symbol_steps(target: &AssignTarget) -> Vec<AssignmentSy
     steps
 }
 
-pub(super) fn collect_target_steps(
-    target: &AssignTarget,
-    steps: &mut Vec<AssignmentSymbolStep>,
-) {
+pub(super) fn collect_target_steps(target: &AssignTarget, steps: &mut Vec<AssignmentSymbolStep>) {
     match target {
         AssignTarget::Identifier(_) => {}
         AssignTarget::Get { object, field } => {
@@ -230,8 +247,15 @@ pub(super) fn collect_target_steps(
 pub(super) fn static_map_key(index: &Expr) -> Option<String> {
     match index {
         Expr::Literal(value) => Some(value.to_string()),
-        Expr::String { value, interpolate } if !interpolate || !value.contains(['{', '}']) => {
-            Some(value.clone())
+        Expr::String { .. } => static_string_literal(index).map(str::to_string),
+        _ => None,
+    }
+}
+
+pub(super) fn static_string_literal(expr: &Expr) -> Option<&str> {
+    match expr {
+        Expr::String { value, interpolate } if !*interpolate || !value.contains(['{', '}']) => {
+            Some(value.as_str())
         }
         _ => None,
     }

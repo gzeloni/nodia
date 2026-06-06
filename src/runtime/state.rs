@@ -3,6 +3,8 @@
 
 //! Runtime helpers for argument validation, conversions, and assignment.
 
+use crate::interpolation::{self, Chunk as InterpolationChunk};
+
 use super::*;
 
 impl Runtime {
@@ -204,19 +206,20 @@ impl Runtime {
                         )))
                     }
                 };
-                if index < 0 {
+                let len = value.chars().count() as i64;
+                let normalized = if index < 0 { len + index } else { index };
+                if normalized < 0 || normalized >= len {
                     return Err(NodiaError::runtime(format!(
-                        "string index {index} out of bounds; direct string indexing is zero-based and does not support negative values"
+                        "string index {index} out of bounds for length {len}",
                     )));
                 }
-                let len = value.chars().count();
                 value
                     .chars()
-                    .nth(index as usize)
+                    .nth(normalized as usize)
                     .map(|ch| Value::String(ch.to_string()))
                     .ok_or_else(|| {
                         NodiaError::runtime(format!(
-                            "string index {index} out of bounds for length {len}"
+                            "string index {index} out of bounds for length {len}",
                         ))
                     })
             }
@@ -237,36 +240,17 @@ impl Runtime {
 
     pub(super) fn interpolate(&mut self, raw: &str) -> NodiaResult<String> {
         let mut output = String::with_capacity(raw.len());
-        let bytes = raw.as_bytes();
-        let mut index = 0;
-        while index < raw.len() {
-            if bytes[index] == b'{' {
-                if bytes.get(index + 1) == Some(&b'{') {
-                    output.push('{');
-                    index += 2;
-                    continue;
+        for chunk in interpolation::parse_chunks(raw).map_err(NodiaError::runtime)? {
+            match chunk {
+                InterpolationChunk::Text(text) => output.push_str(text),
+                InterpolationChunk::EscapedOpen => output.push('{'),
+                InterpolationChunk::EscapedClose => output.push('}'),
+                InterpolationChunk::Expr(expr_text) => {
+                    let tokens = Lexer::new(expr_text).tokenize()?;
+                    let expr = Parser::new(tokens).parse_expression_only()?;
+                    let value = self.eval(&expr)?;
+                    output.push_str(&value.to_string());
                 }
-                let start = index + 1;
-                let Some(offset) = raw[start..].find('}') else {
-                    return Err(NodiaError::runtime("unterminated interpolation"));
-                };
-                let end = start + offset;
-                let tokens = Lexer::new(&raw[start..end]).tokenize()?;
-                let expr = Parser::new(tokens).parse_expression_only()?;
-                let value = self.eval(&expr)?;
-                output.push_str(&value.to_string());
-                index = end + 1;
-            } else if bytes[index] == b'}' && bytes.get(index + 1) == Some(&b'}') {
-                output.push('}');
-                index += 2;
-            } else {
-                let next = raw[index..]
-                    .chars()
-                    .next()
-                    .map(|ch| index + ch.len_utf8())
-                    .expect("index always points to a char boundary");
-                output.push_str(&raw[index..next]);
-                index = next;
             }
         }
         Ok(output)
