@@ -16,12 +16,13 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.7.3`.
+Nodia is experimental. The current release is `v0.7.4`.
 
 The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
 positions stay scalar-based, byte boundaries are part of the public model, and
-normalization/case-folding, UTF-8 encode/decode, newline cleanup, and
-unit-aware access stay explicit rather than implicit magic.
+normalization/case-folding, UTF-8 encode/decode, newline cleanup, explicit
+bytes-aware JSON/CSV parsing, and grapheme-safe formatting stay explicit
+rather than implicit magic.
 
 ## Install From Source
 

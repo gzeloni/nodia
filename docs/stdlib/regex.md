@@ -13,6 +13,9 @@ text behavior.
 Regex execution works over the exact text you pass in. If a pipeline needs
 canonical or compatibility equivalence across Unicode forms, normalize first
 with `text.nfc(...)` or `text.nfkc(...)`.
+Regex remains text-only even after the byte APIs in `0.7.x`: if your input
+comes from `io.read_bytes(...)` or `system.exec(...)`, decode and sanitize it
+explicitly before matching.
 
 For DSL syntax, see [Regex DSL](../language/regex.md).
 
@@ -116,7 +119,7 @@ they line up with `collections.len(string)` and `collections.slice(...)`. Use
 `text.scalar_slice(...)` when you want to slice on the same unit, or
 `text.byte_offset(...)` / `text.scalar_offset(...)` when you need to cross the
 byte/scalar boundary. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.3`
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.4`
 model.
 
 ## `find_all(text, pattern)`

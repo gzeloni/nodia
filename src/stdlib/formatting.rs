@@ -6,6 +6,7 @@
 use super::{expect_arity, expect_list, to_float, to_int};
 use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub fn format(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "format")?;
@@ -146,7 +147,7 @@ fn pad(args: &[Value], name: &str, right: bool) -> NodiaResult<Value> {
 fn format_string(value: &Value, precision: Option<usize>) -> String {
     let text = value.to_string();
     if let Some(precision) = precision {
-        text.chars().take(precision).collect()
+        text.graphemes(true).take(precision).collect()
     } else {
         text
     }
@@ -160,7 +161,7 @@ fn apply_width(text: &str, width: Option<usize>, right: bool, pad: &str) -> Nodi
     let Some(width) = width else {
         return Ok(text.to_string());
     };
-    let len = text.chars().count();
+    let len = text.graphemes(true).count();
     if len >= width {
         return Ok(text.to_string());
     }
@@ -178,10 +179,10 @@ fn apply_width(text: &str, width: Option<usize>, right: bool, pad: &str) -> Nodi
 
 fn repeated_pad(width: usize, pad: &str) -> String {
     let mut out = String::new();
-    while out.chars().count() < width {
+    while out.graphemes(true).count() < width {
         out.push_str(pad);
     }
-    out.chars().take(width).collect()
+    out.graphemes(true).take(width).collect()
 }
 
 fn expect_string(value: &Value, name: &str, position: &str) -> NodiaResult<String> {

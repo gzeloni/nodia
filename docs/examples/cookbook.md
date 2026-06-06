@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.7.3` release binary.
+and run. Each example has been verified with the `0.7.4` release binary.
 
 ## 1. Hello, World
 
@@ -182,10 +182,11 @@ emit text.split("/usr/local/bin", "/")'
 ```bash
 ./target/release/nodia eval '
 use json
+use text
 
-val doc = json.read("""
+val doc = json.read(text.encode_utf8("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-""")
+"""))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -203,8 +204,9 @@ Ana
 ```bash
 ./target/release/nodia eval '
 use csv
+use text
 
-val rows = csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
+val rows = csv.read(text.encode_utf8("name,role\nAna,dev\n\"Bia, Jr\",ops"), true)
 emit rows[0].name
 emit rows[1]
 '
@@ -648,4 +650,39 @@ emit text.byte_slice("aéb", 1, 3)
 é
 é
 é
+```
+
+## 27. Clean A Messy Byte Buffer Explicitly
+
+```bash
+./target/release/nodia eval '
+use text
+
+val raw = [239, 187, 191, 97, 13, 10, 98, 0, 255]
+val decoded = text.decode_utf8_lossy(raw)
+emit text.normalize_lf(text.drop_nul(text.strip_bom(decoded)))
+'
+```
+
+```text
+a
+b�
+```
+
+## 28. Format Visible Characters Without Splitting Graphemes
+
+```bash
+./target/release/nodia eval '
+use format
+
+emit format.format("[%2s][%.1s]", ["é", "éx"])
+emit format.pad_left("é", 2, ".")
+emit format.pad_right("é", 2, ".")
+'
+```
+
+```text
+[ é][é]
+.é
+é.
 ```

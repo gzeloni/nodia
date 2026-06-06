@@ -21,8 +21,10 @@ Supported modifiers:
 * zero-pad: `%05d`
 * precision: `%.2f`, `%.3s`
 
-For `%s`, precision truncates characters from the rendered string form. `%%`
-emits a literal percent sign.
+For `%s`, precision truncates grapheme clusters from the rendered string form.
+String width and `pad_left(...)` / `pad_right(...)` width are also grapheme
+based, so visible characters with combining marks stay intact. `%%` emits a
+literal percent sign.
 
 ```bash
 ./target/release/nodia eval '
@@ -33,6 +35,19 @@ emit format.format("%05d %.2f %-6s", [7, 3.5, "ok"])
 
 ```text
 00007 3.50 ok    
+```
+
+Grapheme-aware string formatting:
+
+```bash
+./target/release/nodia eval '
+use format
+emit format.format("[%2s][%.1s]", ["é", "éx"])
+'
+```
+
+```text
+[ é][é]
 ```
 
 ## `pad_left(value, width)` / `pad_left(value, width, pad)`
@@ -68,7 +83,8 @@ ok...
 ```
 
 When the `pad` string is longer than one character, Nodia repeats and truncates
-it to fit the requested width exactly.
+it to fit the requested width exactly. Width is still measured in grapheme
+clusters, not scalar values.
 
 ## `fixed(number, digits)`
 

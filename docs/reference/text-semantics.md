@@ -1,6 +1,6 @@
 # Text Semantics
 
-This page defines the official `0.7.3` text model in Nodia.
+This page defines the official `0.7.4` text model in Nodia.
 
 ## Core Model
 
@@ -13,7 +13,7 @@ This page defines the official `0.7.3` text model in Nodia.
 | grapheme cluster | one extended grapheme cluster | `text.grapheme_len(text)`, `text.grapheme(...)`, `text.grapheme_slice(...)` |
 | character | informal human term only | use `byte`, `scalar value`, or `grapheme cluster` when precision matters |
 
-Nodia `0.7.3` keeps strings as UTF-8 text, but byte-oriented pipelines are now
+Nodia `0.7.4` keeps strings as UTF-8 text, but byte-oriented pipelines are now
 explicit instead of smuggling lossy decoding through unrelated APIs.
 
 ## Indexes And Offsets
@@ -66,7 +66,7 @@ That means:
 
 ## Boundaries
 
-Three kinds of boundaries matter in `0.7.3`:
+Three kinds of boundaries matter in `0.7.4`:
 
 | Boundary kind | Valid range | Meaning |
 | --- | --- | --- |
@@ -94,7 +94,7 @@ step stays visible at the call site.
 
 ## Decoding And Sanitation
 
-`0.7.3` makes the decode boundary explicit:
+`0.7.4` keeps the decode boundary explicit:
 
 | Situation | Rule |
 | --- | --- |
@@ -106,6 +106,18 @@ step stays visible at the call site.
 
 This removes hidden lossy conversions from the runtime. If a script wants
 replacement semantics, the lossy choice is now visible in source.
+
+## Cross-Stdlib Adoption
+
+The rest of the stdlib now follows the same rules where it matters:
+
+| Surface | Rule |
+| --- | --- |
+| `json.read(text_or_bytes)` | accepts string or `list<int>`; byte input is decoded as strict UTF-8 before parsing |
+| `csv.read(text_or_bytes, ...)` | accepts string or `list<int>`; byte input is decoded as strict UTF-8 before parsing |
+| `format.format("%...s", ...)` | `%s` precision counts grapheme clusters, not scalar values |
+| `format.pad_left(...)` / `format.pad_right(...)` | width counts grapheme clusters, so visible characters are not split mid-cluster |
+| regex builtins | remain text-only; bytes must be decoded before matching |
 
 ## Worked Examples
 
@@ -219,7 +231,45 @@ emit text.decode_utf8([97, 255, 98])'
 error[E2000]: decode_utf8() cannot decode bytes as UTF-8: invalid utf-8 sequence of 1 bytes from index 1
 ```
 
-## Not In `0.7.3`
+Cross-stdlib byte adoption is explicit:
+
+```bash
+./target/release/nodia eval '
+use text
+use json
+use csv
+
+val doc = json.read(text.encode_utf8(r'{"name":"Ana","age":30}'))
+val rows = csv.read(text.encode_utf8("name,age\nAna,30"), {
+  header: true,
+  types: true,
+})
+emit doc.name
+emit rows[0].age + 5
+'
+```
+
+```text
+Ana
+35
+```
+
+Grapheme-aware formatting also follows the new model:
+
+```bash
+./target/release/nodia eval '
+use format
+emit format.format("[%2s][%.1s]", ["é", "éx"])
+emit format.pad_left("é", 2, ".")
+'
+```
+
+```text
+[ é][é]
+.é
+```
+
+## Not In `0.7.4`
 
 These areas are intentionally still out of scope in this release:
 

@@ -677,5 +677,5 @@ emit text.scalar_offset("aéb", 3)'
 If `byte_offset` points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
-See [Text Semantics](../reference/text-semantics.md) for the full `0.7.3`
+See [Text Semantics](../reference/text-semantics.md) for the full `0.7.4`
 model shared by string indexing, slicing, regex offsets, and chunked reads.

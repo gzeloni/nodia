@@ -5,6 +5,7 @@
 
 use super::{expect_arity, expect_list};
 use crate::error::{NodiaError, NodiaResult};
+use crate::textcodec;
 use crate::value::Value;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -26,7 +27,7 @@ pub fn csv_write(args: &[Value]) -> NodiaResult<Value> {
 
 fn json_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
-    let text = expect_string(&args[0], name, "first")?;
+    let text = expect_text_input(&args[0], name, "first")?;
     JsonParser::new(&text).parse()
 }
 
@@ -55,7 +56,7 @@ fn csv_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
         )));
     }
 
-    let text = expect_string(&args[0], name, "first")?;
+    let text = expect_text_input(&args[0], name, "first")?;
     let options = if args.len() == 2 {
         csv_read_options(&args[1], name)?
     } else {
@@ -300,11 +301,14 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
     Ok(rows)
 }
 
-fn expect_string(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
+fn expect_text_input(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
     match value {
         Value::String(value) => Ok(value.clone()),
+        Value::List(_) => {
+            textcodec::decode_utf8_runtime(textcodec::expect_bytes(value, name, position)?, name)
+        }
         other => Err(NodiaError::runtime(format!(
-            "{name}() expects string as {position} argument, got {}",
+            "{name}() expects string or list<int> as {position} argument, got {}",
             other.type_name()
         ))),
     }

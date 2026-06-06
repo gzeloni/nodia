@@ -976,6 +976,24 @@ emit __json.write(parsed)
 }
 
 #[test]
+fn json_and_csv_read_accept_explicit_byte_sequences() {
+    let output = run_source(
+        r#"val parsed = __json.read(__text.encode_utf8(r'{"name":"Ana","age":30}'))
+val rows = __csv.read(__text.encode_utf8("name,age\nAna,30"), {
+  header: true,
+  types: true,
+})
+emit parsed.name
+emit rows[0].age + 5
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "Ana\n35");
+}
+
+#[test]
 fn json_read_rejects_duplicate_object_keys() {
     let err = run_source(
         r#"emit __json.read(r'{"name":"Ana","name":"Bia"}')"#,
@@ -985,6 +1003,17 @@ fn json_read_rejects_duplicate_object_keys() {
 
     assert_eq!(err.code, "E2000");
     assert!(err.message.contains("duplicate object key 'name'"));
+}
+
+#[test]
+fn json_and_csv_reject_invalid_utf8_byte_inputs() {
+    let err = run_source(r#"emit __json.read([255])"#, BTreeMap::new()).unwrap_err();
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("cannot decode bytes as UTF-8"));
+
+    let err = run_source(r#"emit __csv.read([255])"#, BTreeMap::new()).unwrap_err();
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("cannot decode bytes as UTF-8"));
 }
 
 #[test]
@@ -1298,6 +1327,20 @@ emit __fmt.pad_right("7", 5, "ab")
     .unwrap();
 
     assert_eq!(output, "% Nod\nabab7\n7abab");
+}
+
+#[test]
+fn formatting_counts_graphemes_for_string_precision_and_padding() {
+    let output = run_source(
+        r#"emit __fmt.format("[%2s][%.1s]", ["é", "éx"])
+emit __fmt.pad_left("é", 2, ".")
+emit __fmt.pad_right("é", 2, ".")
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "[ é][é]\n.é\né.");
 }
 
 #[test]
