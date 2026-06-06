@@ -50,11 +50,12 @@ file IO and streams work in Nodia (including `--allow-write`), see
 | ---------------------- | ------------------------------------------------------- |
 | `read(path)`           | read a whole file into a string                         |
 | `read(stream)`         | read the rest of a readable stream                      |
-| `read(stream, size)`   | read a chunk of `size` bytes from a readable stream     |
+| `read(stream, size)`   | read a UTF-8-safe chunk using `size` as a byte budget   |
 | `readln(stream)`       | read one line; `null` at EOF                            |
 
 `readln(stream)` strips a trailing `\n` or `\r\n` and still returns the final
 line when the file does not end with a newline.
+All of these readers are UTF-8 strict: invalid bytes fail with `E3000`.
 
 ## Writing
 
@@ -121,6 +122,10 @@ while not eof(src) {
 }
 close(src)
 ```
+
+`read(stream, size)` never returns half of a UTF-8 scalar value. If the chunk
+boundary would split one, the runtime reads slightly further to return valid
+text. `read(stream, 0)` is a no-op that returns `""`.
 
 ### Stream-Style Stdout
 

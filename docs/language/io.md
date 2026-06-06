@@ -107,6 +107,9 @@ val text = read("input.txt")
 emit upper(text)
 ```
 
+All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
+`E3000` IO error; it is never silently replaced with lossy text.
+
 ### `read(stream)`
 
 Read the rest of a readable stream:
@@ -120,7 +123,7 @@ close(src)
 ### `read(stream, size)`
 
 Read a chunk from a readable stream. `size` is a non-negative integer byte
-count:
+budget:
 
 ```nodia
 val src = open("input.txt", "read")
@@ -128,6 +131,11 @@ emit read(src, 8)
 emit read(src, 8)
 close(src)
 ```
+
+The returned text is always valid UTF-8. If the requested byte budget lands in
+the middle of a multi-byte scalar value, the runtime reads a little further to
+finish that scalar instead of splitting it. `read(stream, 0)` returns `""`
+without advancing the stream or forcing EOF.
 
 ### `readln(stream)`
 
@@ -144,6 +152,9 @@ while line != null {
 
 close(src)
 ```
+
+Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
+`E3000` instead of decoding lossily.
 
 ## Writing
 

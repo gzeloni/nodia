@@ -187,6 +187,21 @@ When the pattern is a regex value and the replacement is a source literal,
 capture references before runtime. Plain-string patterns in `replace(...)`
 stay literal text, so `$name` is just text there.
 
+Zero-width regex matches also participate in replacement. That means anchors
+can insert text without consuming characters:
+
+```bash
+./target/release/nodia eval '
+emit replace("abc", regex { start }, "<")
+emit replace("abc", regex { end }, ">")
+'
+```
+
+```text
+<abc
+abc>
+```
+
 ## `replace_all(text, pattern, replacement)`
 
 Explicit alias of `replace(...)`. Same behavior; the name documents intent.

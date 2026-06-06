@@ -45,6 +45,8 @@ Ana
 When you embed JSON directly inside source, prefer `r'...'` or triple-quoted
 strings. `r"..."` usually is not a good JSON delimiter because the first `"`
 inside the JSON closes the raw string.
+Duplicate object keys are rejected instead of silently overwriting earlier
+entries.
 
 ### `json.write(value)`
 
@@ -116,6 +118,7 @@ emit json.write({
 ```
 
 This behaves the same as `json.write(value, 2)`.
+Only the `indent` option is accepted; unknown option keys are rejected.
 
 ## CSV
 
@@ -164,6 +167,8 @@ Ana
 {name: "Bia, Jr", role: "ops"}
 ```
 
+Duplicate header names are rejected instead of silently collapsing fields.
+
 ### `csv.read(text, {header: true, types: true})`
 
 Use an options map when you want header rows and scalar type coercion:
@@ -185,6 +190,9 @@ emit rows[0].active
 32
 true
 ```
+
+Only `header` and `types` are accepted in the options map; unknown keys are
+rejected.
 
 ### `csv.write(rows)`
 
@@ -210,3 +218,6 @@ name,role
 Ana,dev
 "Bia, Jr",ops
 ```
+
+For map rows, the header is the deterministic lexicographic union of every key
+present in the input rows. Missing values serialize as empty fields.
