@@ -15,7 +15,7 @@ implementation adds the v0.6 regex DSL on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.6.5`.
+Nodia is experimental. The current release is `v0.6.6`.
 
 The v0.6 focus is text work: the v0.5 identity surface remains intact, and the first new native syntax layer is `regex { ... }`, a readable DSL that evaluates to regex values and can render to classic regex text.
 

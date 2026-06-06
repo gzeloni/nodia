@@ -1,6 +1,6 @@
 # Text Positions & Slices
 
-This page defines the current `0.6.5` baseline for text positions in Nodia:
+This page defines the current `0.6.6` baseline for text positions in Nodia:
 
 * direct indexing with `value[index]`;
 * sequence slicing with `slice(value, start, end)`;
