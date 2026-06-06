@@ -125,6 +125,15 @@ fn regex_replace_all_rejects_unknown_named_capture() {
 }
 
 #[test]
+fn regex_replace_all_uses_empty_string_for_unmatched_branch_capture() {
+    let regex = compile_text("(?:(?<word>[A-Za-z]+)|(?<num>\\d+))").unwrap();
+
+    let output = regex.replace_all("ana 42", "<$(word):$(num)>").unwrap();
+
+    assert_eq!(output, "<ana:> <:42>");
+}
+
+#[test]
 fn regex_split_returns_unmatched_segments() {
     let regex = compile_text("\\s+").unwrap();
 

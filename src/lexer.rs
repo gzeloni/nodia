@@ -390,6 +390,16 @@ mod tests {
     }
 
     #[test]
+    fn unknown_escapes_fall_back_to_literal_character() {
+        let tokens = Lexer::new(r#"emit "\q-\x""#).tokenize().unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(
+            token.kind,
+            TokenKind::String(ref value) if value == "q-x"
+        )));
+    }
+
+    #[test]
     fn reports_helpful_error_for_json_inside_raw_double_quotes() {
         let err = Lexer::new(r#"emit r"{"a":1}"#).tokenize().unwrap_err();
         assert!(err

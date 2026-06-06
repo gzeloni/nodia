@@ -456,6 +456,27 @@ emit read("{}")
 }
 
 #[test]
+fn readln_handles_final_line_without_trailing_newline() {
+    let dir = std::env::temp_dir().join(format!("nodia-io-readln-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("input.txt");
+    fs::write(&input, "ana\r\nbruno").unwrap();
+
+    let source = format!(
+        r#"val src = open("{}", "read")
+emit readln(src)
+emit readln(src)
+emit readln(src)
+"#,
+        input.display(),
+    );
+    let output = run_source(&source, BTreeMap::new()).unwrap();
+
+    assert_eq!(output, "ana\nbruno\nnull");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn file_reads_support_path_and_chunked_stream_access() {
     let dir = std::env::temp_dir().join(format!("nodia-io-read-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -647,6 +668,22 @@ emit hit.end
 }
 
 #[test]
+fn regex_offsets_align_with_slice_on_unicode_scalar_positions() {
+    let source = r#"val text = "éx"
+val hit = find(text, regex {
+  "x"
+})
+
+emit hit.start
+emit hit.end
+emit slice(text, 0, hit.start)
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "2\n3\né");
+}
+
+#[test]
 fn regex_builtins_accept_string_patterns() {
     let source = r#"emit test("abc-42", "^[a-z]+-\\d+$")
 emit full_match("abc-42", "^[a-z]+-\\d+$")
@@ -754,6 +791,28 @@ fn regex_replace_reports_missing_capture_names() {
 }
 
 #[test]
+fn regex_replace_expands_unmatched_branch_capture_to_empty_string() {
+    let source = r#"emit replace("ana 42", regex {
+  either {
+    branch {
+      named word {
+        one_or_more letter
+      }
+    }
+    branch {
+      named num {
+        one_or_more digit
+      }
+    }
+  }
+}, "<$(word):$(num)>")
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "<ana:> <:42>");
+}
+
+#[test]
 fn nested_string_values_render_with_quotes() {
     let output = run_source(
         r#"emit split("/usr/local/bin", "/")
@@ -821,6 +880,24 @@ fn json_stringify_zero_indent_stays_compact() {
 }
 
 #[test]
+fn json_stringify_accepts_indent_option_map() {
+    let output = run_source(
+        r#"emit json_stringify({
+  name: "Ana",
+  scores: [1, 2],
+}, {indent: 2})
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "{\n  \"name\": \"Ana\",\n  \"scores\": [\n    1,\n    2\n  ]\n}"
+    );
+}
+
+#[test]
 fn csv_builtins_read_headers_and_write_maps() {
     let output = run_source(
         r#"val rows = csv_read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
@@ -852,6 +929,24 @@ emit rows[1][0] + rows[1][1]
     .unwrap();
 
     assert_eq!(output, "32\ntrue\n7");
+}
+
+#[test]
+fn csv_handles_embedded_newlines_and_escaped_quotes() {
+    let output = run_source(
+        r#"val rows = csv_read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true)
+emit rows[0].note
+emit rows[1].note
+emit csv_write(rows)
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "line 1\nline 2\nsay \"hi\"\nname,note\nAna,\"line 1\nline 2\"\nBia,\"say \"\"hi\"\"\""
+    );
 }
 
 #[test]
@@ -949,6 +1044,33 @@ emit get("nodia", -1, "?")
 }
 
 #[test]
+fn text_indexing_and_slicing_follow_current_contract() {
+    let output = run_source(
+        r#"emit ["a", "b", "c"][-1]
+emit "nodia"[0]
+emit get("nodia", -1, "?")
+emit slice("nodia", -99, 99)
+emit len(slice("nodia", 4, 2))
+emit slice("éx", 0, 1)
+emit slice("éx", 0, 2)
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "c\nn\na\nnodia\n0\ne\né");
+}
+
+#[test]
+fn direct_string_index_reports_negative_index_limitation() {
+    let err = run_source(r#"emit "nodia"[-1]"#, BTreeMap::new()).unwrap_err();
+
+    assert!(err
+        .message
+        .contains("direct string indexing is zero-based and does not support negative values"));
+}
+
+#[test]
 fn formatting_builtins_cover_padding_and_numeric_output() {
     let output = run_source(
         r#"emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
@@ -961,6 +1083,20 @@ emit fixed(3.14159, 3)
     .unwrap();
 
     assert_eq!(output, "00007 3.50 ok    \n00042\nok...\n3.142");
+}
+
+#[test]
+fn formatting_builtins_cover_percent_string_precision_and_multichar_padding() {
+    let output = run_source(
+        r#"emit format("%% %.3s", ["Nodia"])
+emit pad_left("7", 5, "ab")
+emit pad_right("7", 5, "ab")
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "% Nod\nabab7\n7abab");
 }
 
 #[test]

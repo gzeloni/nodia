@@ -58,11 +58,35 @@ exit(0)
 }
 
 #[test]
+fn checker_rejects_empty_interpolation() {
+    let err = check_source(r#"emit "{}""#).unwrap_err();
+
+    assert_eq!(err.code, "E4106");
+    assert!(err.message.contains("empty interpolation"));
+}
+
+#[test]
+fn checker_wraps_invalid_interpolation_expressions() {
+    let err = check_source(r#"emit "{name +}""#).unwrap_err();
+
+    assert_eq!(err.code, "E4106");
+    assert!(err.message.contains("invalid interpolation"));
+}
+
+#[test]
 fn checker_reports_first_identifier_occurrence() {
     let err = check_source("emit missing()\nemit missing()\n").unwrap_err();
 
     assert_eq!(err.code, "E4100");
     assert_eq!((err.line, err.column), (1, 6));
+}
+
+#[test]
+fn checker_rejects_missing_known_map_key_in_index_access() {
+    let err = check_source("val user = {name: \"Ana\"}\nemit user[\"role\"]\n").unwrap_err();
+
+    assert_eq!(err.code, "E4105");
+    assert!(err.message.contains("key 'role' not found"));
 }
 
 #[test]
@@ -123,6 +147,29 @@ emit encode({ok: true}, 2)
 "#;
 
     assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_rejects_missing_named_capture_in_literal_regex_replacement() {
+    let err = check_source(
+        r#"emit replace("ana", regex { named word { one_or_more letter } }, "$(missing)")"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E4200");
+    assert!(err
+        .message
+        .contains("regex replacement refers to missing named capture 'missing'"));
+}
+
+#[test]
+fn checker_rejects_malformed_regex_replacement_placeholder_syntax() {
+    let err = check_source(r#"emit replace("ana", "[A-Za-z]+", "$name")"#).unwrap_err();
+
+    assert_eq!(err.code, "E4200");
+    assert!(err
+        .message
+        .contains("regex replacement placeholders must use $(0), $(1), $(name), or '$$'"));
 }
 
 #[test]
