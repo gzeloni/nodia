@@ -120,6 +120,7 @@ nav:
       - IO: stdlib/io.md
   - Reference:
       - Grammar: reference/grammar.md
+      - Text Positions: reference/text-semantics.md
       - Operator Precedence: reference/precedence.md
       - Diagnostics: reference/diagnostics.md
       - Formatter: reference/formatter.md

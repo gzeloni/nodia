@@ -100,6 +100,23 @@ emit json.write({
 }
 ```
 
+### `json.write(value, {indent: 2})`
+
+The second argument can also be an options map:
+
+```bash
+./target/release/nodia eval '
+use json
+
+emit json.write({
+  name: "Ana",
+  scores: [1, 2],
+}, {indent: 2})
+'
+```
+
+This behaves the same as `json.write(value, 2)`.
+
 ## CSV
 
 Import the module first:

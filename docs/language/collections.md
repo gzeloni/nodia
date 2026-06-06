@@ -45,6 +45,10 @@ c
 
 Out-of-bounds access is a runtime error (`E2000`).
 
+For the precise `0.6.x` contract around string positions, `slice(...)`, and
+regex offsets, see [Text Positions](../reference/text-semantics.md). Direct
+string indexing is currently similar to list indexing, but not identical.
+
 ### Iteration
 
 ```bash
@@ -138,7 +142,8 @@ dev
 
 Field access on a non-map value, or on a missing key, is a runtime error.
 The checker rejects field access on **known** literal-map shapes when the field
-is statically absent (`E4105`).
+is statically absent (`E4105`). The same static check applies to known
+`map["key"]` access.
 
 ### Field And Index Assignment
 

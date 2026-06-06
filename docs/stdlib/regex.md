@@ -100,8 +100,10 @@ example.com
 }
 ```
 
-`start` and `end` are **character offsets** (not byte offsets), so they line
-up with Nodia string indexing and `slice(...)`.
+`start` and `end` are **Unicode scalar value offsets** (not byte offsets), so
+they line up with `len(string)` and `slice(...)`. See
+[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
+contract and current limitations.
 
 ## `find_all(text, pattern)`
 
@@ -175,6 +177,10 @@ emit replace("https://example.com", regex {
 A placeholder that names a missing capture is a runtime error.
 If a declared capture does not participate in the branch that matched, its
 placeholder expands to an empty string.
+
+When both the pattern and the replacement are source literals, `nodia check`
+also validates malformed placeholder syntax and impossible capture references
+before runtime.
 
 ## `replace_all(text, pattern, replacement)`
 

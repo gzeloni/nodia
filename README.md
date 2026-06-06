@@ -7,20 +7,22 @@ payloads, and other text artifacts without reaching for a full general-purpose l
 
 Source files use the `.nod` extension.
 
-Complete documentation is available in [docs/reference.md](docs/reference.md).
+Complete documentation is available in [docs/index.md](docs/index.md).
 
-The formal v0.5 baseline is documented in [docs/specification.md](docs/specification.md).
-The current implementation adds the v0.6 regex DSL on top of that baseline.
+The archived v0.5 baseline is documented in
+[docs/_archive/specification.md](docs/_archive/specification.md). The current
+implementation adds the v0.6 regex DSL on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current implementation is `v0.6`.
+Nodia is experimental. The current release is `v0.6.4`.
 
 The v0.6 focus is text work: the v0.5 identity surface remains intact, and the first new native syntax layer is `regex { ... }`, a readable DSL that evaluates to regex values and can render to classic regex text.
 
 ## Install From Source
 
-Nodia is implemented in Rust and currently uses only the Rust standard library.
+Nodia is implemented in Rust and uses the standard library plus
+`fancy-regex` for regex compilation and execution.
 
 ```bash
 cargo build --release
@@ -77,6 +79,8 @@ Global flags:
 --verbose
 --color auto|always|never
 --allow-write
+--allow-env
+--allow-process
 --help
 --version
 ```
@@ -101,7 +105,8 @@ nodia check file.nod
 nodia check file.nod --json
 ```
 
-`check` validates lexing, parsing, module uses, regex DSL structure, and the v0.5 semantic baseline without executing the program.
+`check` validates lexing, parsing, module uses, regex DSL structure, and the
+v0.6 semantic checks without executing the program.
 
 ## Regex DSL
 

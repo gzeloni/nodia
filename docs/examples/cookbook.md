@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.6.2` release binary.
+and run. Each example has been verified with the `0.6.4` release binary.
 
 ## 1. Hello, World
 

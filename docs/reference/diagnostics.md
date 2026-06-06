@@ -46,9 +46,10 @@ When `--json` is set, the same error becomes structured output:
 | `E4102`  | duplicate binding or parameter                     |
 | `E4103`  | invalid control-flow placement                     |
 | `E4104`  | invalid use selection                              |
-| `E4105`  | missing known field                                |
+| `E4105`  | missing known field or key                         |
 | `E4106`  | invalid interpolation                              |
 | `E4107`  | invalid arity                                      |
+| `E4200`  | regex semantic or replacement-placeholder error    |
 
 ## Exit Codes
 
@@ -116,6 +117,20 @@ emit upper("a", "b")
 error[E4107]: 'upper' expects 1 argument, got 2
 ```
 
+### Invalid Regex Replacement Placeholder
+
+```nodia
+emit replace("ana", regex {
+  named word {
+    one_or_more letter
+  }
+}, "$(missing)")
+```
+
+```text
+error[E4200]: regex replacement refers to missing named capture 'missing'
+```
+
 ### Parse Error
 
 ```nodia
@@ -132,7 +147,7 @@ error[E1000]: expected expression
 | -------------- | ---------------------------------- |
 | lexer / parser | `E1000`                            |
 | use resolution | `E3000`, `E4104`                   |
-| semantic check | `E41xx`                            |
+| semantic check | `E41xx`, `E4200`                   |
 | runtime        | `E2000`, `E3000`, `E3001`, `E3002`, `E3003`, `E4xxx` |
 
 `nodia check` runs everything up to and including the semantic check. `nodia

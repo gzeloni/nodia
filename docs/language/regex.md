@@ -428,8 +428,10 @@ A `find(...)` hit is a map:
 }
 ```
 
-`start` and `end` are **character offsets**, so they line up with Nodia
-string indexing and `slice(...)`.
+`start` and `end` are **Unicode scalar value offsets**, so they line up with
+`len(string)` and `slice(...)`. See
+[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
+baseline and its current limitations.
 
 ## Replacement Placeholders
 
@@ -471,6 +473,10 @@ emit replace("https://example.com", regex {
 ```
 
 A placeholder that refers to a missing capture is a runtime error.
+
+When both the regex pattern and the replacement are source literals, `nodia
+check` can also reject malformed placeholder syntax and impossible capture
+references before runtime.
 
 ## Why A DSL?
 

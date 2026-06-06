@@ -79,7 +79,7 @@ NODIA
 
 ## Catching Errors Early
 
-Use `check` to lex, parse, resolve uses, and run the v0.5 semantic checks
+Use `check` to lex, parse, resolve uses, and run the v0.6 semantic checks
 without executing the program:
 
 ```bash

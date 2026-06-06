@@ -17,7 +17,7 @@ emit "hello"
 emit 'hello'
 ```
 
-Single- and double-quoted strings are equivalent in v0.6.2 — they accept the
+Single- and double-quoted strings are equivalent in v0.6.4 — they accept the
 same escape sequences and use the same interpolation rules.
 
 ### Raw Strings
@@ -125,6 +125,9 @@ Use `{{` and `}}` to emit literal braces inside interpolated strings:
 {value}
 ```
 
+Treat `{{` / `}}` as the stable escape form. A lone `}` currently survives
+literally as a `0.6.x` implementation quirk and should not be relied on.
+
 ### Where Interpolation Runs
 
 Interpolation happens when an interpolated source literal is evaluated. After
@@ -138,6 +141,7 @@ The checker rejects malformed interpolation:
 
 * unterminated `{...}` → `E4106`
 * empty interpolation `{}` → `E4106`
+* invalid interpolation expressions such as `{name +}` → `E4106`
 
 ## Concatenation
 

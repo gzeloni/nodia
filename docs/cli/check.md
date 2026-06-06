@@ -69,9 +69,9 @@ JSON form:
 * Duplicate bindings or parameters in the same scope (`E4102`).
 * `return` outside a function, `break` / `continue` outside a loop (`E4103`).
 * Invalid arity on user functions and known builtins (`E4107`).
-* Missing fields on known used namespaces and literal maps (`E4105`).
+* Missing fields or known map keys on used namespaces and literal maps (`E4105`).
 * Invalid string interpolation (`E4106`).
-* Regex DSL structural validity.
+* Regex DSL structural validity and statically-checkable regex replacement placeholders (`E4200`).
 
 It is **not yet** a static type, effect, ownership, or allocation checker.
 

@@ -19,6 +19,9 @@ Supported modifiers:
 * zero-pad: `%05d`
 * precision: `%.2f`, `%.3s`
 
+For `%s`, precision truncates characters from the rendered string form. `%%`
+emits a literal percent sign.
+
 ```bash
 ./target/release/nodia eval '
 emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
@@ -58,6 +61,9 @@ emit pad_right("ok", 5, ".")
 ```text
 ok...
 ```
+
+When the `pad` string is longer than one character, Nodia repeats and truncates
+it to fit the requested width exactly.
 
 ## `fixed(number, digits)`
 

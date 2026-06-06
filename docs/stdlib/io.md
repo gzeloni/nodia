@@ -53,6 +53,9 @@ file IO and streams work in Nodia (including `--allow-write`), see
 | `read(stream, size)`   | read a chunk of `size` bytes from a readable stream     |
 | `readln(stream)`       | read one line; `null` at EOF                            |
 
+`readln(stream)` strips a trailing `\n` or `\r\n` and still returns the final
+line when the file does not end with a newline.
+
 ## Writing
 
 All file writes (where `path` or `mode = "write"/"append"` is involved) require

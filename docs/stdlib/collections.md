@@ -23,7 +23,9 @@ emit len({name: "Ana"})
 1
 ```
 
-`len` on a string is a character count.
+`len` on a string is a Unicode scalar value count. See
+[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
+contract shared by `len`, `slice`, and regex offsets.
 
 ## Map Helpers
 
@@ -74,6 +76,11 @@ Safe lookup with fallback:
 * maps look up `key` after converting it to string;
 * lists and strings use `key` as an index;
 * negative indexes count from the end for lists and strings.
+
+Direct string indexing with `text[index]` is currently stricter than
+`get(text, index, default)`: negative indexes work in `get(...)`, but not in
+direct `text[index]` access. See
+[Text Positions](../reference/text-semantics.md).
 
 ```bash
 ./target/release/nodia eval '
@@ -159,7 +166,9 @@ odi
 ```
 
 `start` is inclusive, `end` is exclusive. Out-of-bounds bounds are clamped
-gracefully rather than raising — but you should still pass sensible bounds.
+gracefully rather than raising. On strings, those bounds use the same Unicode
+scalar value positions as `len(string)` and regex match offsets. See
+[Text Positions](../reference/text-semantics.md).
 
 ### `reverse(value)`
 

@@ -4,9 +4,9 @@
 output**, and **data/math workflows**. It is intentionally not a systems
 language, an application platform, or a general-purpose scripting language.
 
-The current release is **Nodia 0.6**, implemented in Rust on top of the standard
-library plus [`fancy-regex`](https://crates.io/crates/fancy-regex) for the
-regex engine.
+The current release is **Nodia 0.6.4**, implemented in Rust on top of the
+standard library plus
+[`fancy-regex`](https://crates.io/crates/fancy-regex) for the regex engine.
 
 ```nodia
 val tags = ["compiler", "formatter", "streams"]
@@ -87,12 +87,12 @@ extension and no fallback resolution into non-`.nod` paths.
 ```
 
 ```text
-nodia 0.6.0
+nodia 0.6.4
 ```
 
 ## Status
 
-Nodia 0.6 is the current dynamic baseline. Future versions will tighten the
-type and effect model, but the surface syntax, formatter, AST shape, builtin
-set, and CLI documented on this site are frozen behavior for the current
-release.
+Nodia 0.6.4 is the current dynamic baseline for the `0.6.x` line. Future
+versions will tighten the type and effect model, but the surface syntax,
+formatter, AST shape, builtin set, and CLI documented on this site are frozen
+behavior for the current release.
