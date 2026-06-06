@@ -1048,6 +1048,7 @@ fn text_indexing_and_slicing_follow_current_contract() {
     let output = run_source(
         r#"emit ["a", "b", "c"][-1]
 emit "nodia"[0]
+emit "nodia"[-1]
 emit get("nodia", -1, "?")
 emit slice("nodia", -99, 99)
 emit len(slice("nodia", 4, 2))
@@ -1058,16 +1059,30 @@ emit slice("éx", 0, 2)
     )
     .unwrap();
 
-    assert_eq!(output, "c\nn\na\nnodia\n0\ne\né");
+    assert_eq!(output, "c\nn\na\na\nnodia\n0\ne\né");
 }
 
 #[test]
-fn direct_string_index_reports_negative_index_limitation() {
-    let err = run_source(r#"emit "nodia"[-1]"#, BTreeMap::new()).unwrap_err();
+fn direct_string_index_reports_bounds_with_length() {
+    let err = run_source(r#"emit "nodia"[-9]"#, BTreeMap::new()).unwrap_err();
 
     assert!(err
         .message
-        .contains("direct string indexing is zero-based and does not support negative values"));
+        .contains("string index -9 out of bounds for length 5"));
+}
+
+#[test]
+fn interpolation_handles_nested_braces_and_inner_string_literals() {
+    let output = run_source(
+        r#"emit "{ {name: \"Ana\"}[\"name\"] }"
+emit "{regex { one_or_more digit }}"
+emit "{replace(\"xx\", \"x\", \"}\")}"
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "Ana\n\\d+\n}}");
 }
 
 #[test]
