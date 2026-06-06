@@ -2,7 +2,7 @@
   "name": "nodia-language",
   "displayName": "Nodia Language",
   "description": "Editor support for Nodia with syntax highlighting and stdlib-aware completions.",
-  "version": "0.6.6",
+  "version": "0.7.4",
   "publisher": "nodia",
   "license": "GPL-3.0-or-later",
   "main": "./extension.js",
@@ -42,7 +42,33 @@
         "scopeName": "source.nodia",
         "path": "./syntaxes/nodia.tmLanguage.json"
       }
-    ]
+    ],
+    "configuration": {
+      "title": "Nodia",
+      "properties": {
+        "nodia.executablePath": {
+          "type": "string",
+          "default": "",
+          "description": "Path to the Nodia executable. When empty, the extension tries workspace target/debug, workspace target/release, then PATH."
+        },
+        "nodia.formatOnSave": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run 'nodia fmt' on .nod files before saving."
+        },
+        "nodia.enableChecker": {
+          "type": "boolean",
+          "default": true,
+          "description": "Run 'nodia check' and surface diagnostics in the editor."
+        },
+        "nodia.checkerDelayMs": {
+          "type": "number",
+          "default": 250,
+          "minimum": 0,
+          "description": "Debounce in milliseconds before rerunning 'nodia check' after edits."
+        }
+      }
+    }
   },
   "capabilities": {
     "untrustedWorkspaces": {

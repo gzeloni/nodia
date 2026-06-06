@@ -1,6 +1,7 @@
 "use strict";
 
 const vscode = require("vscode");
+const path = require("path");
 const {
   KEYWORDS,
   KEYWORD_SNIPPETS,
@@ -10,9 +11,22 @@ const {
   detectContext,
   parseStdlibUses
 } = require("./src/completion");
+const {
+  checkSnapshot,
+  formatSnapshot,
+  resolveExecutable
+} = require("./src/tooling");
+
+const CHECK_SOURCE = "nodia check";
+const DEFAULT_CHECK_DELAY_MS = 250;
 
 function activate(context) {
   const selector = { language: "nodia", scheme: "*" };
+  const diagnostics = vscode.languages.createDiagnosticCollection("nodia");
+  const pendingChecks = new Map();
+  const checkTickets = new Map();
+  const shownErrors = new Set();
+
   const provider = vscode.languages.registerCompletionItemProvider(
     selector,
     {
@@ -46,7 +60,232 @@ function activate(context) {
     ","
   );
 
-  context.subscriptions.push(provider);
+  const onWillSave = vscode.workspace.onWillSaveTextDocument((event) => {
+    if (!isFileBackedNodiaDocument(event.document) || !settings().formatOnSave) {
+      return;
+    }
+    event.waitUntil(formatEditsForSave(event.document));
+  });
+
+  const onDidOpen = vscode.workspace.onDidOpenTextDocument((document) => {
+    scheduleCheck(document, 0);
+  });
+
+  const onDidChange = vscode.workspace.onDidChangeTextDocument((event) => {
+    if (event.contentChanges.length === 0) {
+      return;
+    }
+    scheduleCheck(event.document);
+  });
+
+  const onDidSave = vscode.workspace.onDidSaveTextDocument((document) => {
+    scheduleCheck(document, 0);
+  });
+
+  const onDidChangeConfiguration = vscode.workspace.onDidChangeConfiguration((event) => {
+    if (!event.affectsConfiguration("nodia")) {
+      return;
+    }
+    shownErrors.clear();
+    for (const document of vscode.workspace.textDocuments) {
+      scheduleCheck(document, 0);
+    }
+  });
+
+  const onDidClose = vscode.workspace.onDidCloseTextDocument((document) => {
+    clearPendingCheck(document);
+    diagnostics.delete(document.uri);
+  });
+
+  context.subscriptions.push(
+    provider,
+    diagnostics,
+    onWillSave,
+    onDidOpen,
+    onDidChange,
+    onDidSave,
+    onDidChangeConfiguration,
+    onDidClose,
+  );
+
+  for (const document of vscode.workspace.textDocuments) {
+    scheduleCheck(document, 0);
+  }
+
+  function settings() {
+    const configuration = vscode.workspace.getConfiguration("nodia");
+    return {
+      checkerDelayMs: Math.max(0, configuration.get("checkerDelayMs", DEFAULT_CHECK_DELAY_MS)),
+      enableChecker: configuration.get("enableChecker", true),
+      executablePath: configuration.get("executablePath", ""),
+      formatOnSave: configuration.get("formatOnSave", true),
+    };
+  }
+
+  function isFileBackedNodiaDocument(document) {
+    return document.languageId === "nodia" && document.uri.scheme === "file";
+  }
+
+  function scheduleCheck(document, delayMs = null) {
+    if (!isFileBackedNodiaDocument(document)) {
+      return;
+    }
+    if (!settings().enableChecker) {
+      clearPendingCheck(document);
+      diagnostics.delete(document.uri);
+      return;
+    }
+
+    clearPendingCheck(document);
+    const timeout = setTimeout(() => {
+      pendingChecks.delete(document.uri.toString());
+      void updateDiagnostics(document);
+    }, delayMs ?? settings().checkerDelayMs);
+    pendingChecks.set(document.uri.toString(), timeout);
+  }
+
+  function clearPendingCheck(document) {
+    const key = document.uri.toString();
+    const timeout = pendingChecks.get(key);
+    if (timeout) {
+      clearTimeout(timeout);
+      pendingChecks.delete(key);
+    }
+  }
+
+  async function updateDiagnostics(document) {
+    const key = document.uri.toString();
+    const ticket = (checkTickets.get(key) || 0) + 1;
+    checkTickets.set(key, ticket);
+
+    try {
+      const result = await checkSnapshot(toolingOptions(document));
+      if (checkTickets.get(key) !== ticket) {
+        return;
+      }
+
+      const items = result.errors
+        .filter((error) => !error.file || error.file === document.uri.fsPath)
+        .map((error) => toDiagnostic(document, error));
+      diagnostics.set(document.uri, items);
+    } catch (error) {
+      if (checkTickets.get(key) !== ticket) {
+        return;
+      }
+      diagnostics.delete(document.uri);
+      handleIntegrationFailure("check", error);
+    }
+  }
+
+  async function formatEditsForSave(document) {
+    try {
+      const formatted = await formatSnapshot(toolingOptions(document));
+      if (formatted === document.getText()) {
+        return [];
+      }
+      return [vscode.TextEdit.replace(fullDocumentRange(document), formatted)];
+    } catch (error) {
+      handleFormatFailure(error);
+      return [];
+    }
+  }
+
+  function toolingOptions(document) {
+    const currentSettings = settings();
+    return {
+      cwd: path.dirname(document.uri.fsPath),
+      executable: resolveExecutable(
+        currentSettings.executablePath,
+        document.uri.fsPath,
+        workspacePath(document),
+      ),
+      filePath: document.uri.fsPath,
+      text: document.getText(),
+    };
+  }
+
+  function workspacePath(document) {
+    return vscode.workspace.getWorkspaceFolder(document.uri)?.uri.fsPath || path.dirname(document.uri.fsPath);
+  }
+
+  function fullDocumentRange(document) {
+    const lastLine = Math.max(0, document.lineCount - 1);
+    return new vscode.Range(
+      new vscode.Position(0, 0),
+      document.lineAt(lastLine).range.end,
+    );
+  }
+
+  function toDiagnostic(document, error) {
+    const line = clamp((error.line || 1) - 1, 0, Math.max(0, document.lineCount - 1));
+    const lineText = document.lineAt(line).text;
+    const column = clamp((error.column || 1) - 1, 0, lineText.length);
+    const endColumn = column < lineText.length ? column + 1 : column;
+    const diagnostic = new vscode.Diagnostic(
+      new vscode.Range(line, column, line, endColumn),
+      error.message,
+      vscode.DiagnosticSeverity.Error,
+    );
+    diagnostic.code = error.code;
+    diagnostic.source = CHECK_SOURCE;
+    return diagnostic;
+  }
+
+  function clamp(value, min, max) {
+    return Math.min(Math.max(value, min), max);
+  }
+
+  function handleFormatFailure(error) {
+    if (error && error.code === "ENOENT") {
+      showErrorOnce(
+        "Cannot run Nodia formatter. Configure 'nodia.executablePath' or make 'nodia' available in PATH.",
+      );
+      return;
+    }
+
+    const message = extractToolMessage(error);
+    if (message.startsWith("error[")) {
+      return;
+    }
+  }
+
+  function handleIntegrationFailure(toolName, error) {
+    if (error && error.code === "ENOENT") {
+      showErrorOnce(
+        `Cannot run Nodia ${toolName}. Configure 'nodia.executablePath' or make 'nodia' available in PATH.`,
+      );
+      return;
+    }
+
+    const message = extractToolMessage(error);
+    if (!message.startsWith("error[")) {
+      console.error(`[nodia] ${toolName} integration failed: ${message}`);
+    }
+  }
+
+  function extractToolMessage(error) {
+    if (!error) {
+      return "unknown error";
+    }
+    if (typeof error.message === "string" && error.message.trim() !== "") {
+      return error.message.trim();
+    }
+    if (typeof error.stderr === "string" && error.stderr.trim() !== "") {
+      return error.stderr.trim();
+    }
+    if (typeof error.stdout === "string" && error.stdout.trim() !== "") {
+      return error.stdout.trim();
+    }
+    return String(error);
+  }
+
+  function showErrorOnce(message) {
+    if (shownErrors.has(message)) {
+      return;
+    }
+    shownErrors.add(message);
+    void vscode.window.showErrorMessage(message);
+  }
 }
 
 function deactivate() {}

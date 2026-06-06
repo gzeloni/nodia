@@ -3,16 +3,28 @@
 // Keep this catalog aligned with src/stdlib.rs.
 const STDLIB_MODULES = {
   text: {
-    summary: "String helpers",
+    summary: "Text helpers",
     members: {
+      utf8: null,
+      strict: null,
+      lossy: null,
+      lf: null,
+      crlf: null,
+      nfc: null,
+      nfd: null,
+      nfkc: null,
+      nfkd: null,
+      byte: null,
+      scalar: null,
+      grapheme: null,
       upper: [1],
       lower: [1],
+      casefold: [1],
       capitalize: [1],
       trim: [1],
+      normalize: [2],
       replace: [3],
-      replace_all: [3],
       split: [2],
-      split_regex: [2],
       join: [2],
       lines: [1],
       unlines: [1],
@@ -21,7 +33,15 @@ const STDLIB_MODULES = {
       starts: [2],
       ends: [2],
       indent: [2],
-      dedent: [1]
+      dedent: [1],
+      len: [2],
+      encode: [2],
+      decode: [2, 3],
+      strip_bom: [1],
+      drop_nul: [1],
+      offset: [4],
+      at: [3],
+      slice: [4]
     }
   },
   numbers: {
@@ -79,23 +99,24 @@ const STDLIB_MODULES = {
   format: {
     summary: "Formatting helpers",
     members: {
+      left: null,
+      right: null,
       format: [2],
-      pad_left: [2, 3],
-      pad_right: [2, 3],
+      pad: [3, 4],
       fixed: [2]
     }
   },
   re: {
     summary: "Regex helpers",
     members: {
-      test: [2],
-      full_match: [2],
-      find: [2],
-      find_all: [2],
+      any: null,
+      full: null,
+      first: null,
+      all: null,
+      test: [2, 3],
+      find: [2, 3],
       replace: [3],
-      replace_all: [3],
-      split: [2],
-      split_regex: [2]
+      split: [2]
     }
   },
   io: {
@@ -104,11 +125,13 @@ const STDLIB_MODULES = {
       stdin: null,
       stdout: null,
       stderr: null,
+      text: null,
+      bytes: null,
       open: [2],
       close: [1],
       flush: [1],
       eof: [1],
-      read: [1, 2],
+      read: [1, 2, 3],
       readln: [1],
       write: [2],
       writeln: [2],
@@ -134,20 +157,27 @@ const STDLIB_MODULES = {
   datetime: {
     summary: "Date, time, and duration helpers",
     members: {
+      as_date: null,
+      as_datetime: null,
+      as_duration: null,
+      seconds: null,
+      milliseconds: null,
+      days: null,
+      months: null,
+      years: null,
+      span: null,
+      start: null,
+      end: null,
       now: [0, 1],
       today: [0, 1],
       date: [1, 3],
       datetime: [1, 6, 7],
       duration: [1],
-      parse_date: [1],
-      parse_datetime: [1],
-      parse_duration: [1],
+      parse: [2],
       isoformat: [1],
       strftime: [2],
-      from_unix: [1, 2],
-      from_unix_ms: [1],
-      unix_seconds: [1],
-      unix_ms: [1],
+      from_epoch: [2, 3],
+      epoch: [2],
       year: [1],
       month: [1],
       day: [1],
@@ -165,15 +195,9 @@ const STDLIB_MODULES = {
       is_leap_year: [1],
       date_only: [1],
       with_offset: [2],
-      add_days: [2],
-      add_months: [2],
-      add_years: [2],
-      add_duration: [2],
-      diff_days: [2],
-      diff_seconds: [2],
-      diff_duration: [2],
-      start_of_day: [1],
-      end_of_day: [1]
+      add: [2, 3],
+      diff: [3],
+      bound: [2]
     }
   },
   json: {
