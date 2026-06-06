@@ -1273,6 +1273,22 @@ emit col.map(numbers.int, ["1", "2"])
 }
 
 #[test]
+fn stdlib_pick_can_import_selected_names_directly() {
+    let output = run_source(
+        r#"use numbers pick range
+use conversion pick string
+
+for i in range(3) {
+  emit string(i)
+}"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "0\n1\n2");
+}
+
+#[test]
 fn stdlib_data_modules_work_from_file_execution() {
     let dir = std::env::temp_dir().join(format!("nodia-stdlib-use-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();

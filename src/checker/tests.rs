@@ -162,6 +162,18 @@ emit encode({ok: true}, 2)
 }
 
 #[test]
+fn checker_accepts_direct_pick_from_stdlib_modules() {
+    let source = r#"use numbers pick range
+use conversion pick string
+
+for i in range(3) {
+  emit string(i)
+}"#;
+
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
 fn checker_rejects_missing_named_capture_in_literal_regex_replacement() {
     let err = check_source(
         r#"use text

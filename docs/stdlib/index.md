@@ -21,6 +21,20 @@ val text = csv.write([{name: "Ana"}])
 These are namespace calls, not methods on arbitrary values.
 There is no implicit stdlib prelude.
 
+When you want only a few names in local scope, use `pick`:
+
+```nodia
+use numbers pick range
+use conversion pick string
+
+for i in range(3) {
+  emit string(i)
+}
+```
+
+`pick` without `as` imports only the selected stdlib names directly.
+With `as`, the selection stays under the namespace alias.
+
 Available stdlib namespaces:
 
 * `text`

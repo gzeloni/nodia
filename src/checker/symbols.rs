@@ -30,7 +30,16 @@ impl<'a> State<'a> {
             }
             UseTarget::Stdlib(name) => {
                 let symbols = self.selected_stdlib_symbols(name, pick, hide)?;
-                self.declare(alias.unwrap_or(name), Symbol::namespace(symbols))
+                if let Some(alias) = alias {
+                    return self.declare(alias, Symbol::namespace(symbols));
+                }
+                if pick.is_empty() {
+                    return self.declare(name, Symbol::namespace(symbols));
+                }
+                for (name, symbol) in symbols {
+                    self.declare(&name, symbol)?;
+                }
+                Ok(())
             }
         }
     }

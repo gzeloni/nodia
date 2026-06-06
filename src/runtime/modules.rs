@@ -67,7 +67,19 @@ impl Runtime {
         let available = exports.keys().cloned().collect::<Vec<_>>();
         let selected = self.selected_export_names(&available, name, pick, hide)?;
         exports.retain(|field, _| selected.contains(field));
-        self.define(alias.unwrap_or(name), Value::Map(exports), false)
+        if let Some(alias) = alias {
+            return self.define(alias, Value::Map(exports), false);
+        }
+        if pick.is_empty() {
+            return self.define(name, Value::Map(exports), false);
+        }
+        for name in selected {
+            let value = exports
+                .remove(&name)
+                .expect("selected stdlib export must exist after filtering");
+            self.define(&name, value, false)?;
+        }
+        Ok(())
     }
 
     pub(super) fn stdlib_binding_value(&self, name: &str) -> Option<Value> {
