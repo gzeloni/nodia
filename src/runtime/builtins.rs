@@ -4,6 +4,7 @@
 //! Runtime bindings for I/O, process, and environment built-ins.
 
 use super::*;
+use crate::textcodec;
 
 impl Runtime {
     pub(super) fn call_io_builtin(
@@ -37,6 +38,7 @@ impl Runtime {
                 Value::Bool(self.eof_stream(self.expect_stream(&args[0], "eof", "first")?)?)
             }
             "read" => self.read_builtin(args)?,
+            "read_bytes" => self.read_bytes_builtin(args)?,
             "readln" => {
                 self.expect_arity(args, 1, "readln")?;
                 match self.read_line_stream(self.expect_stream(&args[0], "readln", "first")?)? {
@@ -45,11 +47,19 @@ impl Runtime {
                 }
             }
             "write" => self.write_builtin(args, false)?,
+            "write_bytes" => self.write_bytes_builtin(args)?,
             "writeln" => self.write_builtin(args, true)?,
             "append" => {
                 self.expect_arity(args, 2, "append")?;
                 let path = self.expect_string(&args[0], "append", "first")?;
                 fsio::append_path(&path, &args[1].to_string(), self.options.allow_write)?;
+                Value::Null
+            }
+            "append_bytes" => {
+                self.expect_arity(args, 2, "append_bytes")?;
+                let path = self.expect_string(&args[0], "append_bytes", "first")?;
+                let bytes = textcodec::expect_bytes(&args[1], "append_bytes", "second")?;
+                fsio::append_path_bytes(&path, &bytes, self.options.allow_write)?;
                 Value::Null
             }
             _ => return Ok(None),
@@ -147,11 +157,11 @@ impl Runtime {
             Ok(output) => {
                 result.insert(
                     "stdout".to_string(),
-                    Value::String(String::from_utf8_lossy(&output.stdout).to_string()),
+                    textcodec::bytes_to_value(output.stdout),
                 );
                 result.insert(
                     "stderr".to_string(),
-                    Value::String(String::from_utf8_lossy(&output.stderr).to_string()),
+                    textcodec::bytes_to_value(output.stderr),
                 );
                 result.insert(
                     "status".to_string(),
@@ -159,8 +169,8 @@ impl Runtime {
                 );
             }
             Err(err) => {
-                result.insert("stdout".to_string(), Value::String(String::new()));
-                result.insert("stderr".to_string(), Value::String(String::new()));
+                result.insert("stdout".to_string(), Value::List(Vec::new()));
+                result.insert("stderr".to_string(), Value::List(Vec::new()));
                 result.insert("status".to_string(), Value::Int(-1));
                 result.insert("error".to_string(), Value::String(err.to_string()));
             }
@@ -292,6 +302,50 @@ impl Runtime {
         Ok(Value::Null)
     }
 
+    pub(super) fn read_bytes_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        if args.len() == 1 {
+            return match &args[0] {
+                Value::String(path) => fsio::read_path_bytes(path).map(textcodec::bytes_to_value),
+                Value::Stream(stream) => self
+                    .read_bytes_stream(*stream)
+                    .map(textcodec::bytes_to_value),
+                other => Err(NodiaError::runtime(format!(
+                    "read_bytes() expects path or stream, got {}",
+                    other.type_name()
+                ))),
+            };
+        }
+        if args.len() == 2 {
+            let stream = self.expect_stream(&args[0], "read_bytes", "first")?;
+            let size = self.expect_non_negative_size(&args[1], "read_bytes", "second")?;
+            return self
+                .read_chunk_bytes_stream(stream, size)
+                .map(textcodec::bytes_to_value);
+        }
+        Err(NodiaError::runtime(format!(
+            "read_bytes() expects 1 or 2 argument(s), got {}",
+            args.len()
+        )))
+    }
+
+    pub(super) fn write_bytes_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 2, "write_bytes")?;
+        let bytes = textcodec::expect_bytes(&args[1], "write_bytes", "second")?;
+        match &args[0] {
+            Value::String(path) => {
+                fsio::write_path_bytes(path, &bytes, self.options.allow_write)?;
+            }
+            Value::Stream(stream) => self.write_bytes_stream(*stream, &bytes)?,
+            other => {
+                return Err(NodiaError::runtime(format!(
+                    "write_bytes() expects path or stream, got {}",
+                    other.type_name()
+                )));
+            }
+        }
+        Ok(Value::Null)
+    }
+
     pub(super) fn read_stream(&mut self, stream: StreamId) -> NodiaResult<String> {
         match stream {
             StreamId::Stdin => {
@@ -321,14 +375,51 @@ impl Runtime {
                     .read(&mut buffer)
                     .map_err(|err| NodiaError::io(format!("cannot read stdin: {err}")))?;
                 buffer.truncate(read);
-                match String::from_utf8(buffer) {
-                    Ok(text) => Ok(text),
-                    Err(err) => Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned()),
-                }
+                textcodec::decode_utf8_io(buffer, "cannot read stdin")
             }
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_chunk(stream, size),
+        }
+    }
+
+    pub(super) fn read_bytes_stream(&mut self, stream: StreamId) -> NodiaResult<Vec<u8>> {
+        match stream {
+            StreamId::Stdin => {
+                let mut buffer = Vec::new();
+                stdio::stdin()
+                    .lock()
+                    .read_to_end(&mut buffer)
+                    .map_err(|err| NodiaError::io(format!("cannot read stdin: {err}")))?;
+                Ok(buffer)
+            }
+            StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
+            StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
+            StreamId::File(_) => self.io.borrow_mut().read_all_bytes(stream),
+        }
+    }
+
+    pub(super) fn read_chunk_bytes_stream(
+        &mut self,
+        stream: StreamId,
+        size: usize,
+    ) -> NodiaResult<Vec<u8>> {
+        match stream {
+            StreamId::Stdin => {
+                if size == 0 {
+                    return Ok(Vec::new());
+                }
+                let mut buffer = vec![0; size];
+                let read = stdio::stdin()
+                    .lock()
+                    .read(&mut buffer)
+                    .map_err(|err| NodiaError::io(format!("cannot read stdin: {err}")))?;
+                buffer.truncate(read);
+                Ok(buffer)
+            }
+            StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
+            StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
+            StreamId::File(_) => self.io.borrow_mut().read_chunk_bytes(stream, size),
         }
     }
 
@@ -368,6 +459,19 @@ impl Runtime {
                 .write_all(text.as_bytes())
                 .map_err(|err| NodiaError::io(format!("cannot write stderr: {err}"))),
             StreamId::File(_) => self.io.borrow_mut().write(stream, text),
+        }
+    }
+
+    pub(super) fn write_bytes_stream(&mut self, stream: StreamId, bytes: &[u8]) -> NodiaResult<()> {
+        match stream {
+            StreamId::Stdin => Err(NodiaError::runtime("cannot write to stdin")),
+            StreamId::Stdout => Err(NodiaError::runtime(
+                "cannot write raw bytes to stdout; stdout remains a text channel",
+            )),
+            StreamId::Stderr => stdio::stderr()
+                .write_all(bytes)
+                .map_err(|err| NodiaError::io(format!("cannot write stderr: {err}"))),
+            StreamId::File(_) => self.io.borrow_mut().write_bytes(stream, bytes),
         }
     }
 

@@ -1,23 +1,24 @@
 # Text Semantics
 
-This page defines the official `0.7.2` text model in Nodia.
+This page defines the official `0.7.3` text model in Nodia.
 
 ## Core Model
 
 | Concept | Meaning | Public surface |
 | --- | --- | --- |
-| text | immutable UTF-8 string value | string literals, interpolation results, file reads, regex inputs |
+| text | immutable UTF-8 string value | string literals, interpolation results, text IO, regex inputs |
 | byte | UTF-8 storage unit | `text.byte_len(text)`, `text.byte_slice(...)`, `io.read(stream, size)` byte budgets |
+| byte sequence | explicit undecoded bytes represented as `list<int>` | `text.encode_utf8(...)`, `text.decode_utf8(...)`, `io.read_bytes(...)`, `system.exec(...).stdout` |
 | scalar value | one Unicode scalar value | `collections.len(text)`, `text[index]`, `text.scalar(...)`, `text.scalar_slice(...)`, regex `start` / `end` |
 | grapheme cluster | one extended grapheme cluster | `text.grapheme_len(text)`, `text.grapheme(...)`, `text.grapheme_slice(...)` |
 | character | informal human term only | use `byte`, `scalar value`, or `grapheme cluster` when precision matters |
 
-Nodia `0.7.2` still keeps the core string value as UTF-8 text. It does **not**
-silently redefine every string operation around grapheme clusters.
+Nodia `0.7.3` keeps strings as UTF-8 text, but byte-oriented pipelines are now
+explicit instead of smuggling lossy decoding through unrelated APIs.
 
 ## Indexes And Offsets
 
-Nodia now uses two distinct terms deliberately:
+Nodia keeps two distinct terms deliberately:
 
 | Term | Meaning |
 | --- | --- |
@@ -27,8 +28,11 @@ Nodia now uses two distinct terms deliberately:
 That means:
 
 * `text.scalar(text, i)` and `text.grapheme(text, i)` take indexes.
-* `text.byte_slice(text, start, end)`, `text.scalar_slice(...)`, `text.grapheme_slice(...)`, regex `start` / `end`, `text.byte_offset(...)`, and `text.scalar_offset(...)` all use offsets.
-* Offsets are allowed to equal the length of the sequence because they refer to cut points, not elements.
+* `text.byte_slice(text, start, end)`, `text.scalar_slice(...)`,
+  `text.grapheme_slice(...)`, regex `start` / `end`, `text.byte_offset(...)`,
+  and `text.scalar_offset(...)` all use offsets.
+* Offsets may equal the length of the sequence because they name cut points,
+  not elements.
 
 ## Official Rules
 
@@ -49,13 +53,20 @@ That means:
 | `text.byte_len(text)` | returns the UTF-8 byte length |
 | `text.byte_offset(text, scalar_offset)` | converts a scalar boundary into a UTF-8 byte offset |
 | `text.scalar_offset(text, byte_offset)` | converts a UTF-8 byte boundary into a scalar offset; invalid boundaries fail at runtime |
+| `text.encode_utf8(text)` | returns a UTF-8 byte sequence as `list<int>` |
+| `text.decode_utf8(bytes)` | decodes `list<int>` as UTF-8; invalid bytes fail at runtime |
+| `text.decode_utf8_lossy(bytes)` | decodes `list<int>` as UTF-8 with replacement characters for invalid sequences |
+| `text.normalize_lf(text)` | normalizes every line ending to `\n` |
+| `text.normalize_crlf(text)` | normalizes every line ending to `\r\n` |
+| `text.strip_bom(text)` | removes one leading BOM when present |
+| `text.drop_nul(text)` | removes every `U+0000` code point |
 | `text.nfc(text)` / `text.nfd(text)` | canonical Unicode normalization helpers |
 | `text.nfkc(text)` / `text.nfkd(text)` | compatibility Unicode normalization helpers |
 | `text.casefold(text)` | Unicode default case folding for explicit caseless operations |
 
 ## Boundaries
 
-Three kinds of boundaries matter in `0.7.2`:
+Three kinds of boundaries matter in `0.7.3`:
 
 | Boundary kind | Valid range | Meaning |
 | --- | --- | --- |
@@ -78,8 +89,23 @@ Nodia does **not** normalize or case-fold text implicitly.
 | normalized ordering | compute an explicit key with `collections.sort_by(...)` |
 
 This keeps string equality, ordering, regex inputs, and slice behavior
-predictable. If a text pipeline needs canonical or compatibility equivalence,
-the normalization step stays visible at the call site.
+predictable. If a pipeline needs canonical or compatibility equivalence, that
+step stays visible at the call site.
+
+## Decoding And Sanitation
+
+`0.7.3` makes the decode boundary explicit:
+
+| Situation | Rule |
+| --- | --- |
+| text readers such as `io.read(...)` / `io.readln(...)` | UTF-8 strict; invalid bytes fail with `E3000` |
+| raw byte readers such as `io.read_bytes(...)` | return `list<int>`; no decode happens |
+| `system.exec(...)` output | returns raw bytes in `stdout` and `stderr` |
+| invalid `text.decode_utf8(...)` input | fatal runtime error today; recoverable decode errors arrive later in `0.8.x` |
+| lossy decode | only through explicit `text.decode_utf8_lossy(...)` |
+
+This removes hidden lossy conversions from the runtime. If a script wants
+replacement semantics, the lossy choice is now visible in source.
 
 ## Worked Examples
 
@@ -90,11 +116,13 @@ Explicit byte/scalar conversion:
 use text
 use collections as col
 
-val text = "aéb"
-emit col.len(text)
-emit text.byte_len(text)
-emit text.byte_offset(text, 2)
-emit text.scalar_offset(text, 3)
+val sample = "aéb"
+emit col.len(sample)
+emit text.byte_len(sample)
+emit text.byte_offset(sample, 2)
+emit text.scalar_offset(sample, 3)
+emit text.encode_utf8(sample)
+emit text.decode_utf8(text.encode_utf8(sample))
 '
 ```
 
@@ -103,20 +131,22 @@ emit text.scalar_offset(text, 3)
 4
 3
 2
+[97, 195, 169, 98]
+aéb
 ```
 
-Unit-aware slicing is now explicit:
+Unit-aware slicing is still explicit:
 
 ```bash
 ./target/release/nodia eval '
 use text
 use collections as col
 
-val text = "éx"
-emit col.len(text)
-emit text.grapheme_len(text)
-emit text.scalar_slice(text, 0, 2)
-emit text.grapheme_slice(text, 0, 1)
+val sample = "éx"
+emit col.len(sample)
+emit text.grapheme_len(sample)
+emit text.scalar_slice(sample, 0, 2)
+emit text.grapheme_slice(sample, 0, 1)
 emit text.byte_slice("aéb", 1, 3)
 '
 ```
@@ -129,6 +159,23 @@ é
 é
 ```
 
+Explicit lossy decode and sanitation:
+
+```bash
+./target/release/nodia eval '
+use text
+
+val raw = [239, 187, 191, 97, 13, 10, 98, 0, 255]
+val decoded = text.decode_utf8_lossy(raw)
+emit text.normalize_lf(text.drop_nul(text.strip_bom(decoded)))
+'
+```
+
+```text
+a
+b�
+```
+
 Regex offsets remain scalar offsets:
 
 ```bash
@@ -136,11 +183,11 @@ Regex offsets remain scalar offsets:
 use text
 use re
 
-val text = "éx"
-val hit = re.find(text, regex { "x" })
+val sample = "éx"
+val hit = re.find(sample, regex { "x" })
 emit hit.start
 emit hit.end
-emit text.scalar_slice(text, 0, hit.start)
+emit text.scalar_slice(sample, 0, hit.start)
 '
 ```
 
@@ -148,27 +195,6 @@ emit text.scalar_slice(text, 0, hit.start)
 2
 3
 é
-```
-
-Normalization-aware equality is explicit:
-
-```bash
-./target/release/nodia eval '
-use text
-
-val composed = "é"
-val decomposed = "é"
-
-emit composed == decomposed
-emit text.nfc(composed) == text.nfc(decomposed)
-emit text.casefold("Straße") == text.casefold("STRASSE")
-'
-```
-
-```text
-false
-true
-true
 ```
 
 Invalid unit boundaries are rejected explicitly:
@@ -182,13 +208,24 @@ emit text.byte_slice("é", 1, 2)'
 error[E2000]: byte_slice() byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)
 ```
 
-## Not In `0.7.2`
+Invalid strict decoding is also rejected explicitly:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.decode_utf8([97, 255, 98])'
+```
+
+```text
+error[E2000]: decode_utf8() cannot decode bytes as UTF-8: invalid utf-8 sequence of 1 bytes from index 1
+```
+
+## Not In `0.7.3`
 
 These areas are intentionally still out of scope in this release:
 
 | Area | Status |
 | --- | --- |
-| public bytes value type | not in the language yet |
+| dedicated bytes type | still not in the language; byte sequences use `list<int>` for now |
 | direct byte indexing | intentionally omitted until bytes have a first-class representation |
 | grapheme-aware regex offsets | regex results still report scalar offsets |
-| implicit lossy decoding | not allowed; text readers stay UTF-8 strict |
+| recoverable decode errors | not in the language yet; fatal/runtime behavior remains the only structured outcome before `0.8.x` |

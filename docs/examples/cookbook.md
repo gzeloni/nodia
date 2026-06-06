@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.7.2` release binary.
+and run. Each example has been verified with the `0.7.3` release binary.
 
 ## 1. Hello, World
 
@@ -460,13 +460,14 @@ emit system.env("HOME")
 ```bash
 ./target/release/nodia eval '
 use system
+use text
 
 val result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit result.stdout
-emit result.stderr
+emit text.decode_utf8(result.stdout)
+emit text.decode_utf8(result.stderr)
 emit result.status
 ' --allow-process
 ```

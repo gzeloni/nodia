@@ -4,6 +4,7 @@
 //! File and stream helpers used by the runtime I/O built-ins.
 
 use crate::error::{NodiaError, NodiaResult};
+use crate::textcodec;
 use crate::value::StreamId;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
@@ -131,6 +132,13 @@ impl IoRegistry {
     /// Reads the remainder of a readable stream as UTF-8 text.
     pub fn read_all(&mut self, stream: StreamId) -> NodiaResult<String> {
         let id = expect_file_stream(stream, "read")?;
+        let bytes = self.read_all_bytes(stream)?;
+        textcodec::decode_utf8_io(bytes, &format!("cannot read from stream {id}"))
+    }
+
+    /// Reads the remainder of a readable stream as raw bytes.
+    pub fn read_all_bytes(&mut self, stream: StreamId) -> NodiaResult<Vec<u8>> {
+        let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
             FileStream::Reader {
@@ -146,7 +154,7 @@ impl IoRegistry {
                 *eof = true;
                 let mut bytes = Vec::with_capacity(byte_buffer.capacity());
                 std::mem::swap(byte_buffer, &mut bytes);
-                into_utf8_string(bytes, &format!("cannot read from stream {id}"))
+                Ok(bytes)
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "read() expects readable stream, got writable stream",
@@ -177,7 +185,7 @@ impl IoRegistry {
                         Err(err) if err.error_len().is_some() => {
                             let mut bytes = Vec::with_capacity(byte_buffer.capacity());
                             std::mem::swap(byte_buffer, &mut bytes);
-                            return into_utf8_string(
+                            return textcodec::decode_utf8_io(
                                 bytes,
                                 &format!("cannot read from stream {id}"),
                             );
@@ -199,13 +207,52 @@ impl IoRegistry {
                         }
                         let mut bytes = Vec::with_capacity(byte_buffer.capacity());
                         std::mem::swap(byte_buffer, &mut bytes);
-                        return into_utf8_string(bytes, &format!("cannot read from stream {id}"));
+                        return textcodec::decode_utf8_io(
+                            bytes,
+                            &format!("cannot read from stream {id}"),
+                        );
                     }
                     byte_buffer.truncate(start + read);
                 }
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "read() expects readable stream, got writable stream",
+            )),
+        }
+    }
+
+    /// Reads up to `size` bytes from a readable stream without UTF-8 decoding.
+    pub fn read_chunk_bytes(&mut self, stream: StreamId, size: usize) -> NodiaResult<Vec<u8>> {
+        let id = expect_file_stream(stream, "read_bytes")?;
+        let stream = self.stream_mut(id)?;
+        match stream {
+            FileStream::Reader {
+                reader,
+                eof,
+                byte_buffer,
+                ..
+            } => {
+                if size == 0 {
+                    return Ok(Vec::new());
+                }
+
+                byte_buffer.resize(size, 0);
+                let read = reader.read(byte_buffer).map_err(|err| {
+                    NodiaError::io(format!("cannot read from stream {id}: {err}"))
+                })?;
+                if read == 0 {
+                    *eof = true;
+                    byte_buffer.clear();
+                    return Ok(Vec::new());
+                }
+
+                byte_buffer.truncate(read);
+                let mut bytes = Vec::with_capacity(byte_buffer.capacity());
+                std::mem::swap(byte_buffer, &mut bytes);
+                Ok(bytes)
+            }
+            FileStream::Writer { .. } => Err(NodiaError::runtime(
+                "read_bytes() expects readable stream, got writable stream",
             )),
         }
     }
@@ -237,7 +284,8 @@ impl IoRegistry {
                 }
                 let mut bytes = Vec::with_capacity(byte_buffer.capacity());
                 std::mem::swap(byte_buffer, &mut bytes);
-                into_utf8_string(bytes, &format!("cannot read line from stream {id}")).map(Some)
+                textcodec::decode_utf8_io(bytes, &format!("cannot read line from stream {id}"))
+                    .map(Some)
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "readln() expects readable stream, got writable stream",
@@ -255,6 +303,20 @@ impl IoRegistry {
                 .map_err(|err| NodiaError::io(format!("cannot write to stream {id}: {err}"))),
             FileStream::Reader { .. } => Err(NodiaError::runtime(
                 "write() expects writable stream, got readable stream",
+            )),
+        }
+    }
+
+    /// Writes raw bytes to a writable stream without appending a newline.
+    pub fn write_bytes(&mut self, stream: StreamId, bytes: &[u8]) -> NodiaResult<()> {
+        let id = expect_file_stream(stream, "write_bytes")?;
+        let stream = self.stream_mut(id)?;
+        match stream {
+            FileStream::Writer { writer } => writer
+                .write_all(bytes)
+                .map_err(|err| NodiaError::io(format!("cannot write to stream {id}: {err}"))),
+            FileStream::Reader { .. } => Err(NodiaError::runtime(
+                "write_bytes() expects writable stream, got readable stream",
             )),
         }
     }
@@ -280,18 +342,30 @@ impl IoRegistry {
 
 /// Reads an entire file path into memory.
 pub fn read_path(path: &str) -> NodiaResult<String> {
+    let bytes = read_path_bytes(path)?;
+    textcodec::decode_utf8_io(bytes, &format!("cannot read '{path}'"))
+}
+
+/// Reads an entire file path into memory as raw bytes.
+pub fn read_path_bytes(path: &str) -> NodiaResult<Vec<u8>> {
     let mut file =
         File::open(path).map_err(|err| NodiaError::io(format!("cannot read '{path}': {err}")))?;
     let mut bytes = Vec::with_capacity(file_size_hint(&file));
     file.read_to_end(&mut bytes)
         .map_err(|err| NodiaError::io(format!("cannot read '{path}': {err}")))?;
-    into_utf8_string(bytes, &format!("cannot read '{path}'"))
+    Ok(bytes)
 }
 
 /// Writes a full string to a file path, replacing existing content.
 pub fn write_path(path: &str, text: &str, allow_write: bool) -> NodiaResult<()> {
     ensure_write_allowed(allow_write)?;
     fs::write(path, text).map_err(|err| NodiaError::io(format!("cannot write '{path}': {err}")))
+}
+
+/// Writes raw bytes to a file path, replacing existing content.
+pub fn write_path_bytes(path: &str, bytes: &[u8], allow_write: bool) -> NodiaResult<()> {
+    ensure_write_allowed(allow_write)?;
+    fs::write(path, bytes).map_err(|err| NodiaError::io(format!("cannot write '{path}': {err}")))
 }
 
 /// Appends a string to a file path.
@@ -303,6 +377,18 @@ pub fn append_path(path: &str, text: &str, allow_write: bool) -> NodiaResult<()>
         .open(path)
         .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))?;
     file.write_all(text.as_bytes())
+        .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))
+}
+
+/// Appends raw bytes to a file path.
+pub fn append_path_bytes(path: &str, bytes: &[u8], allow_write: bool) -> NodiaResult<()> {
+    ensure_write_allowed(allow_write)?;
+    let mut file = OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+        .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))?;
+    file.write_all(bytes)
         .map_err(|err| NodiaError::io(format!("cannot append '{path}': {err}")))
 }
 
@@ -341,8 +427,4 @@ fn remaining_file_hint(reader: &mut BufReader<File>) -> usize {
         .ok()
         .map(|meta| meta.len().saturating_sub(position).min(usize::MAX as u64) as usize)
         .unwrap_or(0)
-}
-
-fn into_utf8_string(bytes: Vec<u8>, context: &str) -> NodiaResult<String> {
-    String::from_utf8(bytes).map_err(|err| NodiaError::io(format!("{context}: {err}")))
 }

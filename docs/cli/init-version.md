@@ -58,7 +58,7 @@ Print version metadata.
 ```
 
 ```text
-nodia 0.7.2
+nodia 0.7.3
 ```
 
 JSON form:
@@ -68,7 +68,7 @@ JSON form:
 ```
 
 ```json
-{"name":"nodia","version":"0.7.2","rust_std_only":false}
+{"name":"nodia","version":"0.7.3","rust_std_only":false}
 ```
 
 `rust_std_only: false` confirms that this build of Nodia uses targeted

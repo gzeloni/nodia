@@ -99,6 +99,107 @@ emit text.nfkc("①")'
 1
 ```
 
+## Bytes And Sanitation
+
+Byte sequences are represented as `list<int>` where every element must be in
+`0..255`.
+
+### `encode_utf8(text)`
+
+Encodes UTF-8 text into a byte list:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.encode_utf8("aéb")'
+```
+
+```text
+[97, 195, 169, 98]
+```
+
+### `decode_utf8(bytes)`
+
+Decodes a byte list as UTF-8. Invalid UTF-8 is a runtime error:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.decode_utf8([97, 195, 169, 98])'
+```
+
+```text
+aéb
+```
+
+Use this with `io.read_bytes(...)` and `system.exec(...).stdout` /
+`system.exec(...).stderr` when a pipeline must keep decoding explicit.
+
+### `decode_utf8_lossy(bytes)`
+
+Decodes a byte list as UTF-8, replacing invalid sequences with `�`:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.decode_utf8_lossy([97, 255, 98])'
+```
+
+```text
+a�b
+```
+
+This is the only lossy UTF-8 decode surface in the language today.
+
+### `normalize_lf(text)`
+
+Normalizes `\r\n` and bare `\r` into `\n`:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.normalize_lf("a\r\nb\rc\n")'
+```
+
+```text
+a
+b
+c
+```
+
+### `normalize_crlf(text)`
+
+Normalizes every line ending into `\r\n`:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.normalize_crlf("a\r\nb\rc\n")'
+```
+
+The output contains CRLF line endings even when the source mixed styles.
+
+### `strip_bom(text)`
+
+Removes one leading Unicode BOM when present:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.strip_bom(text.decode_utf8([239, 187, 191, 104, 105]))'
+```
+
+```text
+hi
+```
+
+### `drop_nul(text)`
+
+Removes every `U+0000` code point:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.drop_nul(text.decode_utf8([97, 0, 98, 0]))'
+```
+
+```text
+ab
+```
+
 ### `nfkd(text)`
 
 Compatibility decomposition:
@@ -576,5 +677,5 @@ emit text.scalar_offset("aéb", 3)'
 If `byte_offset` points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
-See [Text Semantics](../reference/text-semantics.md) for the full `0.7.2`
+See [Text Semantics](../reference/text-semantics.md) for the full `0.7.3`
 model shared by string indexing, slicing, regex offsets, and chunked reads.

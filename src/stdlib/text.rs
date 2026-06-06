@@ -5,6 +5,7 @@
 
 use super::expect_arity;
 use crate::regex::{self, RegexMatch, RuntimeRegex};
+use crate::textcodec;
 use crate::value::Value;
 use crate::{NodiaError, NodiaResult};
 use caseless::default_case_fold_str;
@@ -203,6 +204,45 @@ pub(super) fn grapheme_len(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(args, 1, "grapheme_len")?;
     let text = expect_string(&args[0], "grapheme_len", "first")?;
     Ok(Value::Int(text.graphemes(true).count() as i64))
+}
+
+pub(super) fn encode_utf8(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 1, "encode_utf8")?;
+    let text = expect_string(&args[0], "encode_utf8", "first")?;
+    Ok(textcodec::string_to_bytes_value(text))
+}
+
+pub(super) fn decode_utf8(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 1, "decode_utf8")?;
+    let bytes = textcodec::expect_bytes(&args[0], "decode_utf8", "first")?;
+    Ok(Value::String(textcodec::decode_utf8_runtime(
+        bytes,
+        "decode_utf8",
+    )?))
+}
+
+pub(super) fn decode_utf8_lossy(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 1, "decode_utf8_lossy")?;
+    let bytes = textcodec::expect_bytes(&args[0], "decode_utf8_lossy", "first")?;
+    Ok(Value::String(textcodec::decode_utf8_lossy(&bytes)))
+}
+
+pub(super) fn normalize_lf(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "normalize_lf", |text| textcodec::normalize_lf(&text))
+}
+
+pub(super) fn normalize_crlf(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "normalize_crlf", |text| {
+        textcodec::normalize_crlf(&text)
+    })
+}
+
+pub(super) fn strip_bom(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "strip_bom", |text| textcodec::strip_bom(&text))
+}
+
+pub(super) fn drop_nul(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "drop_nul", |text| textcodec::drop_nul(&text))
 }
 
 pub(super) fn nfc(args: &[Value]) -> NodiaResult<Value> {

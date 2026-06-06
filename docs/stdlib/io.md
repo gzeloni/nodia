@@ -53,11 +53,16 @@ Import this namespace with `use io`.
 | `read(path)`           | read a whole file into a string                         |
 | `read(stream)`         | read the rest of a readable stream                      |
 | `read(stream, size)`   | read a UTF-8-safe chunk using `size` as a byte budget   |
+| `read_bytes(path)`     | read a whole file into `list<int>` bytes                |
+| `read_bytes(stream)`   | read the rest of a readable stream into bytes           |
+| `read_bytes(stream, size)` | read up to `size` raw bytes without UTF-8 decoding |
 | `readln(stream)`       | read one line; `null` at EOF                            |
 
 `readln(stream)` strips a trailing `\n` or `\r\n` and still returns the final
 line when the file does not end with a newline.
-All of these readers are UTF-8 strict: invalid bytes fail with `E3000`.
+All text readers are UTF-8 strict: invalid bytes fail with `E3000`.
+When you need undecoded input, use `read_bytes(...)` and choose
+`text.decode_utf8(...)` or `text.decode_utf8_lossy(...)` explicitly.
 
 ## Writing
 
@@ -70,6 +75,13 @@ All file writes (where `path` or `mode = "write"/"append"` is involved) require
 | `write(stream, text)`        | write text to a stream (no newline added)           |
 | `writeln(stream, text)`      | write text and a newline to a stream                |
 | `append(path, text)`         | append text to a file                               |
+| `write_bytes(path, bytes)`   | write raw bytes, replacing existing content         |
+| `write_bytes(stream, bytes)` | write raw bytes to a writable file stream or stderr |
+| `append_bytes(path, bytes)`  | append raw bytes to a file                          |
+
+`write_bytes(io.stdout, ...)` is rejected on purpose. `io.stdout` is still the
+program text-output channel used by `emit`, so raw bytes must go to files or
+`io.stderr`.
 
 ## Examples
 
@@ -139,6 +151,21 @@ io.close(src)
 boundary would split one, the runtime reads slightly further to return valid
 text. Use `byte_len(text)` when you need to compare chunk size with UTF-8
 storage length. `read(stream, 0)` is a no-op that returns `""`.
+
+### Raw Bytes With Explicit Decode
+
+```nodia
+use io
+use text
+
+val raw = io.read_bytes("payload.bin")
+val cleaned = text.drop_nul(
+  text.strip_bom(
+    text.decode_utf8_lossy(raw),
+  ),
+)
+emit text.normalize_lf(cleaned)
+```
 
 ### Stream-Style Stdout
 

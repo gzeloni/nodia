@@ -49,8 +49,8 @@ Runs a subprocess and returns:
 
 ```nodia
 {
-  stdout: "...",
-  stderr: "...",
+  stdout: [111, 117, 116],
+  stderr: [101, 114, 114],
   status: 0,
 }
 ```
@@ -60,12 +60,13 @@ This requires `--allow-process`.
 ```bash
 ./target/release/nodia eval '
 use system
+use text
 val result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit result.stdout
-emit result.stderr
+emit text.decode_utf8(result.stdout)
+emit text.decode_utf8(result.stderr)
 emit result.status
 ' --allow-process
 ```
@@ -75,6 +76,11 @@ out
 err
 7
 ```
+
+`stdout` and `stderr` are raw byte sequences represented as `list<int>`.
+This keeps subprocess decoding explicit and avoids hidden lossy conversion.
+Use `text.decode_utf8(...)` for strict decoding or `text.decode_utf8_lossy(...)`
+when replacement semantics are actually desired.
 
 ## `exit()` / `exit(code)`
 

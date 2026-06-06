@@ -439,6 +439,57 @@ emit __io.readln(src)
 }
 
 #[test]
+fn explicit_utf8_codec_and_sanitation_helpers_are_available_through_text_module() {
+    let output = run_source(
+        r#"val encoded = __text.encode_utf8("aéb")
+emit encoded
+emit __text.decode_utf8(encoded)
+emit __text.decode_utf8_lossy([97, 255, 98])
+emit __text.normalize_lf("a\r\nb\rc\n")
+emit __text.normalize_crlf("a\r\nb\rc\n")
+emit __text.strip_bom(__text.decode_utf8([239, 187, 191, 104, 105]))
+emit __text.drop_nul(__text.decode_utf8([97, 0, 98, 0]))
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "[97, 195, 169, 98]\naéb\na�b\na\nb\nc\n\na\r\nb\r\nc\r\n\nhi\nab"
+    );
+}
+
+#[test]
+fn byte_io_surfaces_raw_bytes_without_implicit_decoding() {
+    let dir = std::env::temp_dir().join(format!("nodia-io-bytes-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("payload.bin");
+    let source = format!(
+        r#"__io.write_bytes("{}", [97, 0, 255, 98])
+emit __io.read_bytes("{}")
+emit __text.decode_utf8_lossy(__io.read_bytes("{}"))
+"#,
+        path.display(),
+        path.display(),
+        path.display(),
+    );
+
+    let output = run_source_with_options(
+        &source,
+        BTreeMap::new(),
+        RuntimeOptions {
+            allow_write: true,
+            ..RuntimeOptions::default()
+        },
+    )
+    .unwrap();
+
+    assert_eq!(output, "[97, 0, 255, 98]\na\0�b");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn file_writes_require_permission() {
     let dir = std::env::temp_dir().join(format!("nodia-io-denied-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -1297,8 +1348,8 @@ fn exec_builtin_returns_stdout_stderr_and_status() {
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit result.stdout
-emit result.stderr
+emit __text.decode_utf8(result.stdout)
+emit __text.decode_utf8(result.stderr)
 emit result.status
 "#,
         BTreeMap::new(),
@@ -1317,8 +1368,8 @@ fn exec_builtin_returns_recoverable_error_for_missing_binary() {
     let output = run_source_with_options(
         r#"val result = __sys.exec("nonexistent_xyz", [])
 emit result.status
-emit result.stdout == ""
-emit result.stderr == ""
+emit result.stdout == []
+emit result.stderr == []
 emit result.error != ""
 "#,
         BTreeMap::new(),

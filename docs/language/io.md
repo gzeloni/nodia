@@ -124,6 +124,8 @@ emit text.upper(content)
 
 All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
 `E3000` IO error; it is never silently replaced with lossy text.
+If a pipeline must keep the raw bytes first, use `read_bytes(...)` and decode
+later with `text.decode_utf8(...)` or `text.decode_utf8_lossy(...)`.
 
 ### `read(stream)`
 
@@ -177,6 +179,22 @@ io.close(src)
 
 Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
 `E3000` instead of decoding lossily.
+
+### `read_bytes(path)` / `read_bytes(stream)` / `read_bytes(stream, size)`
+
+Raw byte readers return `list<int>` where each element is one byte in
+`0..255`:
+
+```nodia
+use io
+use text
+
+val raw = io.read_bytes("input.bin")
+emit text.decode_utf8_lossy(raw)
+```
+
+These APIs do not decode, normalize, or sanitize anything on their own.
+They exist so the decode choice stays explicit in the script.
 
 ## Writing
 
@@ -244,6 +262,20 @@ io.append("app.log", "started\n")
 ```
 
 Requires `--allow-write`.
+
+### `write_bytes(path, bytes)` / `write_bytes(stream, bytes)` / `append_bytes(path, bytes)`
+
+These variants write raw bytes from a `list<int>`:
+
+```nodia
+use io
+
+io.write_bytes("payload.bin", [0, 1, 2, 255])
+io.append_bytes("payload.bin", [10])
+```
+
+`write_bytes(io.stdout, ...)` is intentionally rejected because `stdout`
+remains the structured text-output channel for `emit` and `io.write(...)`.
 
 ## Write Permission
 
