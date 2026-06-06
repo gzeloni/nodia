@@ -442,7 +442,7 @@ A `re.find(...)` hit is a map:
 `start` and `end` are **Unicode scalar value offsets**, so they line up with
 `len(string)` and `slice(...)`. Use `byte_offset(...)` / `scalar_offset(...)`
 when you need to cross the byte/scalar boundary. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.0`
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.1`
 model.
 
 ## Replacement Placeholders

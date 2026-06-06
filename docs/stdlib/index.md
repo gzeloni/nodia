@@ -37,7 +37,7 @@ Available stdlib namespaces:
 
 ## Sections
 
-* [Text](text.md) — case, trim, split/join, lines, dedent, indent, byte/offset helpers, contains, starts, ends.
+* [Text](text.md) — case, normalization, trim, split/join, lines, dedent, indent, byte/offset helpers, contains, starts, ends.
 * [Numbers](numbers.md) — conversions, math, ranges.
 * [Collections](collections.md) — `collections.len`, `collections.keys`,
   `collections.values`, `collections.entries`, `collections.get`,

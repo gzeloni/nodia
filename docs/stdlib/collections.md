@@ -27,7 +27,7 @@ emit collections.len({name: "Ana"})
 ```
 
 `collections.len` on a string is the official Unicode scalar value count in
-`0.7.0`. Use `text.byte_len(text)` when you need UTF-8 storage length. See
+`0.7.1`. Use `text.byte_len(text)` when you need UTF-8 storage length. See
 [Text Semantics](../reference/text-semantics.md) for the contract shared by
 `len`, `slice`, and regex offsets.
 
@@ -215,6 +215,10 @@ emit collections.sort(["c", "a", "b"])
 ["a", "b", "c"]
 ```
 
+For string lists, this order is based on the exact scalar sequence. If your
+pipeline needs normalization-aware order, compute an explicit key with
+`collections.sort_by(...)` and `text.nfc(...)` / `text.casefold(...)`.
+
 ### `unique(list)`
 
 Removes duplicates while preserving the original order:
@@ -227,6 +231,10 @@ emit collections.unique(["a", "b", "a", "c", "b"])'
 ```text
 ["a", "b", "c"]
 ```
+
+For string lists, duplicates are also checked by exact scalar sequence.
+Normalize explicitly first when canonically equivalent forms should collapse
+together.
 
 ## Higher-Order Helpers
 

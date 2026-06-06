@@ -16,16 +16,17 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.7.0`.
+Nodia is experimental. The current release is `v0.7.1`.
 
 The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
-positions stay scalar-based, and byte boundaries are now part of the public
-model through dedicated builtins.
+positions stay scalar-based, byte boundaries are part of the public model, and
+normalization/case-folding are explicit helpers rather than implicit magic.
 
 ## Install From Source
 
 Nodia is implemented in Rust and uses the standard library plus
-`fancy-regex` for regex compilation and execution.
+`fancy-regex`, `unicode-normalization`, and `caseless` for regex execution and
+explicit Unicode text semantics.
 
 ```bash
 cargo build --release
@@ -448,8 +449,13 @@ Text (`use text`):
 |---|---|
 | `text.upper(value)` | Converts text to uppercase |
 | `text.lower(value)` | Converts text to lowercase |
+| `text.casefold(value)` | Applies Unicode default case folding |
 | `text.capitalize(value)` | Capitalizes text |
 | `text.trim(value)` | Trims surrounding whitespace |
+| `text.nfc(value)` | Canonically normalizes text |
+| `text.nfd(value)` | Canonically decomposes text |
+| `text.nfkc(value)` | Compatibility-normalizes text |
+| `text.nfkd(value)` | Compatibility-decomposes text |
 | `text.replace(value, from, to)` | Replaces text with literal or regex patterns |
 | `text.replace_all(value, from, to)` | Explicit alias of `text.replace(...)` |
 | `text.split(value, delimiter)` | Splits text with a literal or regex delimiter |
@@ -463,6 +469,9 @@ Text (`use text`):
 | `text.ends(value, suffix)` | Checks a text suffix |
 | `text.indent(text, spaces_or_prefix)` | Prefixes each line |
 | `text.dedent(text)` | Removes common indentation |
+| `text.byte_len(text)` | Returns the UTF-8 byte length |
+| `text.byte_offset(text, scalar_offset)` | Converts scalar offsets to byte offsets |
+| `text.scalar_offset(text, byte_offset)` | Converts byte offsets to scalar offsets |
 
 Math (`use numbers`):
 

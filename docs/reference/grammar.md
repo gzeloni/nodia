@@ -1,7 +1,8 @@
 # Grammar
 
-This is the normative EBNF-like grammar for Nodia v0.7. The `0.7.0` release
-keeps the v0.6 surface syntax and focuses on explicit text semantics.
+This is the normative EBNF-like grammar for Nodia v0.7. The `0.7.1` release
+keeps the v0.6 surface syntax and extends the explicit text-semantics line
+with normalization and case-folding helpers.
 
 ```text
 program        = { statement terminator } EOF ;

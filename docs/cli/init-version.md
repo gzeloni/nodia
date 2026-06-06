@@ -58,7 +58,7 @@ Print version metadata.
 ```
 
 ```text
-nodia 0.7.0
+nodia 0.7.1
 ```
 
 JSON form:
@@ -68,9 +68,9 @@ JSON form:
 ```
 
 ```json
-{"name":"nodia","version":"0.7.0","rust_std_only":true}
+{"name":"nodia","version":"0.7.1","rust_std_only":false}
 ```
 
-`rust_std_only: true` confirms that this build of Nodia depends only on the
-Rust standard library plus `fancy-regex` (the regex engine), and on nothing
-else.
+`rust_std_only: false` confirms that this build of Nodia uses targeted
+third-party crates for regex execution and explicit Unicode
+normalization/case-folding.

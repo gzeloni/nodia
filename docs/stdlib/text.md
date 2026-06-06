@@ -42,6 +42,76 @@ emit text.capitalize("gZELONI")'
 Gzeloni
 ```
 
+### `casefold(text)`
+
+Applies Unicode default case folding. Use this for explicit caseless
+comparisons after choosing the normalization form you want:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.casefold("Straße")
+emit text.casefold("STRASSE")'
+```
+
+```text
+strasse
+strasse
+```
+
+## Normalization
+
+### `nfc(text)`
+
+Canonical decomposition followed by canonical composition:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.nfc("é")'
+```
+
+```text
+é
+```
+
+### `nfd(text)`
+
+Canonical decomposition:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.nfd("é")'
+```
+
+```text
+é
+```
+
+### `nfkc(text)`
+
+Compatibility decomposition followed by canonical composition:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.nfkc("①")'
+```
+
+```text
+1
+```
+
+### `nfkd(text)`
+
+Compatibility decomposition:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.nfkd("①")'
+```
+
+```text
+1
+```
+
 ## Whitespace
 
 ### `trim(text)`
@@ -293,6 +363,56 @@ true
 true
 ```
 
+## Comparison Contract
+
+String comparison stays exact unless you normalize explicitly:
+
+* `==` / `!=` compare the exact scalar sequence.
+* `text.contains`, `text.starts`, and `text.ends` check exact text.
+* `collections.sort` and `collections.unique` keep exact string semantics.
+
+For canonical equivalence:
+
+```bash
+./target/release/nodia eval '
+use text
+
+val composed = "é"
+val decomposed = "é"
+
+emit composed == decomposed
+emit text.nfc(composed) == text.nfc(decomposed)
+emit text.casefold("Straße") == text.casefold("STRASSE")
+'
+```
+
+```text
+false
+true
+true
+```
+
+For normalization-aware order, compute a key explicitly:
+
+```bash
+./target/release/nodia eval '
+use text
+use collections
+
+func key(value) {
+  return text.casefold(text.nfc(value))
+}
+
+emit collections.sort(["Z", "é", "é"])
+emit collections.sort_by(key, ["Z", "é", "é"])
+'
+```
+
+```text
+["Z", "é", "é"]
+["Z", "é", "é"]
+```
+
 ### `starts(text, prefix)` / `ends(text, suffix)`
 
 For string inputs, `prefix` / `suffix` can be either a literal string or a
@@ -369,5 +489,5 @@ emit text.scalar_offset("aéb", 3)'
 If `byte_offset` points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
-See [Text Semantics](../reference/text-semantics.md) for the full `0.7.0`
+See [Text Semantics](../reference/text-semantics.md) for the full `0.7.1`
 model shared by string indexing, slicing, regex offsets, and chunked reads.

@@ -1,12 +1,14 @@
 [package]
 name = "nodia"
-version = "0.7.0"
+version = "0.7.1"
 edition = "2021"
 description = "Nodia text automation language"
 license = "GPL-3.0-or-later"
 
 [dependencies]
+caseless = "0.2.2"
 fancy-regex = "0.18.0"
+unicode-normalization = "0.1.25"
 
 [profile.release]
 lto = "thin"

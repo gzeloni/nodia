@@ -10,6 +10,10 @@ string there is compiled as raw regex text.
 surface: pass a regex value for regex behavior, or a plain string for literal
 text behavior.
 
+Regex execution works over the exact text you pass in. If a pipeline needs
+canonical or compatibility equivalence across Unicode forms, normalize first
+with `text.nfc(...)` or `text.nfkc(...)`.
+
 For DSL syntax, see [Regex DSL](../language/regex.md).
 
 ## `test(text, pattern)`
@@ -111,7 +115,7 @@ example.com
 they line up with `collections.len(string)` and `collections.slice(...)`. Use
 `text.byte_offset(...)` / `text.scalar_offset(...)` when you need explicit
 UTF-8 byte boundaries. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.0`
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.1`
 model.
 
 ## `find_all(text, pattern)`

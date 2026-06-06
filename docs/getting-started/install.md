@@ -9,7 +9,9 @@ produces is `nodia`.
 * No external runtime dependencies.
 
 The crate depends on the Rust standard library plus
-[`fancy-regex`](https://crates.io/crates/fancy-regex) for the regex backend.
+[`fancy-regex`](https://crates.io/crates/fancy-regex),
+`unicode-normalization`, and `caseless` for regex execution and explicit
+Unicode text normalization/case-folding.
 
 ## Clone
 
@@ -55,7 +57,7 @@ Throughout this site every example uses the release binary:
 ```
 
 ```text
-nodia 0.7.0
+nodia 0.7.1
 ```
 
 JSON metadata:
@@ -65,12 +67,12 @@ JSON metadata:
 ```
 
 ```json
-{"name":"nodia","version":"0.7.0","rust_std_only":true}
+{"name":"nodia","version":"0.7.1","rust_std_only":false}
 ```
 
-`rust_std_only: true` reflects the runtime's design constraint: Nodia's runtime
-does not depend on third-party crates beyond `fancy-regex` (which is feature-
-gated to regex compilation and execution only).
+`rust_std_only: false` reflects the current runtime shape: Nodia now depends on
+targeted third-party crates for regex execution and explicit Unicode
+normalization/case-folding.
 
 ## Quick Smoke Test
 

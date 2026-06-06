@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.7.0` release binary.
+and run. Each example has been verified with the `0.7.1` release binary.
 
 ## 1. Hello, World
 
@@ -593,4 +593,34 @@ for key in collections.keys(counts) {
 ana:deploy=2
 bia:retry=1
 carla:sync=1
+```
+
+## 25. Normalize And Compare Unicode Text Explicitly
+
+```bash
+./target/release/nodia eval '
+use text
+use collections
+
+val composed = "é"
+val decomposed = "é"
+
+func key(value) {
+  return text.casefold(text.nfc(value))
+}
+
+emit composed == decomposed
+emit text.nfc(composed) == text.nfc(decomposed)
+emit text.casefold("Straße") == text.casefold("STRASSE")
+emit collections.sort(["Z", "é", "é"])
+emit collections.sort_by(key, ["Z", "é", "é"])
+'
+```
+
+```text
+false
+true
+true
+["Z", "é", "é"]
+["Z", "é", "é"]
 ```

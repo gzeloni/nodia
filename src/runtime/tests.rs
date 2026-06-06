@@ -640,6 +640,52 @@ emit __text.scalar_offset(text, 4)
 }
 
 #[test]
+fn text_semantics_normalize_unicode_forms_explicitly() {
+    let source = r#"val composed = "é"
+val decomposed = "é"
+
+emit composed == decomposed
+emit __text.nfc(composed)
+emit __text.nfc(decomposed)
+emit __text.nfd(composed)
+emit __text.nfd(decomposed)
+emit __text.nfkc("①")
+emit __text.nfkd("①")
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "false\né\né\né\né\n1\n1");
+}
+
+#[test]
+fn text_semantics_casefolds_and_keeps_comparisons_explicit() {
+    let source = r#"val composed = "é"
+val decomposed = "é"
+val words = ["Z", "é", "é", "ECLAIR", "éclair"]
+
+func normalized_key(value) {
+  return __text.casefold(__text.nfc(value))
+}
+
+emit __text.lower("Straße")
+emit __text.casefold("Straße")
+emit __text.casefold("STRASSE")
+emit __text.casefold("Straße") == __text.casefold("STRASSE")
+emit __text.contains(composed, decomposed)
+emit __text.contains(__text.nfc(composed), __text.nfc(decomposed))
+emit __col.unique([composed, decomposed])
+emit __col.sort(words)
+emit __col.sort_by(normalized_key, words)
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(
+        output,
+        "straße\nstrasse\nstrasse\ntrue\nfalse\ntrue\n[\"é\", \"é\"]\n[\"ECLAIR\", \"Z\", \"é\", \"é\", \"éclair\"]\n[\"ECLAIR\", \"Z\", \"é\", \"é\", \"éclair\"]"
+    );
+}
+
+#[test]
 fn text_semantics_reject_invalid_offset_boundaries() {
     let err = run_source(r#"emit __text.scalar_offset("é", 1)"#, BTreeMap::new()).unwrap_err();
     assert!(err.message.contains("does not point to a UTF-8 boundary"));

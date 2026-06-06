@@ -7,7 +7,9 @@ use super::expect_arity;
 use crate::regex::{self, RegexMatch, RuntimeRegex};
 use crate::value::Value;
 use crate::{NodiaError, NodiaResult};
+use caseless::default_case_fold_str;
 use std::collections::BTreeMap;
+use unicode_normalization::UnicodeNormalization;
 
 pub(super) fn unary_string(
     args: &[Value],
@@ -194,6 +196,26 @@ pub(super) fn byte_len(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(args, 1, "byte_len")?;
     let text = expect_string(&args[0], "byte_len", "first")?;
     Ok(Value::Int(text.len() as i64))
+}
+
+pub(super) fn nfc(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "nfc", |text| text.nfc().collect())
+}
+
+pub(super) fn nfd(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "nfd", |text| text.nfd().collect())
+}
+
+pub(super) fn nfkc(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "nfkc", |text| text.nfkc().collect())
+}
+
+pub(super) fn nfkd(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "nfkd", |text| text.nfkd().collect())
+}
+
+pub(super) fn casefold(args: &[Value]) -> NodiaResult<Value> {
+    unary_string(args, "casefold", |text| default_case_fold_str(&text))
 }
 
 pub(super) fn byte_offset(args: &[Value]) -> NodiaResult<Value> {

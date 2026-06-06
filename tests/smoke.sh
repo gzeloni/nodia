@@ -31,6 +31,8 @@ val rows = csv.read("name,age\nAna,30", {
 })
 
 emit text.upper("ana")
+emit text.nfc("é")
+emit text.casefold("Straße")
 emit numbers.abs(-4)
 emit conv.string(3)
 emit fmt.fixed(3.14, 1)
@@ -47,6 +49,8 @@ EOF
 
 cat > "$TMPDIR_PATH/expected.txt" <<'EOF'
 ANA
+é
+strasse
 4
 3
 3.1

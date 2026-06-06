@@ -22,8 +22,13 @@ pub type ModuleItemSpec = (&'static str, &'static str, Option<&'static [usize]>)
 const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("upper", "upper", Some(&[1])),
     ("lower", "lower", Some(&[1])),
+    ("casefold", "casefold", Some(&[1])),
     ("capitalize", "capitalize", Some(&[1])),
     ("trim", "trim", Some(&[1])),
+    ("nfc", "nfc", Some(&[1])),
+    ("nfd", "nfd", Some(&[1])),
+    ("nfkc", "nfkc", Some(&[1])),
+    ("nfkd", "nfkd", Some(&[1])),
     ("replace", "replace", Some(&[3])),
     ("replace_all", "replace_all", Some(&[3])),
     ("split", "split", Some(&[2])),
@@ -192,6 +197,7 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
     let result = match name {
         "upper" => text::unary_string(args, name, |s| s.to_uppercase())?,
         "lower" => text::unary_string(args, name, |s| s.to_lowercase())?,
+        "casefold" => text::casefold(args)?,
         "capitalize" => text::unary_string(args, "capitalize", |s| {
             let mut chars = s.chars();
             match chars.next() {
@@ -202,6 +208,10 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             }
         })?,
         "trim" => text::unary_string(args, "trim", |s| s.trim().to_string())?,
+        "nfc" => text::nfc(args)?,
+        "nfd" => text::nfd(args)?,
+        "nfkc" => text::nfkc(args)?,
+        "nfkd" => text::nfkd(args)?,
         "replace" | "replace_all" => text::replace_text(args, name)?,
         "split" | "split_regex" => text::split_text(args, name)?,
         "join" => {

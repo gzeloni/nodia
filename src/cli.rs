@@ -513,7 +513,7 @@ fn version_command(mut args: Vec<String>, options: &mut Options) -> Result<(), C
     }
     if options.json {
         println!(
-            "{{\"name\":\"nodia\",\"version\":\"{}\",\"rust_std_only\":true}}",
+            "{{\"name\":\"nodia\",\"version\":\"{}\",\"rust_std_only\":false}}",
             env!("CARGO_PKG_VERSION")
         );
     } else {
