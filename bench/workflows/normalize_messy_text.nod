@@ -1,0 +1,16 @@
+val collapse = regex {
+  one_or_more whitespace
+}
+val text = read(input.path)
+
+var cleaned = []
+for line in lines(text) {
+  val compact = replace(trim(line), collapse, " ")
+  if compact != "" and not starts(compact, "#") and not starts(compact, "//") {
+    cleaned = push(cleaned, compact)
+  }
+}
+
+emit len(cleaned)
+emit first(cleaned)
+emit last(cleaned)

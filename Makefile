@@ -1,4 +1,4 @@
-.PHONY: all release test clean run
+.PHONY: all release test clean run bench
 
 all: release
 
@@ -11,6 +11,9 @@ test:
 
 run:
 	cargo run -- run
+
+bench:
+	sh bench/text-workflows.sh
 
 clean:
 	cargo clean

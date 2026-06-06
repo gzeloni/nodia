@@ -1,0 +1,52 @@
+val entry = regex {
+  start
+  named level {
+    either {
+      branch {
+        "INFO"
+      }
+      branch {
+        "WARN"
+      }
+      branch {
+        "ERROR"
+      }
+    }
+  }
+  one_or_more whitespace
+  named user {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "_"
+        "-"
+      }
+    }
+  }
+  one_or_more whitespace
+  named action {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "_"
+        "-"
+      }
+    }
+  }
+  end
+}
+
+var counts = {}
+for line in lines(read(input.path)) {
+  val hit = find(trim(line), entry)
+  if hit != null {
+    val key = "{hit.named.level}:{hit.named.action}"
+    counts[key] = get(counts, key, 0) + 1
+  }
+}
+
+for key in sort(keys(counts)) {
+  emit "{key}={counts[key]}"
+}

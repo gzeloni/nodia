@@ -1,0 +1,29 @@
+val url = regex(case_insensitive) {
+  named scheme {
+    either {
+      branch {
+        "http"
+      }
+      branch {
+        "https"
+      }
+    }
+  }
+  "://"
+  named host {
+    one_or_more {
+      char_set {
+        letter
+        digit
+        "."
+        "-"
+      }
+    }
+  }
+}
+
+val hits = find_all(read(input.path), url)
+
+emit len(hits)
+emit hits[0].named.host
+emit hits[-1].named.host
