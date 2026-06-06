@@ -25,8 +25,7 @@ enum FileStream {
     Reader {
         reader: BufReader<File>,
         eof: bool,
-        chunk_buffer: Vec<u8>,
-        line_buffer: String,
+        byte_buffer: Vec<u8>,
     },
     Writer {
         writer: BufWriter<File>,
@@ -50,8 +49,7 @@ impl IoRegistry {
                     NodiaError::io(format!("cannot open '{path}' for read: {err}"))
                 })?),
                 eof: false,
-                chunk_buffer: Vec::new(),
-                line_buffer: String::new(),
+                byte_buffer: Vec::new(),
             },
             "write" => {
                 ensure_write_allowed(allow_write)?;
@@ -135,13 +133,20 @@ impl IoRegistry {
         let id = expect_file_stream(stream, "read")?;
         let stream = self.stream_mut(id)?;
         match stream {
-            FileStream::Reader { reader, eof, .. } => {
-                let mut out = Vec::with_capacity(remaining_file_hint(reader));
-                reader.read_to_end(&mut out).map_err(|err| {
+            FileStream::Reader {
+                reader,
+                eof,
+                byte_buffer,
+            } => {
+                byte_buffer.clear();
+                byte_buffer.reserve(remaining_file_hint(reader));
+                reader.read_to_end(byte_buffer).map_err(|err| {
                     NodiaError::io(format!("cannot read from stream {id}: {err}"))
                 })?;
                 *eof = true;
-                into_utf8_string(out, &format!("cannot read from stream {id}"))
+                let mut bytes = Vec::with_capacity(byte_buffer.capacity());
+                std::mem::swap(byte_buffer, &mut bytes);
+                into_utf8_string(bytes, &format!("cannot read from stream {id}"))
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "read() expects readable stream, got writable stream",
@@ -157,25 +162,46 @@ impl IoRegistry {
             FileStream::Reader {
                 reader,
                 eof,
-                chunk_buffer,
+                byte_buffer,
                 ..
             } => {
-                chunk_buffer.clear();
-                chunk_buffer.resize(size, 0);
-                let read = reader.read(chunk_buffer).map_err(|err| {
-                    NodiaError::io(format!("cannot read from stream {id}: {err}"))
-                })?;
-                if read == 0 {
-                    *eof = true;
-                    chunk_buffer.clear();
+                if size == 0 {
                     return Ok(String::new());
                 }
-                chunk_buffer.truncate(read);
-                let mut bytes = Vec::with_capacity(chunk_buffer.capacity());
-                std::mem::swap(chunk_buffer, &mut bytes);
-                match String::from_utf8(bytes) {
-                    Ok(text) => Ok(text),
-                    Err(err) => Ok(String::from_utf8_lossy(&err.into_bytes()).into_owned()),
+
+                byte_buffer.clear();
+                loop {
+                    match std::str::from_utf8(byte_buffer) {
+                        Ok(text) if byte_buffer.len() >= size => return Ok(text.to_string()),
+                        Ok(_) => {}
+                        Err(err) if err.error_len().is_some() => {
+                            let mut bytes = Vec::with_capacity(byte_buffer.capacity());
+                            std::mem::swap(byte_buffer, &mut bytes);
+                            return into_utf8_string(
+                                bytes,
+                                &format!("cannot read from stream {id}"),
+                            );
+                        }
+                        Err(_) => {}
+                    }
+
+                    let start = byte_buffer.len();
+                    let read_len = if start < size { size - start } else { 1 };
+                    byte_buffer.resize(start + read_len, 0);
+                    let read = reader.read(&mut byte_buffer[start..]).map_err(|err| {
+                        NodiaError::io(format!("cannot read from stream {id}: {err}"))
+                    })?;
+                    if read == 0 {
+                        *eof = true;
+                        byte_buffer.truncate(start);
+                        if byte_buffer.is_empty() {
+                            return Ok(String::new());
+                        }
+                        let mut bytes = Vec::with_capacity(byte_buffer.capacity());
+                        std::mem::swap(byte_buffer, &mut bytes);
+                        return into_utf8_string(bytes, &format!("cannot read from stream {id}"));
+                    }
+                    byte_buffer.truncate(start + read);
                 }
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
@@ -192,26 +218,26 @@ impl IoRegistry {
             FileStream::Reader {
                 reader,
                 eof,
-                line_buffer,
+                byte_buffer,
                 ..
             } => {
-                line_buffer.clear();
-                let read = reader.read_line(line_buffer).map_err(|err| {
+                byte_buffer.clear();
+                let read = reader.read_until(b'\n', byte_buffer).map_err(|err| {
                     NodiaError::io(format!("cannot read line from stream {id}: {err}"))
                 })?;
                 if read == 0 {
                     *eof = true;
                     return Ok(None);
                 }
-                if line_buffer.ends_with('\n') {
-                    line_buffer.pop();
-                    if line_buffer.ends_with('\r') {
-                        line_buffer.pop();
+                if byte_buffer.ends_with(b"\n") {
+                    byte_buffer.pop();
+                    if byte_buffer.ends_with(b"\r") {
+                        byte_buffer.pop();
                     }
                 }
-                let mut line = String::with_capacity(line_buffer.capacity());
-                std::mem::swap(line_buffer, &mut line);
-                Ok(Some(line))
+                let mut bytes = Vec::with_capacity(byte_buffer.capacity());
+                std::mem::swap(byte_buffer, &mut bytes);
+                into_utf8_string(bytes, &format!("cannot read line from stream {id}")).map(Some)
             }
             FileStream::Writer { .. } => Err(NodiaError::runtime(
                 "readln() expects readable stream, got writable stream",

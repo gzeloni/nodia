@@ -6,7 +6,7 @@
 use super::{expect_arity, expect_list};
 use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn json_read(args: &[Value]) -> NodiaResult<Value> {
     json_read_named(args, "json.read")
@@ -82,6 +82,7 @@ fn csv_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     }
 
     let headers = rows[0].clone();
+    reject_duplicate_csv_headers(&headers, name)?;
     let mut mapped = Vec::new();
     for row in rows.into_iter().skip(1) {
         if row.len() != headers.len() {
@@ -139,17 +140,16 @@ fn write_list_rows(rows: &[Value], name: &str) -> NodiaResult<String> {
 }
 
 fn write_map_rows(rows: &[Value], _name: &str) -> NodiaResult<String> {
-    let mut headers = Vec::new();
+    let mut headers = BTreeSet::new();
     for row in rows {
         let Value::Map(values) = row else {
             unreachable!();
         };
         for key in values.keys() {
-            if !headers.contains(key) {
-                headers.push(key.clone());
-            }
+            headers.insert(key.clone());
         }
     }
+    let headers = headers.into_iter().collect::<Vec<_>>();
 
     let mut encoded = String::new();
     write_csv_record(&headers, &mut encoded);
@@ -337,10 +337,13 @@ fn csv_read_options(value: &Value, name: &str) -> NodiaResult<CsvReadOptions> {
             header: *header,
             types: false,
         }),
-        Value::Map(options) => Ok(CsvReadOptions {
-            header: option_bool(options, "header", name)?.unwrap_or(false),
-            types: option_bool(options, "types", name)?.unwrap_or(false),
-        }),
+        Value::Map(options) => {
+            expect_known_options(options, &["header", "types"], name)?;
+            Ok(CsvReadOptions {
+                header: option_bool(options, "header", name)?.unwrap_or(false),
+                types: option_bool(options, "types", name)?.unwrap_or(false),
+            })
+        }
         other => Err(NodiaError::runtime(format!(
             "{name}() expects bool or map as second argument, got {}",
             other.type_name()
@@ -353,14 +356,44 @@ fn json_stringify_options(value: &Value, name: &str) -> NodiaResult<JsonStringif
         Value::Int(indent) => Ok(JsonStringifyOptions {
             indent: normalize_indent(expect_non_negative_int(*indent, name, "second")? as usize),
         }),
-        Value::Map(options) => Ok(JsonStringifyOptions {
-            indent: option_usize(options, "indent", name)?.and_then(normalize_indent),
-        }),
+        Value::Map(options) => {
+            expect_known_options(options, &["indent"], name)?;
+            Ok(JsonStringifyOptions {
+                indent: option_usize(options, "indent", name)?.and_then(normalize_indent),
+            })
+        }
         other => Err(NodiaError::runtime(format!(
             "{name}() expects int or map as second argument, got {}",
             other.type_name()
         ))),
     }
+}
+
+fn expect_known_options(
+    options: &BTreeMap<String, Value>,
+    allowed: &[&str],
+    name: &str,
+) -> NodiaResult<()> {
+    for key in options.keys() {
+        if !allowed.contains(&key.as_str()) {
+            return Err(NodiaError::runtime(format!(
+                "{name}() does not accept option '{key}'"
+            )));
+        }
+    }
+    Ok(())
+}
+
+fn reject_duplicate_csv_headers(headers: &[String], name: &str) -> NodiaResult<()> {
+    let mut seen = BTreeSet::new();
+    for header in headers {
+        if !seen.insert(header.clone()) {
+            return Err(NodiaError::runtime(format!(
+                "{name}() found duplicate header '{header}'"
+            )));
+        }
+    }
+    Ok(())
 }
 
 fn option_bool(
@@ -632,7 +665,9 @@ impl<'a> JsonParser<'a> {
             self.index += 1;
             self.skip_whitespace();
             let value = self.parse_value()?;
-            values.insert(key, value);
+            if values.insert(key.clone(), value).is_some() {
+                return Err(self.error_owned(format!("duplicate object key '{key}'")));
+            }
             self.skip_whitespace();
             match self.peek() {
                 Some(',') => {
@@ -811,6 +846,10 @@ impl<'a> JsonParser<'a> {
     }
 
     fn error(&self, message: &str) -> NodiaError {
+        self.error_owned(message.to_string())
+    }
+
+    fn error_owned(&self, message: String) -> NodiaError {
         let column = self.source[..self.byte_index()].chars().count() + 1;
         NodiaError::runtime(format!("invalid JSON: {message} at column {column}"))
     }
