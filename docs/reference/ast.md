@@ -1,6 +1,6 @@
 # AST Schema
 
-This page documents the public AST shape for Nodia v0.6. The AST is not yet a
+This page documents the public AST shape for Nodia v0.7. The AST is not yet a
 stable serialized format, but its shape is part of the language baseline.
 
 `nodia ast file.nod` prints the parsed AST as Rust `Debug` text. `--json`

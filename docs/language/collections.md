@@ -45,8 +45,8 @@ c
 
 Out-of-bounds access is a runtime error (`E2000`).
 
-For the precise `0.6.x` contract around string positions, `slice(...)`, and
-regex offsets, see [Text Positions](../reference/text-semantics.md). Direct
+For the precise string-position contract around `slice(...)` and regex
+offsets, see [Text Semantics](../reference/text-semantics.md). Direct
 string indexing follows the same negative-index normalization as list
 indexing.
 
@@ -54,8 +54,9 @@ indexing.
 
 ```bash
 ./target/release/nodia eval '
+use text
 for tag in ["compiler", "formatter"] {
-  emit upper(tag)
+  emit text.upper(tag)
 }
 '
 ```
@@ -71,9 +72,10 @@ List helpers are **non-mutating** — they return new lists:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 var values = []
-values = push(values, "a")
-values = push(values, "b")
+values = collections.push(values, "a")
+values = collections.push(values, "b")
 emit values
 '
 ```
@@ -212,12 +214,13 @@ role=dev
 
 ```bash
 ./target/release/nodia eval '
+use collections
 val u = {name: "Ana", role: "dev"}
-emit keys(u)
-emit values(u)
-emit entries(u)
-emit len(u)
-emit contains(u, "name")
+emit collections.keys(u)
+emit collections.values(u)
+emit collections.entries(u)
+emit collections.len(u)
+emit collections.contains(u, "name")
 '
 ```
 

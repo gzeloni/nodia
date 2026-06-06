@@ -1,7 +1,7 @@
 # Grammar
 
-This is the normative EBNF-like grammar for Nodia v0.6. The current version
-inherits the v0.5 baseline and adds the `regex { ... }` expression.
+This is the normative EBNF-like grammar for Nodia v0.7. The `0.7.0` release
+keeps the v0.6 surface syntax and focuses on explicit text semantics.
 
 ```text
 program        = { statement terminator } EOF ;

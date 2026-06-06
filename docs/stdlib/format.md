@@ -3,6 +3,8 @@
 These builtins cover the common formatting gap between interpolation and
 full text generation.
 
+Import this namespace with `use format`.
+
 ## `format(fmt, values)`
 
 `format` accepts a printf-style format string plus a list of values:
@@ -24,7 +26,8 @@ emits a literal percent sign.
 
 ```bash
 ./target/release/nodia eval '
-emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
+use format
+emit format.format("%05d %.2f %-6s", [7, 3.5, "ok"])
 '
 ```
 
@@ -38,8 +41,9 @@ Pads the string form of a value on the left:
 
 ```bash
 ./target/release/nodia eval '
-emit pad_left("42", 5)
-emit pad_left("42", 5, "0")
+use format
+emit format.pad_left("42", 5)
+emit format.pad_left("42", 5, "0")
 '
 ```
 
@@ -54,7 +58,8 @@ Pads on the right:
 
 ```bash
 ./target/release/nodia eval '
-emit pad_right("ok", 5, ".")
+use format
+emit format.pad_right("ok", 5, ".")
 '
 ```
 
@@ -71,8 +76,9 @@ Formats a number with an exact number of decimal places:
 
 ```bash
 ./target/release/nodia eval '
-emit fixed(3.14159, 3)
-emit fixed(12, 2)
+use format
+emit format.fixed(3.14159, 3)
+emit format.fixed(12, 2)
 '
 ```
 

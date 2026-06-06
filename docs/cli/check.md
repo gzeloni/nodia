@@ -1,7 +1,7 @@
 # `nodia check`
 
 `nodia check` lexes, parses, resolves uses, validates regex DSL structure, and
-runs the v0.6 semantic checks **without executing the program**. It is the
+runs the v0.7 semantic checks **without executing the program**. It is the
 fastest way to surface syntactic and semantic errors in CI.
 
 ```bash
@@ -60,7 +60,7 @@ JSON form:
 
 ## What `check` Validates
 
-`check` runs the v0.6 semantic checker over the program AST:
+`check` runs the v0.7 semantic checker over the program AST:
 
 * Lexical and parse correctness (`E1000`).
 * `use` resolution and selection (`E4104`).

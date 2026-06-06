@@ -17,8 +17,9 @@ Nodia has two loop forms: `for ... in` and `while`. Both support `break` and
 
 ```bash
 ./target/release/nodia eval '
+use text
 for name in ["ana", "bruno"] {
-  emit capitalize(name)
+  emit text.capitalize(name)
 }
 '
 ```
@@ -80,14 +81,15 @@ name=Ana
 role=dev
 ```
 
-### With `range`
+### With `numbers.range`
 
-`range(end)` and `range(start, end)` produce integer lists you can iterate
+`numbers.range(end)` and `numbers.range(start, end)` produce integer lists you can iterate
 directly:
 
 ```bash
 ./target/release/nodia eval '
-for n in range(4) {
+use numbers
+for n in numbers.range(4) {
   emit n
 }
 '
@@ -100,11 +102,12 @@ for n in range(4) {
 3
 ```
 
-`range(start, end)` works in either direction:
+`numbers.range(start, end)` works in either direction:
 
 ```bash
 ./target/release/nodia eval '
-emit range(5, 2)
+use numbers
+emit numbers.range(5, 2)
 '
 ```
 
@@ -141,7 +144,7 @@ error[E2000]: while loop exceeded 100000 iterations
 ```
 
 If you legitimately need a long loop, structure it around explicit data (for
-example, iterating over a `range(...)`).
+example, iterating over a `numbers.range(...)` list).
 
 ## `break`
 
@@ -149,7 +152,8 @@ example, iterating over a `range(...)`).
 
 ```bash
 ./target/release/nodia eval '
-for n in range(10) {
+use numbers
+for n in numbers.range(10) {
   if n == 3 {
     break
   }
@@ -170,7 +174,8 @@ for n in range(10) {
 
 ```bash
 ./target/release/nodia eval '
-for n in range(5) {
+use numbers
+for n in numbers.range(5) {
   if n == 2 {
     continue
   }

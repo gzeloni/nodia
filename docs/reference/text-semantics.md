@@ -1,82 +1,83 @@
-# Text Positions & Slices
+# Text Semantics
 
-This page defines the current `0.6.6` baseline for text positions in Nodia:
+This page defines the official `0.7.0` text model in Nodia.
 
-* direct indexing with `value[index]`;
-* sequence slicing with `slice(value, start, end)`;
-* regex match offsets returned by `find(...)` and `find_all(...)`.
+## Core Model
 
-It documents the implementation **as it exists today**. It is not a preview of
-the future `0.7.x` text-semantics line.
-
-## Stable In `0.6.x`
-
-These behaviors are part of the `0.6.x` baseline and should be treated as the
-current contract.
-
-| Surface | Current rule |
-| --- | --- |
-| `list[index]` | zero-based; negative indexes count from the end |
-| `get(list, index, default)` | same index normalization as `list[index]`, but returns `default` instead of raising |
-| `string[index]` | zero-based; negative indexes count from the end; returns a one-character string |
-| `get(string, index, default)` | same index normalization as `string[index]`, but returns `default` instead of raising |
-| `slice(list, start, end)` | `start` inclusive, `end` exclusive; negative bounds count from the end; bounds are clamped into the valid range |
-| `slice(string, start, end)` | same bound rules as list slicing |
-| `find(...).start` / `find(...).end` | offsets use the same position counting as `len(string)` and `slice(string, ...)` |
-
-`slice(...)` returns an empty list or empty string when the normalized `end`
-falls before the normalized `start`.
-
-## Provisional In `0.6.x`
-
-These behaviors are exposed today but are intentionally documented as
-provisional because the later text-semantics line may revisit them.
-
-| Surface | Current rule | Why provisional |
+| Concept | Meaning | Public surface |
 | --- | --- | --- |
-| text position counting | `len(string)`, `slice(string, ...)`, and regex offsets count **Unicode scalar values** | this is explicit now, but grapheme-cluster semantics remain future work |
+| text | immutable UTF-8 string value | string literals, interpolation results, file reads, regex inputs |
+| byte | UTF-8 storage unit | `text.byte_len(text)`, `io.read(stream, size)` byte budgets |
+| scalar value | one Unicode scalar value | `collections.len(text)`, `text[index]`, `collections.slice(text, ...)`, regex `start` / `end` |
+| character | informal human term only | use `byte` or `scalar value` when precision matters |
 
-In practice, that means a decomposed text sequence such as `é` currently counts
-as two positions, not one grapheme cluster.
+Nodia `0.7.0` does **not** redefine strings around grapheme clusters. When the
+docs say a text position or offset without further qualification, it means a
+**Unicode scalar value offset**.
 
-## Known Limitations
+## Official Rules
 
-These are real limitations of the current `0.6.x` model, not hidden behavior.
-
-| Area | Current limitation |
+| Surface | Rule |
 | --- | --- |
-| grapheme awareness | there is no grapheme-cluster indexing, slicing, or regex offset API yet |
-| byte awareness | there is no byte-offset or byte-slice API in the public language surface |
+| `collections.len(string)` | counts Unicode scalar values |
+| `string[index]` | zero-based scalar indexing; negative indexes count from the end; returns a one-scalar string |
+| `collections.get(string, index, default)` | same scalar indexing rules as `string[index]`, but returns `default` instead of raising |
+| `collections.slice(string, start, end)` | `start` inclusive, `end` exclusive; bounds are scalar offsets; negative bounds count from the end; bounds are clamped |
+| `re.find(...).start` / `re.find(...).end` | scalar offsets aligned with `collections.len(string)` and `collections.slice(string, ...)` |
+| `io.read(stream, size)` | `size` is a byte budget; the returned text may read slightly past that budget to finish one UTF-8 scalar value |
+| `text.byte_len(text)` | returns the UTF-8 byte length |
+| `text.byte_offset(text, scalar_offset)` | converts a scalar boundary into a UTF-8 byte offset |
+| `text.scalar_offset(text, byte_offset)` | converts a UTF-8 byte boundary into a scalar offset; invalid boundaries fail at runtime |
 
-## Worked Baseline
+## Boundaries
+
+Two kinds of boundaries matter in `0.7.0`:
+
+| Boundary kind | Valid range | Meaning |
+| --- | --- | --- |
+| scalar boundary | `0 .. collections.len(text)` | any cut point between Unicode scalar values |
+| byte boundary | `0 .. text.byte_len(text)` | any cut point that does not split one UTF-8 sequence |
+
+`text.byte_offset(text, scalar_offset)` accepts scalar boundaries.
+`text.scalar_offset(text, byte_offset)` accepts byte boundaries and rejects
+offsets that land in the middle of one UTF-8 sequence.
+
+## Worked Examples
+
+Explicit byte/scalar conversion:
 
 ```bash
 ./target/release/nodia eval '
-emit ["a", "b", "c"][-1]
-emit "nodia"[-1]
-emit get("nodia", -1, "?")
-emit slice("nodia", -99, 99)
-emit len(slice("nodia", 4, 2))
+use text
+use collections as col
+
+val text = "aéb"
+emit col.len(text)
+emit text.byte_len(text)
+emit text.byte_offset(text, 2)
+emit text.scalar_offset(text, 3)
 '
 ```
 
 ```text
-c
-a
-a
-nodia
-0
+3
+4
+3
+2
 ```
 
-Regex offsets align with the same string-position model:
+Decomposed text stays scalar-based in core string APIs and regex offsets:
 
 ```bash
 ./target/release/nodia eval '
+use collections as col
+use re
+
 val text = "éx"
-val hit = find(text, regex { "x" })
+val hit = re.find(text, regex { "x" })
 emit hit.start
 emit hit.end
-emit slice(text, 0, hit.start)
+emit col.slice(text, 0, hit.start)
 '
 ```
 
@@ -85,3 +86,24 @@ emit slice(text, 0, hit.start)
 3
 é
 ```
+
+Invalid byte boundaries are rejected explicitly:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.scalar_offset("é", 1)'
+```
+
+```text
+error[E2000]: scalar_offset() byte offset 1 does not point to a UTF-8 boundary
+```
+
+## Not In `0.7.0`
+
+These areas are intentionally still out of scope in this release:
+
+| Area | Status |
+| --- | --- |
+| grapheme-aware indexing/slicing | not in the public API yet |
+| byte slicing/indexing | not in the public API yet |
+| implicit lossy decoding | not allowed; text readers stay UTF-8 strict |

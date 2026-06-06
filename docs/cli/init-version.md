@@ -58,7 +58,7 @@ Print version metadata.
 ```
 
 ```text
-nodia 0.6.6
+nodia 0.7.0
 ```
 
 JSON form:
@@ -68,7 +68,7 @@ JSON form:
 ```
 
 ```json
-{"name":"nodia","version":"0.6.6","rust_std_only":true}
+{"name":"nodia","version":"0.7.0","rust_std_only":true}
 ```
 
 `rust_std_only: true` confirms that this build of Nodia depends only on the

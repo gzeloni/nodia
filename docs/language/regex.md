@@ -1,8 +1,8 @@
 # Regex DSL
 
-Nodia v0.6 introduces a native, readable regex DSL. A `regex { ... }` block
+Nodia has a native, readable regex DSL. A `regex { ... }` block
 evaluates to a first-class **regex value**. When emitted, interpolated, or
-converted with `string(...)`, it renders to classic regex text. When used
+converted with `conversion.string(...)`, it renders to classic regex text. When used
 with the regex builtins (`test`, `find`, `find_all`, `full_match`, `replace`,
 `split`), it executes against text.
 
@@ -152,6 +152,7 @@ Quantifiers can wrap either a single node or a `{ ... }` block.
 
 ```bash
 ./target/release/nodia eval '
+use re
 val phone = regex {
   start
   "("
@@ -163,7 +164,7 @@ val phone = regex {
   end
 }
 emit phone
-emit test("(415) 555-1234", phone)
+emit re.test("(415) 555-1234", phone)
 '
 ```
 
@@ -203,6 +204,7 @@ are allowed as group names.
 
 ```bash
 ./target/release/nodia eval '
+use re
 val p = regex {
   named scheme {
     either {
@@ -240,7 +242,7 @@ val p = regex {
   }
 }
 emit p
-emit find_all("yes/maybe/no", p)
+emit re.find_all("yes/maybe/no", p)
 '
 ```
 
@@ -279,13 +281,14 @@ Negation:
 
 ```bash
 ./target/release/nodia eval '
+use re
 val p = regex {
   one_or_more {
     not_char_set { whitespace "," }
   }
 }
 emit p
-emit find_all("a, b , c", p)
+emit re.find_all("a, b , c", p)
 '
 ```
 
@@ -298,13 +301,14 @@ Character ranges use `range "a" to "z"` (not `range "a" "z"`):
 
 ```bash
 ./target/release/nodia eval '
+use re
 val p = regex {
   one_or_more {
     char_set { range "0" to "9" }
   }
 }
 emit p
-emit find_all("ab12cd34", p)
+emit re.find_all("ab12cd34", p)
 '
 ```
 
@@ -326,12 +330,13 @@ Lookarounds always take a block:
 
 ```bash
 ./target/release/nodia eval '
+use re
 val p = regex {
   one_or_more digit
   followed_by { "px" }
 }
 emit p
-emit find_all("12px 7em 3px 99", p)
+emit re.find_all("12px 7em 3px 99", p)
 '
 ```
 
@@ -349,14 +354,15 @@ emit find_all("12px 7em 3px 99", p)
 
 ```bash
 ./target/release/nodia eval '
+use re
 val dup = regex {
   named word { one_or_more letter }
   whitespace
   same_as word
 }
 emit dup
-emit test("the the cat", dup)
-emit test("the cat", dup)
+emit re.test("the the cat", dup)
+emit re.test("the cat", dup)
 '
 ```
 
@@ -377,6 +383,7 @@ Toggle flags inside a region only:
 
 ```bash
 ./target/release/nodia eval '
+use re
 val p = regex {
   with_flags(case_insensitive) {
     "abc"
@@ -384,8 +391,8 @@ val p = regex {
   "def"
 }
 emit p
-emit test("ABCdef", p)
-emit test("ABCDEF", p)
+emit re.test("ABCdef", p)
+emit re.test("ABCDEF", p)
 '
 ```
 
@@ -400,14 +407,14 @@ false
 The full set of regex builtins is documented in
 [Standard Library / Regex](../stdlib/regex.md). The most common ones are:
 
-* `test(text, pattern)` — does the pattern match anywhere?
-* `full_match(text, pattern)` — does the whole text match?
-* `find(text, pattern)` — first match as a structured map, or `null`.
-* `find_all(text, pattern)` — list of all non-overlapping matches.
-* `replace(text, pattern, replacement)` — replace literal text, or regex
+* `re.test(text, pattern)` — does the pattern match anywhere?
+* `re.full_match(text, pattern)` — does the whole text match?
+* `re.find(text, pattern)` — first match as a structured map, or `null`.
+* `re.find_all(text, pattern)` — list of all non-overlapping matches.
+* `re.replace(text, pattern, replacement)` — replace literal text, or regex
   matches when `pattern` is a regex value; supports `$(0)`, `$(1)`, `$(name)`,
   `$$` placeholders in regex mode.
-* `split(text, pattern)` — split on a literal separator, or on regex matches
+* `re.split(text, pattern)` — split on a literal separator, or on regex matches
   when `pattern` is a regex value.
 
 `test`, `full_match`, `find`, and `find_all` accept regex values **or** plain
@@ -417,7 +424,7 @@ plain string stays literal text, while a regex value enables regex mode.
 
 ## Match Shape
 
-A `find(...)` hit is a map:
+A `re.find(...)` hit is a map:
 
 ```nodia
 {
@@ -433,13 +440,14 @@ A `find(...)` hit is a map:
 ```
 
 `start` and `end` are **Unicode scalar value offsets**, so they line up with
-`len(string)` and `slice(...)`. See
-[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
-baseline and its current limitations.
+`len(string)` and `slice(...)`. Use `byte_offset(...)` / `scalar_offset(...)`
+when you need to cross the byte/scalar boundary. See
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.0`
+model.
 
 ## Replacement Placeholders
 
-When `replace(...)` receives a regex value as the pattern, the replacement
+When `re.replace(...)` receives a regex value as the pattern, the replacement
 string supports
 Nodia-style placeholders:
 
@@ -456,7 +464,8 @@ not exist in the pattern is an error.
 
 ```bash
 ./target/release/nodia eval '
-emit replace("https://example.com", regex {
+use re
+emit re.replace("https://example.com", regex {
   named scheme {
     either {
       branch { "http" }

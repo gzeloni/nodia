@@ -24,7 +24,8 @@ or stdin.
 ```
 
 ```bash
-./target/release/nodia eval 'emit upper("nodia")'
+./target/release/nodia eval 'use text
+emit text.upper("nodia")'
 ```
 
 ```text
@@ -37,9 +38,10 @@ The source string can contain any sequence of statements:
 
 ```bash
 ./target/release/nodia eval '
+use text
 val tags = ["compiler", "formatter", "streams"]
 for tag in tags {
-  emit "- {capitalize(tag)}"
+  emit "- {text.capitalize(tag)}"
 }
 '
 ```
@@ -78,7 +80,8 @@ emit date
 `eval` honors `--allow-write` just like `run`:
 
 ```bash
-./target/release/nodia eval 'write("out.txt", "ok")' --allow-write
+./target/release/nodia eval 'use io
+io.write("out.txt", "ok")' --allow-write
 ```
 
 Without the flag the call fails with `E3001`.
@@ -88,8 +91,9 @@ Without the flag the call fails with `E3001`.
 Like `run`, `eval` accepts trailing script arguments after `--`:
 
 ```bash
-./target/release/nodia eval 'emit args
-emit args[0]' -- one two
+./target/release/nodia eval 'use system
+emit system.args
+emit system.args[0]' -- one two
 ```
 
 ```text
@@ -99,18 +103,20 @@ one
 
 ## Environment Access
 
-`env(...)` is gated separately:
+`system.env(...)` is gated separately:
 
 ```bash
-HOME=/tmp ./target/release/nodia -e 'emit env("HOME")' --allow-env
+HOME=/tmp ./target/release/nodia -e 'use system
+emit system.env("HOME")' --allow-env
 ```
 
 ## Process Execution
 
-`exec(...)` is also gated explicitly:
+`system.exec(...)` is also gated explicitly:
 
 ```bash
-./target/release/nodia -e 'emit exec("/bin/sh", ["-c", "printf ok"]).stdout' --allow-process
+./target/release/nodia -e 'use system
+emit system.exec("/bin/sh", ["-c", "printf ok"]).stdout' --allow-process
 ```
 
 ## Notes

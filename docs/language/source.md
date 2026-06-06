@@ -41,7 +41,7 @@ preserves whichever you wrote.
 emit "ok"
 ```
 
-Block comments are **not** part of Nodia 0.6. Multi-line documentation is
+Block comments are **not** part of Nodia 0.7. Multi-line documentation is
 written as a stack of single-line comments.
 
 The lexer preserves comments as tokens, and the parser represents them as
@@ -56,7 +56,7 @@ digits, or `_`:
 [A-Za-z_][A-Za-z0-9_]*
 ```
 
-Non-ASCII identifiers are not part of the 0.6 baseline.
+Non-ASCII identifiers are not part of the 0.7 baseline.
 
 ## Reserved Words
 

@@ -4,6 +4,8 @@ Nodia keeps conversions explicit. Equality is strict and there are no
 implicit coercions across kinds — use these builtins when you need to move
 between kinds.
 
+Import this namespace with `use conversion`.
+
 ## `string(value)`
 
 Converts any value to its text form. The result is the same string `emit`
@@ -11,12 +13,13 @@ uses when given that value:
 
 ```bash
 ./target/release/nodia eval '
-emit string(42)
-emit string(3.14)
-emit string(true)
-emit string(null)
-emit string([1, 2])
-emit string({a: 1})
+use conversion
+emit conversion.string(42)
+emit conversion.string(3.14)
+emit conversion.string(true)
+emit conversion.string(null)
+emit conversion.string([1, 2])
+emit conversion.string({a: 1})
 '
 ```
 
@@ -32,7 +35,8 @@ null
 `string(regex { ... })` returns the rendered regex text:
 
 ```bash
-./target/release/nodia eval 'emit string(regex { one_or_more digit })'
+./target/release/nodia eval 'use conversion
+emit conversion.string(regex { one_or_more digit })'
 ```
 
 ```text
@@ -45,12 +49,13 @@ Folds a value to its truthiness:
 
 ```bash
 ./target/release/nodia eval '
-emit bool(null)
-emit bool(0)
-emit bool("")
-emit bool([])
-emit bool(1)
-emit bool("text")
+use conversion
+emit conversion.bool(null)
+emit conversion.bool(0)
+emit conversion.bool("")
+emit conversion.bool([])
+emit conversion.bool(1)
+emit conversion.bool("text")
 '
 ```
 
@@ -72,5 +77,5 @@ See [Numbers](numbers.md#conversions).
 
 ## `len(value)`
 
-Returns the character count for strings, the element count for lists, or the
+Returns the Unicode scalar count for strings, the element count for lists, or the
 entry count for maps. See [Collections](collections.md#length).

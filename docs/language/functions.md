@@ -88,7 +88,7 @@ emit fact(6)
 720
 ```
 
-There is no explicit tail-call optimization in v0.6, but the recursion depth
+There is no explicit tail-call optimization in v0.7, but the recursion depth
 required for typical text-automation work is well within the call stack.
 
 ## Scope

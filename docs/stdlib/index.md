@@ -19,6 +19,7 @@ val text = csv.write([{name: "Ana"}])
 ```
 
 These are namespace calls, not methods on arbitrary values.
+There is no implicit stdlib prelude.
 
 Available stdlib namespaces:
 
@@ -36,18 +37,24 @@ Available stdlib namespaces:
 
 ## Sections
 
-* [Text](text.md) — case, trim, split/join, lines, dedent, indent, contains, starts, ends.
+* [Text](text.md) — case, trim, split/join, lines, dedent, indent, byte/offset helpers, contains, starts, ends.
 * [Numbers](numbers.md) — conversions, math, ranges.
-* [Collections](collections.md) — `len`, `keys`, `values`, `entries`, `get`,
-  `push`, `pop`, `first`, `last`, `slice`, `reverse`, `sort`, `unique`.
+* [Collections](collections.md) — `collections.len`, `collections.keys`,
+  `collections.values`, `collections.entries`, `collections.get`,
+  `collections.push`, `collections.pop`, `collections.first`,
+  `collections.last`, `collections.slice`, `collections.reverse`,
+  `collections.sort`, `collections.unique`.
 * [Date & Time](datetime.md) — dates, datetimes, durations, parsing,
   formatting, epoch conversion, arithmetic.
 * [Data](data.md) — `use json`, `use csv`.
-* [Format](format.md) — `format`, `pad_left`, `pad_right`, `fixed`.
-* [System](system.md) — `args`, `env`, `exit`.
-* [Conversion](conversion.md) — `string`, `bool`, `int`, `float`.
-* [Regex](regex.md) — `test`, `full_match`, `find`, `find_all`, `replace`,
-  `replace_all`, `split`, `split_regex`.
+* [Format](format.md) — `format.format`, `format.pad_left`,
+  `format.pad_right`, `format.fixed`.
+* [System](system.md) — `system.args`, `system.env`, `system.exit`.
+* [Conversion](conversion.md) — `conversion.string`, `conversion.bool`,
+  `conversion.int`, `conversion.float`.
+* [Regex](regex.md) — `re.test`, `re.full_match`, `re.find`,
+  `re.find_all`, `re.replace`, `re.replace_all`, `re.split`,
+  `re.split_regex`.
 * [IO](io.md) — file, path, directory, glob, and stream builtins.
 
 ## Arity Checking

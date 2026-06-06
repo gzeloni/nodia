@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.6.6` release binary.
+and run. Each example has been verified with the `0.7.0` release binary.
 
 ## 1. Hello, World
 
@@ -18,9 +18,11 @@ hello, world
 `hello.nod`:
 
 ```nodia
+use text
+
 val name = input.name
 
-emit "Hello, {capitalize(name)}"
+emit "Hello, {text.capitalize(name)}"
 ```
 
 ```bash
@@ -35,13 +37,16 @@ Hello, Ana
 
 ```bash
 ./target/release/nodia eval '
+use numbers
+use collections
+
 func fibs(count) {
   var result = []
   var a = 0
   var b = 1
 
-  for i in range(count) {
-    result = push(result, a)
+  for i in numbers.range(count) {
+    result = collections.push(result, a)
     var next = a + b
     a = b
     b = next
@@ -51,8 +56,8 @@ func fibs(count) {
 }
 
 emit fibs(10)
-emit sum(fibs(10))
-emit avg(fibs(10))
+emit numbers.sum(fibs(10))
+emit numbers.avg(fibs(10))
 '
 ```
 
@@ -66,10 +71,12 @@ emit avg(fibs(10))
 
 ```bash
 ./target/release/nodia eval '
+use text
+
 val tags = ["compiler", "formatter", "streams"]
 
 for tag in tags {
-  emit "- {capitalize(tag)}"
+  emit "- {text.capitalize(tag)}"
 }
 '
 ```
@@ -84,11 +91,14 @@ for tag in tags {
 
 ```bash
 ./target/release/nodia eval '
-val text = "ana bruno ana carla bruno ana"
+use text as txt
+use collections
+
+val content = "ana bruno ana carla bruno ana"
 
 var counts = {}
-for tok in words(text) {
-  counts[tok] = get(counts, tok, 0) + 1
+for tok in txt.words(content) {
+  counts[tok] = collections.get(counts, tok, 0) + 1
 }
 
 for (key, count) in counts {
@@ -103,14 +113,16 @@ bruno=2
 carla=1
 ```
 
-This uses `get(..., default)` to remove the manual missing-key branch, while
-still relying on mutable `var` map bindings, index assignment, and pair
-iteration.
+This uses `collections.get(..., default)` to remove the manual missing-key
+branch, while still relying on mutable `var` map bindings, index assignment,
+and pair iteration.
 
 ## 6. Extract URLs With Regex
 
 ```bash
 ./target/release/nodia eval '
+use re
+
 val pat = regex(case_insensitive) {
   named scheme {
     either {
@@ -128,7 +140,7 @@ val pat = regex(case_insensitive) {
 
 val text = "see http://a.example or https://b.example for details"
 
-for hit in find_all(text, pat) {
+for hit in re.find_all(text, pat) {
   emit "{hit.named.scheme} -> {hit.named.host}"
 }
 '
@@ -143,8 +155,10 @@ https -> b.example
 
 ```bash
 ./target/release/nodia eval '
+use text
+
 val pat = regex { one_or_more digit }
-emit replace("ana 42 bruno 77 carla 5", pat, "#")
+emit text.replace("ana 42 bruno 77 carla 5", pat, "#")
 '
 ```
 
@@ -155,7 +169,8 @@ ana # bruno # carla #
 ## 8. Split A Path
 
 ```bash
-./target/release/nodia eval 'emit split("/usr/local/bin", "/")'
+./target/release/nodia eval 'use text
+emit text.split("/usr/local/bin", "/")'
 ```
 
 ```text
@@ -205,17 +220,20 @@ Ana
 `upper_file.nod`:
 
 ```nodia
-val src = open("input.txt", "read")
-val out = open("output.txt", "write")
+use io
+use text
 
-var line = readln(src)
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
+
+var line = io.readln(src)
 while line != null {
-  writeln(out, upper(line))
-  line = readln(src)
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-close(src)
-close(out)
+io.close(src)
+io.close(out)
 ```
 
 ```bash
@@ -234,8 +252,10 @@ val sections = ["summary", "artifacts", "status"]
 `report/format.nod`:
 
 ```nodia
-func heading(text) {
-  return "== {upper(text)} =="
+use text as txt
+
+func heading(value) {
+  return "== {txt.upper(value)} =="
 }
 
 func bullet(value) {
@@ -267,12 +287,14 @@ for section in meta.sections {
 
 ```bash
 ./target/release/nodia eval '
-val base = parse_datetime("2024-01-31T23:00:00Z")
-val next = add_duration(base, duration({hours: 2, minutes: 30}))
+use datetime
 
-emit isoformat(add_months(date(2024, 1, 31), 1))
-emit isoformat(next)
-emit strftime(next, "%F %T %:z")
+val base = datetime.parse_datetime("2024-01-31T23:00:00Z")
+val next = datetime.add_duration(base, datetime.duration({hours: 2, minutes: 30}))
+
+emit datetime.isoformat(datetime.add_months(datetime.date(2024, 1, 31), 1))
+emit datetime.isoformat(next)
+emit datetime.strftime(next, "%F %T %:z")
 '
 ```
 
@@ -286,6 +308,8 @@ emit strftime(next, "%F %T %:z")
 
 ```bash
 ./target/release/nodia eval '
+use re
+
 val date = regex {
   start
   exactly 4 digit
@@ -296,8 +320,8 @@ val date = regex {
   end
 }
 
-emit full_match("2026-05-26", date)
-emit full_match("2026/05/26", date)
+emit re.full_match("2026-05-26", date)
+emit re.full_match("2026/05/26", date)
 '
 ```
 
@@ -310,14 +334,17 @@ false
 
 ```bash
 ./target/release/nodia eval '
-val numbers = [3, 1, 4, 1, 5, 9, 2, 6]
-val sorted = sort(numbers)
+use numbers
+use collections
 
-emit "count={len(numbers)}"
-emit "sum={sum(numbers)}"
-emit "avg={avg(numbers)}"
-emit "min={first(sorted)}"
-emit "max={last(sorted)}"
+val values = [3, 1, 4, 1, 5, 9, 2, 6]
+val sorted = collections.sort(values)
+
+emit "count={collections.len(values)}"
+emit "sum={numbers.sum(values)}"
+emit "avg={numbers.avg(values)}"
+emit "min={collections.first(sorted)}"
+emit "max={collections.last(sorted)}"
 '
 ```
 
@@ -333,9 +360,11 @@ max=9
 
 ```bash
 ./target/release/nodia eval '
-write(stdout, "ready")
-write(stdout, "\n")
-writeln(stderr, "info: started")
+use io
+
+io.write(io.stdout, "ready")
+io.write(io.stdout, "\n")
+io.writeln(io.stderr, "info: started")
 '
 ```
 
@@ -355,6 +384,8 @@ info: started
 
 ```bash
 ./target/release/nodia eval '
+use re
+
 val dup = regex {
   word_boundary
   named word { one_or_more letter }
@@ -363,8 +394,8 @@ val dup = regex {
   word_boundary
 }
 
-emit test("the the cat sat", dup)
-emit test("the cat sat", dup)
+emit re.test("the the cat sat", dup)
+emit re.test("the cat sat", dup)
 '
 ```
 
@@ -377,8 +408,10 @@ false
 
 ```bash
 ./target/release/nodia eval '
+use text
+
 val tpl = "user=<user> env=<env>"
-emit replace(replace(tpl, "<user>", "ana"), "<env>", "prod")
+emit text.replace(text.replace(tpl, "<user>", "ana"), "<env>", "prod")
 '
 ```
 
@@ -394,8 +427,10 @@ For literals like `<user>` Nodia interpolation is inert. If you must use
 
 ```bash
 ./target/release/nodia eval '
-emit format("%05d %.2f %-6s", [7, 3.5, "ok"])
-emit fixed(3.14159, 3)
+use format
+
+emit format.format("%05d %.2f %-6s", [7, 3.5, "ok"])
+emit format.fixed(3.14159, 3)
 '
 ```
 
@@ -408,8 +443,10 @@ emit fixed(3.14159, 3)
 
 ```bash
 HOME=/tmp ./target/release/nodia eval '
-emit args
-emit env("HOME")
+use system
+
+emit system.args
+emit system.env("HOME")
 ' --allow-env -- one two
 ```
 
@@ -422,7 +459,9 @@ emit env("HOME")
 
 ```bash
 ./target/release/nodia eval '
-val result = exec("/bin/sh", [
+use system
+
+val result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
@@ -442,6 +481,8 @@ err
 
 ```bash
 ./target/release/nodia eval '
+use collections
+
 func double(x) {
   return x * 2
 }
@@ -454,9 +495,9 @@ func add(acc, x) {
   return acc + x
 }
 
-emit map(double, [1, 2, 3])
-emit filter(odd, [1, 2, 3, 4])
-emit reduce(add, 0, [1, 2, 3, 4])
+emit collections.map(double, [1, 2, 3])
+emit collections.filter(odd, [1, 2, 3, 4])
+emit collections.reduce(add, 0, [1, 2, 3, 4])
 '
 ```
 
@@ -470,6 +511,9 @@ emit reduce(add, 0, [1, 2, 3, 4])
 
 ```bash
 ./target/release/nodia eval '
+use text
+use collections
+
 val collapse = regex { one_or_more whitespace }
 val raw = """
   ana    open
@@ -481,15 +525,15 @@ val raw = """
 """
 
 var cleaned = []
-for line in lines(raw) {
-  val compact = replace(trim(line), collapse, " ")
-  if compact != "" and not starts(compact, "#") and not starts(compact, "//") {
-    cleaned = push(cleaned, compact)
+for line in text.lines(raw) {
+  val compact = text.replace(text.trim(line), collapse, " ")
+  if compact != "" and not text.starts(compact, "#") and not text.starts(compact, "//") {
+    cleaned = collections.push(cleaned, compact)
   }
 }
 
 emit cleaned
-emit join(cleaned, "\n")
+emit text.join(cleaned, "\n")
 '
 ```
 
@@ -504,6 +548,10 @@ carla pending
 
 ```bash
 ./target/release/nodia eval '
+use text
+use re
+use collections
+
 val entry = regex {
   named level {
     either {
@@ -527,15 +575,15 @@ INFO carla sync
 """
 
 var counts = {}
-for line in lines(raw) {
-  val hit = find(trim(line), entry)
+for line in text.lines(raw) {
+  val hit = re.find(text.trim(line), entry)
   if hit != null {
     val key = "{hit.named.user}:{hit.named.action}"
-    counts[key] = get(counts, key, 0) + 1
+    counts[key] = collections.get(counts, key, 0) + 1
   }
 }
 
-for key in keys(counts) {
+for key in collections.keys(counts) {
   emit "{key}={counts[key]}"
 }
 '

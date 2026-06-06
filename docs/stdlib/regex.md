@@ -18,7 +18,8 @@ Returns `true` if the pattern matches **anywhere** in the text:
 
 ```bash
 ./target/release/nodia eval '
-emit test("go to https://example.com now", regex {
+use re
+emit re.test("go to https://example.com now", regex {
   "https://"
   one_or_more letter
 })
@@ -35,7 +36,8 @@ Returns `true` only when the **entire** text matches:
 
 ```bash
 ./target/release/nodia eval '
-emit full_match("abc-42", regex {
+use re
+emit re.full_match("abc-42", regex {
   start
   one_or_more letter
   "-"
@@ -58,7 +60,8 @@ Returns a structured match map for the first occurrence, or `null`.
 
 ```bash
 ./target/release/nodia eval '
-val hit = find("go to https://example.com now", regex {
+use re
+val hit = re.find("go to https://example.com now", regex {
   named scheme {
     either {
       branch { "http" }
@@ -105,9 +108,11 @@ example.com
 ```
 
 `start` and `end` are **Unicode scalar value offsets** (not byte offsets), so
-they line up with `len(string)` and `slice(...)`. See
-[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
-contract and current limitations.
+they line up with `collections.len(string)` and `collections.slice(...)`. Use
+`text.byte_offset(...)` / `text.scalar_offset(...)` when you need explicit
+UTF-8 byte boundaries. See
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.0`
+model.
 
 ## `find_all(text, pattern)`
 
@@ -115,7 +120,9 @@ Returns a list of all non-overlapping match maps:
 
 ```bash
 ./target/release/nodia eval '
-emit len(find_all("http://a https://b", regex {
+use re
+use collections as col
+emit col.len(re.find_all("http://a https://b", regex {
   either {
     branch { "http" }
     branch { "https" }
@@ -147,7 +154,8 @@ string supports placeholders:
 
 ```bash
 ./target/release/nodia eval '
-emit replace("ana 42 bruno 77", regex { one_or_more digit }, "#")
+use re
+emit re.replace("ana 42 bruno 77", regex { one_or_more digit }, "#")
 '
 ```
 
@@ -157,7 +165,8 @@ ana # bruno #
 
 ```bash
 ./target/release/nodia eval '
-emit replace("https://example.com", regex {
+use re
+emit re.replace("https://example.com", regex {
   named scheme {
     either {
       branch { "http" }
@@ -192,8 +201,9 @@ can insert text without consuming characters:
 
 ```bash
 ./target/release/nodia eval '
-emit replace("abc", regex { start }, "<")
-emit replace("abc", regex { end }, ">")
+use re
+emit re.replace("abc", regex { start }, "<")
+emit re.replace("abc", regex { end }, ">")
 '
 ```
 
@@ -212,7 +222,8 @@ Splits on every match. The pattern can be a literal string or a regex:
 
 ```bash
 ./target/release/nodia eval '
-emit split("ana   bruno\tcarla", regex { one_or_more whitespace })
+use re
+emit re.split("ana   bruno\tcarla", regex { one_or_more whitespace })
 '
 ```
 
@@ -224,8 +235,9 @@ If the pattern can match empty text, `split` keeps the empty edge segments:
 
 ```bash
 ./target/release/nodia eval '
-emit split("abc", "")
-emit split("xay", regex { zero_or_more "a" })
+use re
+emit re.split("abc", "")
+emit re.split("xay", regex { zero_or_more "a" })
 '
 ```
 
@@ -246,7 +258,8 @@ which are treated as raw regex text:
 
 ```bash
 ./target/release/nodia eval '
-emit full_match("abc-42", "^[a-z]+-\\d+$")
+use re
+emit re.full_match("abc-42", "^[a-z]+-\\d+$")
 '
 ```
 

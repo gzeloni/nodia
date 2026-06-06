@@ -17,7 +17,7 @@ emit "hello"
 emit 'hello'
 ```
 
-Single- and double-quoted strings are equivalent in v0.6.6 — they accept the
+Single- and double-quoted strings are equivalent in v0.7.0 — they accept the
 same escape sequences and use the same interpolation rules.
 
 ### Raw Strings
@@ -63,7 +63,7 @@ Single-line strings recognize the following escape sequences:
 | `\'`   | single quote    |
 | `\\`   | backslash       |
 
-Unknown escapes resolve to the escaped character itself in v0.6 (e.g. `\x`
+Unknown escapes resolve to the escaped character itself in v0.7 (e.g. `\x`
 becomes `x`).
 
 ```bash
@@ -90,8 +90,9 @@ evaluated:
 
 ```bash
 ./target/release/nodia eval '
+use text
 val name = "Ana"
-emit "Hello, {capitalize(name)}"
+emit "Hello, {text.capitalize(name)}"
 '
 ```
 
@@ -137,7 +138,7 @@ Use `{{` and `}}` to emit literal braces inside interpolated strings:
 ```
 
 Treat `{{` / `}}` as the stable escape form. A lone `}` currently survives
-literally as a `0.6.x` implementation quirk and should not be relied on.
+literally as an implementation quirk and should not be relied on.
 
 ### Where Interpolation Runs
 

@@ -56,7 +56,7 @@ Bindings live in lexical block scopes:
 
 * The root scope contains top-level bindings and built-in runtime bindings.
 * Blocks create nested scopes (`if`, `else`, `for`, `while`, function bodies).
-* Function parameters and `for` loop variables are mutable in v0.6.
+* Function parameters and `for` loop variables are mutable in v0.7.
 
 ```bash
 ./target/release/nodia eval '
@@ -130,11 +130,12 @@ If your CLI does not pass any variables, `input` is an empty map.
 
 ## Script Arguments
 
-The runtime also seeds a read-only `args` list with trailing script arguments:
+The runtime exposes trailing script arguments through `system.args`:
 
 ```bash
-./target/release/nodia eval 'emit args
-emit args[0]' -- one two
+./target/release/nodia eval 'use system
+emit system.args
+emit system.args[0]' -- one two
 ```
 
 ```text

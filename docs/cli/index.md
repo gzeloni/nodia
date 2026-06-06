@@ -29,13 +29,13 @@ workflow.
 | ------------------- | ----------------------------------------------------------------------- |
 | `--json`            | Emit JSON diagnostics and JSON output for commands that support it.     |
 | `--quiet`           | Suppress non-error output for commands that support it.                 |
-| `--verbose`         | Reserved; accepted but intentionally minimal in 0.6.                    |
+| `--verbose`         | Reserved; accepted but intentionally minimal in 0.7.                    |
 | `--color auto`      | Color mode. Output is currently plain text.                             |
 | `--color always`    | Color mode. Output is currently plain text.                             |
 | `--color never`     | Color mode. Output is currently plain text.                             |
-| `--allow-write`     | Allow Nodia code to write files through IO builtins (see below).        |
+| `--allow-write`     | Allow Nodia code to write files through `io.*` builtins (see below).    |
 | `--allow-env`       | Allow Nodia code to read process environment variables.                 |
-| `--allow-process`   | Allow Nodia code to spawn subprocesses through `exec(...)`.             |
+| `--allow-process`   | Allow Nodia code to spawn subprocesses through `system.exec(...)`.      |
 | `--help`, `-h`      | Print help.                                                             |
 | `--version`, `-V`   | Print version.                                                          |
 
@@ -43,9 +43,9 @@ workflow.
 
 `--allow-write` controls **language-level** file writes performed by code:
 
-* `write(path, text)`
-* `append(path, text)`
-* `open(path, "write")` / `open(path, "append")`
+* `io.write(path, text)`
+* `io.append(path, text)`
+* `io.open(path, "write")` / `io.open(path, "append")`
 
 Without `--allow-write`, those calls fail with `E3001`:
 
@@ -56,19 +56,19 @@ error[E3001]: file write requires --allow-write
 This flag does **not** affect:
 
 * `emit` (program output channel),
-* `write(stdout, ...)` / `writeln(stderr, ...)` (standard streams),
+* `io.write(io.stdout, ...)` / `io.writeln(io.stderr, ...)` (standard streams),
 * the `--out` / `-o` CLI flag, which is a CLI redirection of the program's
   emitted output and is always allowed.
 
 ### `--allow-env`
 
-`--allow-env` gates `env(...)` access from Nodia code.
+`--allow-env` gates `system.env(...)` access from Nodia code.
 
 Without it, environment reads fail with `E3002`.
 
 ### `--allow-process`
 
-`--allow-process` gates `exec(...)`.
+`--allow-process` gates `system.exec(...)`.
 
 Without it, subprocess execution fails with `E3003`.
 
@@ -91,7 +91,7 @@ nodia -h
 ```
 
 ```text
-Nodia 0.6.6
+Nodia 0.7.0
 
 Usage:
   nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write] [--allow-env] [--allow-process] [-- script-args...]

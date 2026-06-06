@@ -90,7 +90,7 @@ JSON files preserve typed scalars (`string`, `int`, `float`, `bool`, `null`).
 
 ## Script Arguments
 
-Arguments after `--` are exposed through the read-only `args` list:
+Arguments after `--` are exposed through the read-only `system.args` list:
 
 ```bash
 ./target/release/nodia run script.nod -- one two
@@ -99,8 +99,10 @@ Arguments after `--` are exposed through the read-only `args` list:
 `script.nod`:
 
 ```nodia
-emit args
-emit args[1]
+use system
+
+emit system.args
+emit system.args[1]
 ```
 
 ```text
@@ -113,7 +115,7 @@ two
 Pass `-` as the file argument:
 
 ```bash
-printf 'emit upper("nodia")\n' | ./target/release/nodia run -
+printf 'use text\nemit text.upper("nodia")\n' | ./target/release/nodia run -
 ```
 
 ```text
@@ -149,8 +151,8 @@ language-level write.
 
 ## Writing Files From Code
 
-Functions like `write(path, text)`, `append(path, text)`, and
-`open(path, "write")` are gated by `--allow-write`:
+Functions like `io.write(path, text)`, `io.append(path, text)`, and
+`io.open(path, "write")` are gated by `--allow-write`:
 
 ```bash
 ./target/release/nodia run transform.nod --allow-write
@@ -160,7 +162,7 @@ Without it, the program fails with `E3001`.
 
 ## Environment Access
 
-`env(...)` requires `--allow-env`:
+`system.env(...)` requires `--allow-env`:
 
 ```bash
 HOME=/tmp ./target/release/nodia run script.nod --allow-env
@@ -168,7 +170,7 @@ HOME=/tmp ./target/release/nodia run script.nod --allow-env
 
 ## Process Execution
 
-`exec(...)` requires `--allow-process`:
+`system.exec(...)` requires `--allow-process`:
 
 ```bash
 ./target/release/nodia run script.nod --allow-process

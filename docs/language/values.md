@@ -14,10 +14,10 @@ fixed set of kinds.
 | `string`   | `"hello"`, `'hello'`, `r"hello"`, `"""triple"""`     |
 | `list`     | `[1, 2, 3]`                                          |
 | `map`      | `{name: "Ana", role: "dev"}`                         |
-| `date`     | `date(2026, 5, 27)`                                  |
-| `datetime` | `parse_datetime("2026-05-27T14:30:05Z")`             |
-| `duration` | `duration({hours: 2, minutes: 30})`                  |
-| `stream`   | `stdin`, `stdout`, `stderr`, `open("f.txt", "read")` |
+| `date`     | `datetime.date(2026, 5, 27)`                         |
+| `datetime` | `datetime.parse_datetime("2026-05-27T14:30:05Z")`    |
+| `duration` | `datetime.duration({hours: 2, minutes: 30})`         |
+| `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `io.open("f.txt", "read")` |
 | `function` | `func greet(name) { ... }`                           |
 | `regex`    | `regex { one_or_more digit }`                        |
 | `use`      | result of a `use` declaration                        |
@@ -126,4 +126,4 @@ false
 Lists and maps compare element-wise / key-wise. `date` compares by calendar
 day, `datetime` compares by instant, and `duration` compares by exact stored
 length. Functions, streams, regexes, and `use` references compare by identity
-in v0.6.
+in v0.7.

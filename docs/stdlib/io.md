@@ -4,13 +4,15 @@ This page is the quick reference for IO builtins. For the narrative of how
 file IO and streams work in Nodia (including `--allow-write`), see
 [IO & Streams](../language/io.md).
 
+Import this namespace with `use io`.
+
 ## Standard Streams
 
-| Binding   | Meaning                          |
-| --------- | -------------------------------- |
-| `stdin`   | process standard input           |
-| `stdout`  | program output (same as `emit`)  |
-| `stderr`  | process standard error           |
+| Binding      | Meaning                          |
+| ------------ | -------------------------------- |
+| `io.stdin`   | process standard input           |
+| `io.stdout`  | program output (same as `emit`)  |
+| `io.stderr`  | process standard error           |
 
 ## File Streams
 
@@ -74,17 +76,22 @@ All file writes (where `path` or `mode = "write"/"append"` is involved) require
 ### Read A File Whole
 
 ```nodia
-val text = read("input.txt")
-emit upper(text)
+use io
+use text
+
+val content = io.read("input.txt")
+emit text.upper(content)
 ```
 
 ### Path And Directory Queries
 
 ```nodia
-emit basename("/tmp/report.txt")
-emit dirname("/tmp/report.txt")
-emit list_dir("/tmp")
-emit glob("/tmp/**/*.txt")
+use io
+
+emit io.basename("/tmp/report.txt")
+emit io.dirname("/tmp/report.txt")
+emit io.list_dir("/tmp")
+emit io.glob("/tmp/**/*.txt")
 ```
 
 `list_dir(...)` returns entry names. `glob(...)` returns path strings that
@@ -93,17 +100,20 @@ match the pattern.
 ### Line-By-Line Transform
 
 ```nodia
-val src = open("input.txt", "read")
-val out = open("output.txt", "write")
+use io
+use text
 
-var line = readln(src)
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
+
+var line = io.readln(src)
 while line != null {
-  writeln(out, upper(line))
-  line = readln(src)
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-close(src)
-close(out)
+io.close(src)
+io.close(out)
 ```
 
 ```bash
@@ -113,26 +123,30 @@ close(out)
 ### Chunked Read
 
 ```nodia
-val src = open("input.txt", "read")
-while not eof(src) {
-  val chunk = read(src, 16)
+use io
+
+val src = io.open("input.txt", "read")
+while not io.eof(src) {
+  val chunk = io.read(src, 16)
   if chunk != "" {
     emit chunk
   }
 }
-close(src)
+io.close(src)
 ```
 
 `read(stream, size)` never returns half of a UTF-8 scalar value. If the chunk
 boundary would split one, the runtime reads slightly further to return valid
-text. `read(stream, 0)` is a no-op that returns `""`.
+text. Use `byte_len(text)` when you need to compare chunk size with UTF-8
+storage length. `read(stream, 0)` is a no-op that returns `""`.
 
 ### Stream-Style Stdout
 
 ```bash
 ./target/release/nodia eval '
-write(stdout, "hello")
-write(stdout, " world\n")
+use io
+io.write(io.stdout, "hello")
+io.write(io.stdout, " world\n")
 '
 ```
 
@@ -143,7 +157,8 @@ hello world
 ### Stderr Logging
 
 ```bash
-./target/release/nodia eval 'writeln(stderr, "warning")'
+./target/release/nodia eval 'use io
+io.writeln(io.stderr, "warning")'
 ```
 
 Writes `warning\n` to stderr, leaving the program output channel untouched.

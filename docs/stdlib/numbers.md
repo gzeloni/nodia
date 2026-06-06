@@ -1,5 +1,7 @@
 # Number Builtins
 
+Import this namespace with `use numbers`.
+
 ## Conversions
 
 ### `int(value)`
@@ -10,8 +12,9 @@
 
 ```bash
 ./target/release/nodia eval '
-emit int("42")
-emit int(3.9)
+use numbers
+emit numbers.int("42")
+emit numbers.int(3.9)
 '
 ```
 
@@ -28,8 +31,9 @@ emit int(3.9)
 
 ```bash
 ./target/release/nodia eval '
-emit float("42")
-emit float(3)
+use numbers
+emit numbers.float("42")
+emit numbers.float(3)
 '
 ```
 
@@ -43,7 +47,8 @@ emit float(3)
 ### `abs(n)`
 
 ```bash
-./target/release/nodia eval 'emit abs(-10)'
+./target/release/nodia eval 'use numbers
+emit numbers.abs(-10)'
 ```
 
 ```text
@@ -54,9 +59,10 @@ emit float(3)
 
 ```bash
 ./target/release/nodia eval '
-emit floor(3.9)
-emit ceil(3.1)
-emit round(3.5)
+use numbers
+emit numbers.floor(3.9)
+emit numbers.ceil(3.1)
+emit numbers.round(3.5)
 '
 ```
 
@@ -69,7 +75,8 @@ emit round(3.5)
 ### `sqrt(n)`
 
 ```bash
-./target/release/nodia eval 'emit sqrt(9)'
+./target/release/nodia eval 'use numbers
+emit numbers.sqrt(9)'
 ```
 
 ```text
@@ -81,7 +88,8 @@ emit round(3.5)
 ### `pow(a, b)`
 
 ```bash
-./target/release/nodia eval 'emit pow(2, 8)'
+./target/release/nodia eval 'use numbers
+emit numbers.pow(2, 8)'
 ```
 
 ```text
@@ -92,8 +100,9 @@ emit round(3.5)
 
 ```bash
 ./target/release/nodia eval '
-emit min(10, 3)
-emit max(10, 3)
+use numbers
+emit numbers.min(10, 3)
+emit numbers.max(10, 3)
 '
 ```
 
@@ -106,9 +115,10 @@ emit max(10, 3)
 
 ```bash
 ./target/release/nodia eval '
-emit clamp(12, 0, 10)
-emit clamp(-1, 0, 10)
-emit clamp(5, 0, 10)
+use numbers
+emit numbers.clamp(12, 0, 10)
+emit numbers.clamp(-1, 0, 10)
+emit numbers.clamp(5, 0, 10)
 '
 ```
 
@@ -123,7 +133,8 @@ emit clamp(5, 0, 10)
 ### `sum(list)`
 
 ```bash
-./target/release/nodia eval 'emit sum([1, 2, 3])'
+./target/release/nodia eval 'use numbers
+emit numbers.sum([1, 2, 3])'
 ```
 
 ```text
@@ -136,8 +147,9 @@ Returns `null` for an empty list:
 
 ```bash
 ./target/release/nodia eval '
-emit avg([1, 2, 3])
-emit avg([])
+use numbers
+emit numbers.avg([1, 2, 3])
+emit numbers.avg([])
 '
 ```
 
@@ -153,7 +165,8 @@ null
 Integers from `0` (inclusive) to `end` (exclusive):
 
 ```bash
-./target/release/nodia eval 'emit range(4)'
+./target/release/nodia eval 'use numbers
+emit numbers.range(4)'
 ```
 
 ```text
@@ -166,8 +179,9 @@ Bidirectional — if `start > end`, the range counts down:
 
 ```bash
 ./target/release/nodia eval '
-emit range(2, 5)
-emit range(5, 2)
+use numbers
+emit numbers.range(2, 5)
+emit numbers.range(5, 2)
 '
 ```
 

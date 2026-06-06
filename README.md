@@ -11,13 +11,16 @@ Complete documentation is available in [docs/index.md](docs/index.md).
 
 The archived v0.5 baseline is documented in
 [docs/_archive/specification.md](docs/_archive/specification.md). The current
-implementation adds the v0.6 regex DSL on top of that baseline.
+implementation keeps the regex DSL introduced in v0.6 and now defines
+explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.6.6`.
+Nodia is experimental. The current release is `v0.7.0`.
 
-The v0.6 focus is text work: the v0.5 identity surface remains intact, and the first new native syntax layer is `regex { ... }`, a readable DSL that evaluates to regex values and can render to classic regex text.
+The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
+positions stay scalar-based, and byte boundaries are now part of the public
+model through dedicated builtins.
 
 ## Install From Source
 
@@ -106,11 +109,13 @@ nodia check file.nod --json
 ```
 
 `check` validates lexing, parsing, module uses, regex DSL structure, and the
-v0.6 semantic checks without executing the program.
+v0.7 semantic checks without executing the program.
 
 ## Regex DSL
 
-Nodia v0.6 adds a native `regex { ... }` expression. It evaluates to a regex value in the runtime. When emitted, interpolated, or converted with `string(...)`, it renders to classic regex text.
+Nodia keeps a native `regex { ... }` expression. It evaluates to a regex value
+in the runtime. When emitted, interpolated, or converted with `conversion.string(...)`,
+it renders to classic regex text.
 
 ```nodia
 val date = regex(case_insensitive) {
@@ -134,7 +139,7 @@ Output:
 (?i)^(?<year>\d{4})-\d{2}-\d{2}$
 ```
 
-The v0.6 regex AST now separates:
+The regex AST now separates:
 - literals
 - anchors
 - character classes
@@ -149,6 +154,8 @@ The syntax accepts both compact sugar and explicit forms such as `literal("abc")
 Regex execution uses function style:
 
 ```nodia
+use re
+
 val url = regex(case_insensitive) {
   named scheme {
     either {
@@ -173,12 +180,12 @@ val url = regex(case_insensitive) {
   }
 }
 
-val hit = find("go to https://example.com now", url)
+val hit = re.find("go to https://example.com now", url)
 emit hit.named.host
-emit test("http://a", url)
-emit full_match("https://example.com", url)
-emit replace("go to https://example.com now", url, "<$(host)>")
-emit split("ana   bruno\tcarla", regex {
+emit re.test("http://a", url)
+emit re.full_match("https://example.com", url)
+emit re.replace("go to https://example.com now", url, "<$(host)>")
+emit re.split("ana   bruno\tcarla", regex {
   one_or_more whitespace
 })
 ```
@@ -276,8 +283,10 @@ emit "{name} / {env}"
 ### Strings and Interpolation
 
 ```nodia
+use text
+
 val user = "john"
-emit "Hello, {capitalize(user)}"
+emit "Hello, {text.capitalize(user)}"
 ```
 
 Raw and triple-quoted strings are supported:
@@ -304,8 +313,10 @@ if input.env == "prod" {
 ### Loops
 
 ```nodia
+use text
+
 for user in ["ana", "john", "maria"] {
-  emit capitalize(user)
+  emit text.capitalize(user)
 }
 ```
 
@@ -321,12 +332,15 @@ while i < 3 {
 ### Functions
 
 ```nodia
+use text
+use collections
+
 func greet(name) {
-  return "Hello, {capitalize(name)}"
+  return "Hello, {text.capitalize(name)}"
 }
 
 emit greet("ana")
-emit map(lambda(x) { x * 2 }, [1, 2, 3])
+emit collections.map(lambda(x) { x * 2 }, [1, 2, 3])
 ```
 
 ### Lists and Maps
@@ -375,28 +389,34 @@ initialized it. Used `var` bindings remain mutable; used `val` and `func` bindin
 
 ## IO
 
-Nodia v0.5 supports real file IO through streams.
+Nodia v0.7 supports real file IO through the `io` namespace.
 
 ```nodia
-val src = open("input.txt", "read")
-val out = open("output.txt", "write")
+use io
+use text
 
-var line = readln(src)
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
+
+var line = io.readln(src)
 while line != null {
-  writeln(out, upper(line))
-  line = readln(src)
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-close(src)
-close(out)
+io.close(src)
+io.close(out)
 ```
 
 Short file helpers are built on the same IO model:
 
 ```nodia
-val text = read("input.txt")
-write("output.txt", upper(text))
-append("output.txt", "\n")
+use io
+use text
+
+val content = io.read("input.txt")
+io.write("output.txt", text.upper(content))
+io.append("output.txt", "\n")
 ```
 
 File writes require explicit permission:
@@ -410,73 +430,78 @@ Without it, Nodia returns `error[E3001]: file write requires --allow-write`.
 Standard streams are available as values:
 
 ```nodia
-writeln(stdout, "ok")
-writeln(stderr, "error")
-val line = readln(stdin)
+use io
+
+io.writeln(io.stdout, "ok")
+io.writeln(io.stderr, "error")
+val line = io.readln(io.stdin)
 ```
 
 ## Standard Library
 
-Text:
+There is no implicit stdlib prelude. Outside of reserved words and local/module
+bindings, stdlib access is always explicit through `use`.
+
+Text (`use text`):
 
 | Function | Description |
 |---|---|
-| `upper(value)` | Converts text to uppercase |
-| `lower(value)` | Converts text to lowercase |
-| `capitalize(value)` | Capitalizes text |
-| `trim(value)` | Trims surrounding whitespace |
-| `replace(value, from, to)` | Replaces text with literal or regex patterns |
-| `replace_all(value, from, to)` | Explicit alias of `replace(...)` |
-| `split(value, delimiter)` | Splits text with a literal or regex delimiter |
-| `split_regex(value, pattern)` | Explicit alias of `split(...)` |
-| `join(list, delimiter)` | Joins a list into text |
-| `lines(value)` | Splits text into lines |
-| `unlines(list)` | Joins values with newlines |
-| `words(value)` | Splits text by whitespace |
-| `contains(value, needle)` | Checks strings, lists, or map keys |
-| `starts(value, prefix)` | Checks a text prefix |
-| `ends(value, suffix)` | Checks a text suffix |
-| `indent(text, spaces_or_prefix)` | Prefixes each line |
-| `dedent(text)` | Removes common indentation |
+| `text.upper(value)` | Converts text to uppercase |
+| `text.lower(value)` | Converts text to lowercase |
+| `text.capitalize(value)` | Capitalizes text |
+| `text.trim(value)` | Trims surrounding whitespace |
+| `text.replace(value, from, to)` | Replaces text with literal or regex patterns |
+| `text.replace_all(value, from, to)` | Explicit alias of `text.replace(...)` |
+| `text.split(value, delimiter)` | Splits text with a literal or regex delimiter |
+| `text.split_regex(value, pattern)` | Explicit alias of `text.split(...)` |
+| `text.join(list, delimiter)` | Joins a list into text |
+| `text.lines(value)` | Splits text into lines |
+| `text.unlines(list)` | Joins values with newlines |
+| `text.words(value)` | Splits text by whitespace |
+| `text.contains(value, needle)` | Checks strings, lists, or map keys |
+| `text.starts(value, prefix)` | Checks a text prefix |
+| `text.ends(value, suffix)` | Checks a text suffix |
+| `text.indent(text, spaces_or_prefix)` | Prefixes each line |
+| `text.dedent(text)` | Removes common indentation |
 
-Math:
-
-| Function | Description |
-|---|---|
-| `abs(value)` | Absolute value |
-| `floor(value)` | Rounds down |
-| `ceil(value)` | Rounds up |
-| `round(value)` | Rounds to nearest integer |
-| `sqrt(value)` | Square root |
-| `pow(base, exponent)` | Power |
-| `min(a, b)` | Minimum |
-| `max(a, b)` | Maximum |
-| `clamp(value, min, max)` | Clamps into a range |
-| `sum(list)` | Sums numeric values |
-| `avg(list)` | Averages numeric values |
-
-Data and conversion:
+Math (`use numbers`):
 
 | Function | Description |
 |---|---|
-| `keys(map)` | Returns map keys |
-| `values(map)` | Returns map values |
-| `entries(map)` | Returns `{key, value}` entries |
-| `len(value)` | Returns length of a string, list, or map |
-| `int(value)` | Converts to integer |
-| `float(value)` | Converts to float |
-| `string(value)` | Converts to string |
-| `bool(value)` | Converts to boolean |
-| `range(end)` | Produces integers from `0` to `end - 1` |
-| `range(start, end)` | Produces integers from `start` to `end - 1` |
-| `push(list, value)` | Returns a list with value appended |
-| `pop(list)` | Returns a list without the last value |
-| `first(list)` | Returns first value or `null` |
-| `last(list)` | Returns last value or `null` |
-| `slice(list_or_text, start, end)` | Returns a slice |
-| `reverse(list_or_text)` | Reverses value |
-| `sort(list)` | Sorts values deterministically |
-| `unique(list)` | Removes duplicate values |
+| `numbers.abs(value)` | Absolute value |
+| `numbers.floor(value)` | Rounds down |
+| `numbers.ceil(value)` | Rounds up |
+| `numbers.round(value)` | Rounds to nearest integer |
+| `numbers.sqrt(value)` | Square root |
+| `numbers.pow(base, exponent)` | Power |
+| `numbers.min(a, b)` | Minimum |
+| `numbers.max(a, b)` | Maximum |
+| `numbers.clamp(value, min, max)` | Clamps into a range |
+| `numbers.sum(list)` | Sums numeric values |
+| `numbers.avg(list)` | Averages numeric values |
+
+Data, collections, and conversion (`use collections`, `use conversion`):
+
+| Function | Description |
+|---|---|
+| `collections.keys(map)` | Returns map keys |
+| `collections.values(map)` | Returns map values |
+| `collections.entries(map)` | Returns `{key, value}` entries |
+| `collections.len(value)` | Returns length of a string, list, or map |
+| `conversion.int(value)` | Converts to integer |
+| `conversion.float(value)` | Converts to float |
+| `conversion.string(value)` | Converts to string |
+| `conversion.bool(value)` | Converts to boolean |
+| `numbers.range(end)` | Produces integers from `0` to `end - 1` |
+| `numbers.range(start, end)` | Produces integers from `start` to `end - 1` |
+| `collections.push(list, value)` | Returns a list with value appended |
+| `collections.pop(list)` | Returns a list without the last value |
+| `collections.first(list)` | Returns first value or `null` |
+| `collections.last(list)` | Returns last value or `null` |
+| `collections.slice(list_or_text, start, end)` | Returns a slice |
+| `collections.reverse(list_or_text)` | Reverses value |
+| `collections.sort(list)` | Sorts values deterministically |
+| `collections.unique(list)` | Removes duplicate values |
 
 ## Reserved Words
 

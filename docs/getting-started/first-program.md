@@ -23,9 +23,11 @@ intended for ad-hoc shell use and for the examples on this site.
 Create `hello.nod`:
 
 ```nodia
+use text
+
 val name = input.name
 
-emit "hello, {capitalize(name)}"
+emit "hello, {text.capitalize(name)}"
 ```
 
 Run it with one variable:
@@ -70,7 +72,7 @@ a * b = 6
 Pass `-` as the file to read source from stdin:
 
 ```bash
-printf 'emit upper("nodia")\n' | ./target/release/nodia run -
+printf 'use text\nemit text.upper("nodia")\n' | ./target/release/nodia run -
 ```
 
 ```text
@@ -79,7 +81,7 @@ NODIA
 
 ## Catching Errors Early
 
-Use `check` to lex, parse, resolve uses, and run the v0.6 semantic checks
+Use `check` to lex, parse, resolve uses, and run the v0.7 semantic checks
 without executing the program:
 
 ```bash

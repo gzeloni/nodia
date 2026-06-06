@@ -1,20 +1,22 @@
 # IO & Streams
 
-Nodia v0.6 has real file IO and stream values. Standard streams are bound
-as identifiers; file streams are opened with `open(path, mode)`.
+Nodia v0.7 has real file IO and stream values. Import `use io` to access
+standard streams and file operations.
 
 ## Standard Streams
 
-| Binding   | Meaning                       |
-| --------- | ----------------------------- |
-| `stdin`   | process standard input        |
-| `stdout`  | program output (same as `emit`) |
-| `stderr`  | process standard error        |
+| Binding      | Meaning                          |
+| ------------ | -------------------------------- |
+| `io.stdin`   | process standard input           |
+| `io.stdout`  | program output (same as `emit`)  |
+| `io.stderr`  | process standard error           |
 
 ```nodia
-writeln(stdout, "What is your name?")
-val name = readln(stdin)
-writeln(stdout, "Hello, {name}")
+use io
+
+io.writeln(io.stdout, "What is your name?")
+val name = io.readln(io.stdin)
+io.writeln(io.stdout, "Hello, {name}")
 ```
 
 ## File Streams
@@ -32,19 +34,23 @@ Opens a file stream. Modes:
 Reading:
 
 ```nodia
-val src = open("input.txt", "read")
-val text = read(src)
-close(src)
+use io
+
+val src = io.open("input.txt", "read")
+val text = io.read(src)
+io.close(src)
 emit text
 ```
 
 Writing (requires `--allow-write`):
 
 ```nodia
-val out = open("output.txt", "write")
-writeln(out, "first")
-writeln(out, "second")
-close(out)
+use io
+
+val out = io.open("output.txt", "write")
+io.writeln(out, "first")
+io.writeln(out, "second")
+io.close(out)
 ```
 
 ```bash
@@ -54,16 +60,18 @@ close(out)
 Appending:
 
 ```nodia
-val log = open("app.log", "append")
-writeln(log, "started")
-close(log)
+use io
+
+val log = io.open("app.log", "append")
+io.writeln(log, "started")
+io.close(log)
 ```
 
 ### `close(stream)`
 
 Closes a stream. Closing a writable stream also flushes pending writes.
 
-Closing one of `stdin` / `stdout` / `stderr` is accepted as a no-op or
+Closing one of `io.stdin` / `io.stdout` / `io.stderr` is accepted as a no-op or
 flush-equivalent operation; you do not need to close standard streams in
 normal scripts.
 
@@ -72,10 +80,12 @@ normal scripts.
 Flushes a writable stream without closing it:
 
 ```nodia
-val out = open("out.txt", "write")
-write(out, "partial")
-flush(out)
-close(out)
+use io
+
+val out = io.open("out.txt", "write")
+io.write(out, "partial")
+io.flush(out)
+io.close(out)
 ```
 
 ### `eof(stream)`
@@ -84,14 +94,16 @@ Returns whether a readable file stream has reached EOF. EOF becomes true
 after a read operation reaches the end:
 
 ```nodia
-val src = open("input.txt", "read")
-while not eof(src) {
-  val chunk = read(src, 16)
+use io
+
+val src = io.open("input.txt", "read")
+while not io.eof(src) {
+  val chunk = io.read(src, 16)
   if chunk != "" {
     emit chunk
   }
 }
-close(src)
+io.close(src)
 ```
 
 For line-oriented reads, prefer the simpler `readln(stream) != null` style.
@@ -103,8 +115,11 @@ For line-oriented reads, prefer the simpler `readln(stream) != null` style.
 Read an entire file into a string. Does **not** require `--allow-write`:
 
 ```nodia
-val text = read("input.txt")
-emit upper(text)
+use io
+use text
+
+val content = io.read("input.txt")
+emit text.upper(content)
 ```
 
 All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
@@ -115,9 +130,11 @@ All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
 Read the rest of a readable stream:
 
 ```nodia
-val src = open("input.txt", "read")
-val text = read(src)
-close(src)
+use io
+
+val src = io.open("input.txt", "read")
+val text = io.read(src)
+io.close(src)
 ```
 
 ### `read(stream, size)`
@@ -126,31 +143,36 @@ Read a chunk from a readable stream. `size` is a non-negative integer byte
 budget:
 
 ```nodia
-val src = open("input.txt", "read")
-emit read(src, 8)
-emit read(src, 8)
-close(src)
+use io
+
+val src = io.open("input.txt", "read")
+emit io.read(src, 8)
+emit io.read(src, 8)
+io.close(src)
 ```
 
 The returned text is always valid UTF-8. If the requested byte budget lands in
 the middle of a multi-byte scalar value, the runtime reads a little further to
-finish that scalar instead of splitting it. `read(stream, 0)` returns `""`
-without advancing the stream or forcing EOF.
+finish that scalar instead of splitting it. Use `byte_len(text)` when you need
+to compare chunk sizes with UTF-8 storage length. `read(stream, 0)` returns
+`""` without advancing the stream or forcing EOF.
 
 ### `readln(stream)`
 
 Read one line and strip the line ending. Returns `null` at EOF:
 
 ```nodia
-val src = open("input.txt", "read")
+use io
 
-var line = readln(src)
+val src = io.open("input.txt", "read")
+
+var line = io.readln(src)
 while line != null {
   emit line
-  line = readln(src)
+  line = io.readln(src)
 }
 
-close(src)
+io.close(src)
 ```
 
 Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
@@ -158,14 +180,17 @@ Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
 
 ## Writing
 
-All file writes require `--allow-write`. Writes to `stdout` / `stderr` do not.
+All file writes require `--allow-write`. Writes to `io.stdout` / `io.stderr`
+do not.
 
 ### `write(path, text)`
 
 Write a whole file, replacing any previous content:
 
 ```nodia
-write("out.txt", "hello\n")
+use io
+
+io.write("out.txt", "hello\n")
 ```
 
 ### `write(stream, text)`
@@ -173,18 +198,21 @@ write("out.txt", "hello\n")
 Write to a stream without adding a newline:
 
 ```nodia
-val out = open("out.txt", "write")
-write(out, "hello")
-write(out, " world")
-close(out)
+use io
+
+val out = io.open("out.txt", "write")
+io.write(out, "hello")
+io.write(out, " world")
+io.close(out)
 ```
 
 Stream-style stdout:
 
 ```bash
 ./target/release/nodia eval '
-write(stdout, "hello")
-write(stdout, " world\n")
+use io
+io.write(io.stdout, "hello")
+io.write(io.stdout, " world\n")
 '
 ```
 
@@ -197,10 +225,12 @@ hello world
 Write text and a newline:
 
 ```nodia
-val out = open("out.txt", "write")
-writeln(out, "hello")
-writeln(out, "world")
-close(out)
+use io
+
+val out = io.open("out.txt", "write")
+io.writeln(out, "hello")
+io.writeln(out, "world")
+io.close(out)
 ```
 
 ### `append(path, text)`
@@ -208,7 +238,9 @@ close(out)
 Append text to a file:
 
 ```nodia
-append("app.log", "started\n")
+use io
+
+io.append("app.log", "started\n")
 ```
 
 Requires `--allow-write`.
@@ -240,17 +272,20 @@ paths are different — they resolve from the file that contains the `use`
 ## End-To-End Example
 
 ```nodia
-val src = open("input.txt", "read")
-val out = open("output.txt", "write")
+use io
+use text
 
-var line = readln(src)
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
+
+var line = io.readln(src)
 while line != null {
-  writeln(out, upper(line))
-  line = readln(src)
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-close(src)
-close(out)
+io.close(src)
+io.close(out)
 ```
 
 ```bash

@@ -55,7 +55,7 @@ Throughout this site every example uses the release binary:
 ```
 
 ```text
-nodia 0.6.6
+nodia 0.7.0
 ```
 
 JSON metadata:
@@ -65,7 +65,7 @@ JSON metadata:
 ```
 
 ```json
-{"name":"nodia","version":"0.6.6","rust_std_only":true}
+{"name":"nodia","version":"0.7.0","rust_std_only":true}
 ```
 
 `rust_std_only: true` reflects the runtime's design constraint: Nodia's runtime
@@ -75,7 +75,8 @@ gated to regex compilation and execution only).
 ## Quick Smoke Test
 
 ```bash
-./target/release/nodia eval 'emit upper("nodia")'
+./target/release/nodia eval 'use text
+emit text.upper("nodia")'
 ```
 
 ```text
@@ -83,7 +84,7 @@ NODIA
 ```
 
 If you see `NODIA`, the build is working end to end: lexer, parser, checker,
-runtime, and stdlib `upper`.
+runtime, and stdlib `text.upper`.
 
 ## Editor Support
 

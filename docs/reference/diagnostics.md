@@ -78,7 +78,9 @@ error[E4101]: cannot assign to val 'n'
 ### Write Without Permission
 
 ```nodia
-write("out.txt", "blocked")
+use io
+
+io.write("out.txt", "blocked")
 ```
 
 ```bash
@@ -110,7 +112,9 @@ error[E4100]: undefined variable 'missing'
 ### Invalid Arity
 
 ```nodia
-emit upper("a", "b")
+use text
+
+emit text.upper("a", "b")
 ```
 
 ```text
@@ -120,7 +124,9 @@ error[E4107]: 'upper' expects 1 argument, got 2
 ### Invalid Regex Replacement Placeholder
 
 ```nodia
-emit replace("ana", regex {
+use text
+
+emit text.replace("ana", regex {
   named word {
     one_or_more letter
   }

@@ -32,8 +32,8 @@ warnings.
 In CLI terms:
 
 * `emit` → program output channel
-* `write(stderr, ...)` → standard error
-* `write(stdout, ...)` → process stdout (raw, no extra newline)
+* `io.write(io.stderr, ...)` → standard error
+* `io.write(io.stdout, ...)` → process stdout (raw, no extra newline)
 
 By default, the program output channel **is** the process stdout, so
 `./target/release/nodia run report.nod` prints `emit` output directly.
@@ -85,16 +85,17 @@ For maps and lists the display form is intentionally readable but not a
 formal serialization — see [Conversion](../stdlib/conversion.md) for explicit
 string/bool/int/float conversion.
 
-## When To Use `write(stdout, ...)`
+## When To Use `io.write(io.stdout, ...)`
 
 `emit` is the right choice for the generated payload. For stream-style
 output without an added newline — for example, building a single line with
-multiple writes — use `write(stdout, text)`:
+multiple writes — use `io.write(io.stdout, text)`:
 
 ```bash
 ./target/release/nodia eval '
-write(stdout, "hello")
-write(stdout, " world\n")
+use io
+io.write(io.stdout, "hello")
+io.write(io.stdout, " world\n")
 '
 ```
 
@@ -102,4 +103,4 @@ write(stdout, " world\n")
 hello world
 ```
 
-`writeln(stdout, text)` is the stream-style equivalent of `emit text`.
+`io.writeln(io.stdout, text)` is the stream-style equivalent of `emit text`.

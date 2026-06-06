@@ -66,7 +66,7 @@ there is no dedicated "else if" syntax tree (see [AST](../reference/ast.md)).
 
 ## No Ternary
 
-Nodia v0.6 has no ternary or conditional expression. Use a regular `if` or
+Nodia v0.7 has no ternary or conditional expression. Use a regular `if` or
 return a value from a small function:
 
 ```nodia
@@ -99,8 +99,9 @@ anonymous
 
 ```bash
 ./target/release/nodia eval '
+use collections
 val items = ["a", "b"]
-if len(items) > 0 {
+if collections.len(items) > 0 {
   emit "first={items[0]}"
 }
 '

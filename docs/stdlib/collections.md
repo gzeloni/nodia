@@ -3,6 +3,8 @@
 All collection builtins are pure — they return new values instead of mutating
 in place.
 
+Import this namespace with `use collections`.
+
 ## Length
 
 ### `len(value)`
@@ -11,9 +13,10 @@ Length of a string, list, or map.
 
 ```bash
 ./target/release/nodia eval '
-emit len("abc")
-emit len([1, 2, 3])
-emit len({name: "Ana"})
+use collections
+emit collections.len("abc")
+emit collections.len([1, 2, 3])
+emit collections.len({name: "Ana"})
 '
 ```
 
@@ -23,9 +26,10 @@ emit len({name: "Ana"})
 1
 ```
 
-`len` on a string is a Unicode scalar value count. See
-[Text Positions](../reference/text-semantics.md) for the exact `0.6.x`
-contract shared by `len`, `slice`, and regex offsets.
+`collections.len` on a string is the official Unicode scalar value count in
+`0.7.0`. Use `text.byte_len(text)` when you need UTF-8 storage length. See
+[Text Semantics](../reference/text-semantics.md) for the contract shared by
+`len`, `slice`, and regex offsets.
 
 ## Map Helpers
 
@@ -34,7 +38,8 @@ contract shared by `len`, `slice`, and regex offsets.
 Returns the keys in deterministic sorted order:
 
 ```bash
-./target/release/nodia eval 'emit keys({name: "Ana", role: "dev"})'
+./target/release/nodia eval 'use collections
+emit collections.keys({name: "Ana", role: "dev"})'
 ```
 
 ```text
@@ -46,7 +51,8 @@ Returns the keys in deterministic sorted order:
 Returns the values, ordered by key:
 
 ```bash
-./target/release/nodia eval 'emit values({name: "Ana", role: "dev"})'
+./target/release/nodia eval 'use collections
+emit collections.values({name: "Ana", role: "dev"})'
 ```
 
 ```text
@@ -58,7 +64,8 @@ Returns the values, ordered by key:
 Returns the entries as `{key, value}` maps, ordered by key:
 
 ```bash
-./target/release/nodia eval 'emit entries({name: "Ana", role: "dev"})'
+./target/release/nodia eval 'use collections
+emit collections.entries({name: "Ana", role: "dev"})'
 ```
 
 ```text
@@ -78,14 +85,15 @@ Safe lookup with fallback:
 * negative indexes count from the end for lists and strings.
 
 Direct string indexing with `text[index]` shares the same negative-index
-normalization. See [Text Positions](../reference/text-semantics.md).
+normalization. See [Text Semantics](../reference/text-semantics.md).
 
 ```bash
 ./target/release/nodia eval '
-emit get({name: "Ana"}, "name", "missing")
-emit get({name: "Ana"}, "role", "missing")
-emit get(["a", "b"], 5, "missing")
-emit get("nodia", -1, "?")
+use collections
+emit collections.get({name: "Ana"}, "name", "missing")
+emit collections.get({name: "Ana"}, "role", "missing")
+emit collections.get(["a", "b"], 5, "missing")
+emit collections.get("nodia", -1, "?")
 '
 ```
 
@@ -103,7 +111,8 @@ a
 Returns a new list with `value` appended:
 
 ```bash
-./target/release/nodia eval 'emit push([1, 2], 3)'
+./target/release/nodia eval 'use collections
+emit collections.push([1, 2], 3)'
 ```
 
 ```text
@@ -117,8 +126,9 @@ an empty list:
 
 ```bash
 ./target/release/nodia eval '
-emit pop([1, 2, 3])
-emit pop([])
+use collections
+emit collections.pop([1, 2, 3])
+emit collections.pop([])
 '
 ```
 
@@ -133,9 +143,10 @@ Return the first / last value, or `null` if the list is empty:
 
 ```bash
 ./target/release/nodia eval '
-emit first(["a", "b"])
-emit last(["a", "b"])
-emit first([])
+use collections
+emit collections.first(["a", "b"])
+emit collections.last(["a", "b"])
+emit collections.first([])
 '
 ```
 
@@ -151,9 +162,10 @@ Slices a list or string by index. Negative indexes count from the end:
 
 ```bash
 ./target/release/nodia eval '
-emit slice(["a", "b", "c", "d"], 1, 3)
-emit slice(["a", "b", "c", "d"], -3, -1)
-emit slice("nodia", 1, 4)
+use collections
+emit collections.slice(["a", "b", "c", "d"], 1, 3)
+emit collections.slice(["a", "b", "c", "d"], -3, -1)
+emit collections.slice("nodia", 1, 4)
 '
 ```
 
@@ -166,7 +178,7 @@ odi
 `start` is inclusive, `end` is exclusive. Out-of-bounds bounds are clamped
 gracefully rather than raising. On strings, those bounds use the same Unicode
 scalar value positions as `len(string)` and regex match offsets. See
-[Text Positions](../reference/text-semantics.md).
+[Text Semantics](../reference/text-semantics.md).
 
 ### `reverse(value)`
 
@@ -174,8 +186,9 @@ Reverses a list or string:
 
 ```bash
 ./target/release/nodia eval '
-emit reverse([1, 2, 3])
-emit reverse("abc")
+use collections
+emit collections.reverse([1, 2, 3])
+emit collections.reverse("abc")
 '
 ```
 
@@ -191,8 +204,9 @@ order:
 
 ```bash
 ./target/release/nodia eval '
-emit sort([3, 1, 2])
-emit sort(["c", "a", "b"])
+use collections
+emit collections.sort([3, 1, 2])
+emit collections.sort(["c", "a", "b"])
 '
 ```
 
@@ -206,7 +220,8 @@ emit sort(["c", "a", "b"])
 Removes duplicates while preserving the original order:
 
 ```bash
-./target/release/nodia eval 'emit unique(["a", "b", "a", "c", "b"])'
+./target/release/nodia eval 'use collections
+emit collections.unique(["a", "b", "a", "c", "b"])'
 ```
 
 ```text
@@ -224,10 +239,11 @@ Transforms each item:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 func double(x) {
   return x * 2
 }
-emit map(double, [1, 2, 3])
+emit collections.map(double, [1, 2, 3])
 '
 ```
 
@@ -241,10 +257,11 @@ Keeps items whose callback result is truthy:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 func odd(x) {
   return x % 2 != 0
 }
-emit filter(odd, [1, 2, 3, 4])
+emit collections.filter(odd, [1, 2, 3, 4])
 '
 ```
 
@@ -258,10 +275,11 @@ Folds a list into a single value. The callback receives `(acc, item)`:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 func add(acc, x) {
   return acc + x
 }
-emit reduce(add, 0, [1, 2, 3, 4])
+emit collections.reduce(add, 0, [1, 2, 3, 4])
 '
 ```
 
@@ -275,13 +293,14 @@ Groups items into a map keyed by the callback result converted to string:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 func bucket(x) {
   if x < 10 {
     return "small"
   }
   return "big"
 }
-emit group_by(bucket, [3, 12, 8, 20])
+emit collections.group_by(bucket, [3, 12, 8, 20])
 '
 ```
 
@@ -295,6 +314,7 @@ Sorts a list by a computed key:
 
 ```bash
 ./target/release/nodia eval '
+use collections
 func age(user) {
   return user.age
 }
@@ -303,7 +323,7 @@ val users = [
   {name: "Ana", age: 20},
   {name: "Caio", age: 25},
 ]
-emit sort_by(age, users)
+emit collections.sort_by(age, users)
 '
 ```
 
