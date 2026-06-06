@@ -2,9 +2,13 @@
 
 Import this namespace with `use re`.
 
-These builtins accept a **pattern** that can be either a regex value
-(produced by `regex { ... }`) or a plain string. When given a string, the
-builtin treats it as raw regex text.
+`test`, `full_match`, `find`, and `find_all` accept a **pattern** that can be
+either a regex value (produced by `regex { ... }`) or a plain string. A plain
+string there is compiled as raw regex text.
+
+`replace`, `replace_all`, `split`, and `split_regex` share the text-builtin
+surface: pass a regex value for regex behavior, or a plain string for literal
+text behavior.
 
 For DSL syntax, see [Regex DSL](../language/regex.md).
 
@@ -131,8 +135,8 @@ or empty results return `[]`.
 
 ## `replace(text, pattern, replacement)`
 
-Replaces **all** matches. When `pattern` is a regex, the replacement string
-supports placeholders:
+Replaces **all** matches. When `pattern` is a regex value, the replacement
+string supports placeholders:
 
 | Placeholder    | Meaning              |
 | -------------- | -------------------- |
@@ -178,9 +182,10 @@ A placeholder that names a missing capture is a runtime error.
 If a declared capture does not participate in the branch that matched, its
 placeholder expands to an empty string.
 
-When both the pattern and the replacement are source literals, `nodia check`
-also validates malformed placeholder syntax and impossible capture references
-before runtime.
+When the pattern is a regex value and the replacement is a source literal,
+`nodia check` also validates malformed placeholder syntax and impossible
+capture references before runtime. Plain-string patterns in `replace(...)`
+stay literal text, so `$name` is just text there.
 
 ## `replace_all(text, pattern, replacement)`
 
@@ -219,10 +224,10 @@ emit split("xay", regex { zero_or_more "a" })
 Explicit alias of `split(...)` when you want the regex intent to be obvious
 at the call site.
 
-## Patterns As Strings
+## String Patterns In Matching Builtins
 
-Every regex builtin also accepts a plain string pattern, which is treated as
-raw regex text:
+`test`, `full_match`, `find`, and `find_all` accept plain string patterns,
+which are treated as raw regex text:
 
 ```bash
 ./target/release/nodia eval '
@@ -233,6 +238,9 @@ emit full_match("abc-42", "^[a-z]+-\\d+$")
 ```text
 true
 ```
+
+`replace`, `replace_all`, `split`, and `split_regex` do **not** compile plain
+strings as raw regex text. Pass a regex value when you want regex mode there.
 
 The Nodia regex DSL is recommended for new code because it stays readable as
 patterns grow.

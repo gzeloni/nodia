@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.6.4` release binary.
+and run. Each example has been verified with the `0.6.5` release binary.
 
 ## 1. Hello, World
 
@@ -282,7 +282,7 @@ emit strftime(next, "%F %T %:z")
 2024-02-01 01:30:00 Z
 ```
 
-## 13. Validate A Date Format
+## 14. Validate A Date Format
 
 ```bash
 ./target/release/nodia eval '
@@ -306,7 +306,7 @@ true
 false
 ```
 
-## 14. Stats Summary
+## 15. Stats Summary
 
 ```bash
 ./target/release/nodia eval '
@@ -329,7 +329,7 @@ min=1
 max=9
 ```
 
-## 15. Stream-Style Stdout And Stderr
+## 16. Stream-Style Stdout And Stderr
 
 ```bash
 ./target/release/nodia eval '
@@ -351,7 +351,7 @@ stderr:
 info: started
 ```
 
-## 16. Detect Duplicate Adjacent Words
+## 17. Detect Duplicate Adjacent Words
 
 ```bash
 ./target/release/nodia eval '
@@ -373,7 +373,7 @@ true
 false
 ```
 
-## 17. Template Replacement
+## 18. Template Replacement
 
 ```bash
 ./target/release/nodia eval '
@@ -390,7 +390,7 @@ For literals like `<user>` Nodia interpolation is inert. If you must use
 `{name}` style placeholders, escape the braces in the source template with
 `{{name}}` — but `replace` is usually cleaner for external templates.
 
-## 18. Format Numeric Columns
+## 19. Format Numeric Columns
 
 ```bash
 ./target/release/nodia eval '
@@ -404,7 +404,7 @@ emit fixed(3.14159, 3)
 3.142
 ```
 
-## 19. Read Script Args And Env
+## 20. Read Script Args And Env
 
 ```bash
 HOME=/tmp ./target/release/nodia eval '
@@ -418,7 +418,7 @@ emit env("HOME")
 /tmp
 ```
 
-## 20. Execute A Subprocess
+## 21. Execute A Subprocess
 
 ```bash
 ./target/release/nodia eval '
@@ -438,7 +438,7 @@ err
 7
 ```
 
-## 21. Transform A List With Higher-Order Helpers
+## 22. Transform A List With Higher-Order Helpers
 
 ```bash
 ./target/release/nodia eval '
@@ -464,4 +464,85 @@ emit reduce(add, 0, [1, 2, 3, 4])
 [2, 4, 6]
 [1, 3]
 10
+```
+
+## 23. Normalize Messy Line-Oriented Input
+
+```bash
+./target/release/nodia eval '
+val collapse = regex { one_or_more whitespace }
+val raw = """
+  ana    open
+# keep for audit
+  bruno      closed
+
+// generated note
+  carla    pending
+"""
+
+var cleaned = []
+for line in lines(raw) {
+  val compact = replace(trim(line), collapse, " ")
+  if compact != "" and not starts(compact, "#") and not starts(compact, "//") {
+    cleaned = push(cleaned, compact)
+  }
+}
+
+emit cleaned
+emit join(cleaned, "\n")
+'
+```
+
+```text
+["ana open", "bruno closed", "carla pending"]
+ana open
+bruno closed
+carla pending
+```
+
+## 24. Summarize A Noisy Audit Log
+
+```bash
+./target/release/nodia eval '
+val entry = regex {
+  named level {
+    either {
+      branch { "INFO" }
+      branch { "WARN" }
+      branch { "ERROR" }
+    }
+  }
+  one_or_more whitespace
+  named user { one_or_more letter }
+  one_or_more whitespace
+  named action { one_or_more letter }
+}
+
+val raw = """
+INFO ana deploy
+noise
+WARN bia retry
+ERROR ana deploy
+INFO carla sync
+"""
+
+var counts = {}
+for line in lines(raw) {
+  val hit = find(trim(line), entry)
+  if hit != null {
+    val key = "{hit.named.user}:{hit.named.action}"
+    counts[key] = get(counts, key, 0) + 1
+  }
+}
+
+for key in keys(counts) {
+  emit "{key}={counts[key]}"
+}
+'
+```
+
+```text
+ana:deploy=2
+bia:retry=1
+carla:sync=1
 ```

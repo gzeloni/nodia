@@ -77,10 +77,8 @@ Safe lookup with fallback:
 * lists and strings use `key` as an index;
 * negative indexes count from the end for lists and strings.
 
-Direct string indexing with `text[index]` is currently stricter than
-`get(text, index, default)`: negative indexes work in `get(...)`, but not in
-direct `text[index]` access. See
-[Text Positions](../reference/text-semantics.md).
+Direct string indexing with `text[index]` shares the same negative-index
+normalization. See [Text Positions](../reference/text-semantics.md).
 
 ```bash
 ./target/release/nodia eval '

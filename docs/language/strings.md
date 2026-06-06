@@ -17,7 +17,7 @@ emit "hello"
 emit 'hello'
 ```
 
-Single- and double-quoted strings are equivalent in v0.6.4 — they accept the
+Single- and double-quoted strings are equivalent in v0.6.5 — they accept the
 same escape sequences and use the same interpolation rules.
 
 ### Raw Strings
@@ -111,6 +111,17 @@ emit "sum={a + b}"
 
 ```text
 sum=5
+```
+
+Balanced braces inside the expression are supported, so map literals and regex
+blocks work inside interpolation when needed:
+
+```bash
+./target/release/nodia eval 'emit "{ {name: \"Ana\"}[\"name\"] }"'
+```
+
+```text
+Ana
 ```
 
 ### Literal Braces

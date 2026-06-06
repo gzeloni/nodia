@@ -404,12 +404,16 @@ The full set of regex builtins is documented in
 * `full_match(text, pattern)` — does the whole text match?
 * `find(text, pattern)` — first match as a structured map, or `null`.
 * `find_all(text, pattern)` — list of all non-overlapping matches.
-* `replace(text, pattern, replacement)` — replace matches; supports
-  `$(0)`, `$(1)`, `$(name)`, `$$` placeholders.
-* `split(text, pattern)` — split on matches.
+* `replace(text, pattern, replacement)` — replace literal text, or regex
+  matches when `pattern` is a regex value; supports `$(0)`, `$(1)`, `$(name)`,
+  `$$` placeholders in regex mode.
+* `split(text, pattern)` — split on a literal separator, or on regex matches
+  when `pattern` is a regex value.
 
-Patterns may be regex values **or** plain strings. When a builtin gets a
-string, it treats it as raw regex text.
+`test`, `full_match`, `find`, and `find_all` accept regex values **or** plain
+strings. A plain string there is compiled as raw regex text. `replace`,
+`replace_all`, `split`, and `split_regex` share the text-builtin behavior: a
+plain string stays literal text, while a regex value enables regex mode.
 
 ## Match Shape
 
@@ -435,7 +439,8 @@ baseline and its current limitations.
 
 ## Replacement Placeholders
 
-When `replace(...)` receives a regex pattern, the replacement string supports
+When `replace(...)` receives a regex value as the pattern, the replacement
+string supports
 Nodia-style placeholders:
 
 | Placeholder   | Meaning                                   |

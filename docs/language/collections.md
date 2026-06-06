@@ -47,7 +47,8 @@ Out-of-bounds access is a runtime error (`E2000`).
 
 For the precise `0.6.x` contract around string positions, `slice(...)`, and
 regex offsets, see [Text Positions](../reference/text-semantics.md). Direct
-string indexing is currently similar to list indexing, but not identical.
+string indexing follows the same negative-index normalization as list
+indexing.
 
 ### Iteration
 
