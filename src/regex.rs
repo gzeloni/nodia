@@ -17,6 +17,7 @@ mod validation;
 
 pub use self::api::{
     compile, compile_text, render, render_for_target, validate, validate_for_target,
+    validate_replacement, validate_replacement_syntax,
 };
 
 /// Full regex literal made of top-level flags and body nodes.

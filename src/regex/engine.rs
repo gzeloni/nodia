@@ -87,7 +87,7 @@ impl RuntimeRegex {
 
     fn translate_replacement(&self, replacement: &str) -> NodiaResult<String> {
         let mut out = String::new();
-        let chars = replacement.chars().collect::<Vec<_>>();
+        let chunks = parse_replacement_chunks(replacement).map_err(NodiaError::runtime)?;
         let names = self
             .engine
             .capture_names()
@@ -96,77 +96,30 @@ impl RuntimeRegex {
             .collect::<HashSet<_>>();
         let capture_len = self.engine.captures_len();
 
-        let mut index = 0;
-        while index < chars.len() {
-            if chars[index] != '$' {
-                out.push(chars[index]);
-                index += 1;
-                continue;
-            }
-
-            let Some(next) = chars.get(index + 1).copied() else {
-                return Err(NodiaError::runtime(
-                    "regex replacement cannot end with '$'; use '$$' for a literal dollar",
-                ));
-            };
-
-            if next == '$' {
-                out.push_str("$$");
-                index += 2;
-                continue;
-            }
-
-            if next != '(' {
-                return Err(NodiaError::runtime(
-                    "regex replacement placeholders must use $(0), $(1), $(name), or '$$'",
-                ));
-            }
-
-            let start = index + 2;
-            let mut end = start;
-            while end < chars.len() && chars[end] != ')' {
-                end += 1;
-            }
-            if end == chars.len() {
-                return Err(NodiaError::runtime(
-                    "unterminated regex replacement placeholder",
-                ));
-            }
-
-            let token = chars[start..end].iter().collect::<String>();
-            if token.is_empty() {
-                return Err(NodiaError::runtime(
-                    "regex replacement placeholder cannot be empty",
-                ));
-            }
-
-            if token.chars().all(|ch| ch.is_ascii_digit()) {
-                let capture = token
-                    .parse::<usize>()
-                    .map_err(|_| NodiaError::runtime("invalid regex capture index"))?;
-                if capture >= capture_len {
-                    return Err(NodiaError::runtime(format!(
-                        "regex replacement refers to missing capture group {capture}"
-                    )));
+        for chunk in chunks {
+            match chunk {
+                ReplacementChunk::Literal(value) => out.push_str(&value),
+                ReplacementChunk::Dollar => out.push_str("$$"),
+                ReplacementChunk::CaptureIndex { raw, index } => {
+                    if index >= capture_len {
+                        return Err(NodiaError::runtime(format!(
+                            "regex replacement refers to missing capture group {index}"
+                        )));
+                    }
+                    out.push('$');
+                    out.push_str(&raw);
                 }
-                out.push('$');
-                out.push_str(&token);
-            } else if replacement_name_is_valid(&token) {
-                if !names.contains(&token) {
-                    return Err(NodiaError::runtime(format!(
-                        "regex replacement refers to missing named capture '{token}'"
-                    )));
+                ReplacementChunk::CaptureName(name) => {
+                    if !names.contains(&name) {
+                        return Err(NodiaError::runtime(format!(
+                            "regex replacement refers to missing named capture '{name}'"
+                        )));
+                    }
+                    out.push_str("${");
+                    out.push_str(&name);
+                    out.push('}');
                 }
-                out.push_str("${");
-                out.push_str(&token);
-                out.push('}');
-            } else {
-                return Err(NodiaError::runtime(format!(
-                    "invalid regex replacement placeholder '{token}'"
-                )));
             }
-
-            index = end + 1;
         }
 
         Ok(out)

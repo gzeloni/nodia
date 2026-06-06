@@ -184,15 +184,15 @@ impl Runtime {
                         )))
                     }
                 };
-                let normalized = if index < 0 {
-                    values.len() as i64 + index
-                } else {
-                    index
-                };
-                values
-                    .get(normalized as usize)
-                    .cloned()
-                    .ok_or_else(|| NodiaError::runtime("list index out of bounds"))
+                let len = values.len() as i64;
+                let normalized = if index < 0 { len + index } else { index };
+                if normalized < 0 || normalized >= len {
+                    return Err(NodiaError::runtime(format!(
+                        "list index {index} out of bounds for length {}",
+                        values.len()
+                    )));
+                }
+                Ok(values[normalized as usize].clone())
             }
             Value::String(value) => {
                 let index = match index {
@@ -204,11 +204,21 @@ impl Runtime {
                         )))
                     }
                 };
+                if index < 0 {
+                    return Err(NodiaError::runtime(format!(
+                        "string index {index} out of bounds; direct string indexing is zero-based and does not support negative values"
+                    )));
+                }
+                let len = value.chars().count();
                 value
                     .chars()
                     .nth(index as usize)
                     .map(|ch| Value::String(ch.to_string()))
-                    .ok_or_else(|| NodiaError::runtime("string index out of bounds"))
+                    .ok_or_else(|| {
+                        NodiaError::runtime(format!(
+                            "string index {index} out of bounds for length {len}"
+                        ))
+                    })
             }
             Value::Map(values) => {
                 let key = index.to_string();
@@ -422,7 +432,9 @@ impl Runtime {
         };
         let normalized = if index < 0 { len as i64 + index } else { index };
         if normalized < 0 || normalized as usize >= len {
-            return Err(NodiaError::runtime("list index out of bounds"));
+            return Err(NodiaError::runtime(format!(
+                "list index {index} out of bounds for length {len}"
+            )));
         }
         Ok(normalized as usize)
     }

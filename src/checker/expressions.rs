@@ -46,7 +46,8 @@ impl<'a> State<'a> {
             }
             Expr::Index { object, index } => {
                 self.check_expr(object)?;
-                self.check_expr(index)
+                self.check_expr(index)?;
+                self.check_index_access(object, index)
             }
             Expr::List(values) => {
                 for value in values {
@@ -68,8 +69,13 @@ impl<'a> State<'a> {
             self.check_expr(arg)?;
         }
 
+        self.check_builtin_call_diagnostics(callee, args)?;
+
         if let Some(name) = direct_identifier(callee) {
-            if let Some(symbol) = self.lookup(name).cloned().or_else(|| self.builtin_symbol(name))
+            if let Some(symbol) = self
+                .lookup(name)
+                .cloned()
+                .or_else(|| self.builtin_symbol(name))
             {
                 if let SymbolKind::Function { arities } = &symbol.kind {
                     self.check_arity(name, args.len(), arities)?;
@@ -261,8 +267,23 @@ impl<'a> State<'a> {
                     return Err(semantic("E4106", "unterminated interpolation", None));
                 }
                 let expr_text = chars[start..end].iter().collect::<String>();
-                let tokens = Lexer::new(&expr_text).tokenize()?;
-                let expr = Parser::new(tokens).parse_expression_only()?;
+                if expr_text.trim().is_empty() {
+                    return Err(semantic("E4106", "empty interpolation", None));
+                }
+                let tokens = Lexer::new(&expr_text).tokenize().map_err(|err| {
+                    semantic(
+                        "E4106",
+                        format!("invalid interpolation: {}", err.message),
+                        None,
+                    )
+                })?;
+                let expr = Parser::new(tokens).parse_expression_only().map_err(|err| {
+                    semantic(
+                        "E4106",
+                        format!("invalid interpolation: {}", err.message),
+                        None,
+                    )
+                })?;
                 self.check_expr(&expr)?;
                 index = end + 1;
             } else if chars[index] == '}' && chars.get(index + 1) == Some(&'}') {
@@ -272,5 +293,52 @@ impl<'a> State<'a> {
             }
         }
         Ok(())
+    }
+
+    fn check_index_access(&self, object: &Expr, index: &Expr) -> NodiaResult<()> {
+        let Some(key) = static_map_key(index) else {
+            return Ok(());
+        };
+
+        let symbol = self.symbol_for_expr(object, false);
+        match symbol.kind {
+            SymbolKind::Map(fields) | SymbolKind::Namespace(fields) => {
+                if fields.contains_key(&key) {
+                    Ok(())
+                } else {
+                    Err(semantic("E4105", format!("key '{key}' not found"), None))
+                }
+            }
+            SymbolKind::Unknown | SymbolKind::Function { .. } => Ok(()),
+        }
+    }
+
+    fn check_builtin_call_diagnostics(&self, callee: &Expr, args: &[Expr]) -> NodiaResult<()> {
+        let Some(name) = direct_identifier(callee) else {
+            return Ok(());
+        };
+        if !matches!(name, "replace" | "replace_all") || self.lookup(name).is_some() {
+            return Ok(());
+        }
+        if args.len() != 3 {
+            return Ok(());
+        }
+
+        let Expr::String {
+            value: replacement,
+            interpolate,
+        } = &args[2]
+        else {
+            return Ok(());
+        };
+        if *interpolate && replacement.contains(['{', '}']) {
+            return Ok(());
+        }
+
+        match &args[1] {
+            Expr::Regex(pattern) => regex::validate_replacement(pattern, replacement),
+            Expr::String { .. } => regex::validate_replacement_syntax(replacement),
+            _ => Ok(()),
+        }
     }
 }
