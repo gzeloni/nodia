@@ -502,6 +502,79 @@ emit eof(src)
 }
 
 #[test]
+fn chunked_reads_keep_utf8_scalar_boundaries_and_zero_size_is_a_no_op() {
+    let dir = std::env::temp_dir().join(format!("nodia-io-utf8-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("input.txt");
+    fs::write(&input, "aéb").unwrap();
+
+    let source = format!(
+        r#"val src = open("{}", "read")
+emit read(src, 0)
+emit eof(src)
+emit read(src, 1)
+emit read(src, 1)
+emit read(src, 1)
+emit read(src, 1)
+emit eof(src)
+"#,
+        input.display(),
+    );
+    let output = run_source(&source, BTreeMap::new()).unwrap();
+
+    assert_eq!(output, "\nfalse\na\né\nb\n\ntrue");
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn file_reads_reject_invalid_utf8_consistently() {
+    let dir = std::env::temp_dir().join(format!("nodia-io-invalid-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+
+    let bad_path = dir.join("bad-path.bin");
+    fs::write(&bad_path, [0xff, b'a']).unwrap();
+    let err = run_source(
+        &format!(r#"emit read("{}")"#, bad_path.display()),
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "E3000");
+    assert!(err.message.contains("invalid utf-8"));
+
+    let bad_chunk = dir.join("bad-chunk.bin");
+    fs::write(&bad_chunk, [0xff, b'a']).unwrap();
+    let err = run_source(
+        &format!(
+            r#"val src = open("{}", "read")
+emit read(src, 1)
+"#,
+            bad_chunk.display(),
+        ),
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "E3000");
+    assert!(err.message.contains("invalid utf-8"));
+
+    let bad_line = dir.join("bad-line.bin");
+    fs::write(&bad_line, [b'a', 0xff, b'\n']).unwrap();
+    let err = run_source(
+        &format!(
+            r#"val src = open("{}", "read")
+emit readln(src)
+"#,
+            bad_line.display(),
+        ),
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "E3000");
+    assert!(err.message.contains("invalid utf-8"));
+
+    let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
 fn file_writes_require_permission() {
     let dir = std::env::temp_dir().join(format!("nodia-io-denied-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -813,6 +886,19 @@ fn regex_replace_expands_unmatched_branch_capture_to_empty_string() {
 }
 
 #[test]
+fn regex_replace_handles_zero_width_matches_predictably() {
+    let output = run_source(
+        r#"emit replace("abc", regex { start }, "<")
+emit replace("abc", regex { end }, ">")
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "<abc\nabc>");
+}
+
+#[test]
 fn nested_string_values_render_with_quotes() {
     let output = run_source(
         r#"emit split("/usr/local/bin", "/")
@@ -844,6 +930,18 @@ emit json_stringify(parsed)
             output,
             "Ana\n[true, false]\n{\"flags\":[true,false],\"meta\":{\"count\":2},\"name\":\"Ana\",\"note\":\"line\\nnext\"}"
         );
+}
+
+#[test]
+fn json_read_rejects_duplicate_object_keys() {
+    let err = run_source(
+        r#"emit json_parse(r'{"name":"Ana","name":"Bia"}')"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("duplicate object key 'name'"));
 }
 
 #[test]
@@ -898,6 +996,18 @@ fn json_stringify_accepts_indent_option_map() {
 }
 
 #[test]
+fn json_stringify_rejects_unknown_option_keys() {
+    let err = run_source(
+        r#"emit json_stringify({name: "Ana"}, {indent: 2, mode: "wide"})"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("does not accept option 'mode'"));
+}
+
+#[test]
 fn csv_builtins_read_headers_and_write_maps() {
     let output = run_source(
         r#"val rows = csv_read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
@@ -932,6 +1042,25 @@ emit rows[1][0] + rows[1][1]
 }
 
 #[test]
+fn csv_read_rejects_unknown_options_and_duplicate_headers() {
+    let err = run_source(
+        r#"emit csv_read("name,age\nAna,30", {header: true, skip_empty: true})"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("does not accept option 'skip_empty'"));
+
+    let err = run_source(
+        r#"emit csv_read("name,name\nAna,30", true)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert_eq!(err.code, "E2000");
+    assert!(err.message.contains("duplicate header 'name'"));
+}
+
+#[test]
 fn csv_handles_embedded_newlines_and_escaped_quotes() {
     let output = run_source(
         r#"val rows = csv_read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true)
@@ -947,6 +1076,20 @@ emit csv_write(rows)
         output,
         "line 1\nline 2\nsay \"hi\"\nname,note\nAna,\"line 1\nline 2\"\nBia,\"say \"\"hi\"\"\""
     );
+}
+
+#[test]
+fn csv_write_uses_sorted_union_headers_and_empty_fields_for_missing_keys() {
+    let output = run_source(
+        r#"emit csv_write([
+  {role: "dev", name: "Ana"},
+  {team: "core", name: "Bia"},
+])"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "name,role,team\nAna,dev,\nBia,,core");
 }
 
 #[test]
