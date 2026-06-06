@@ -74,6 +74,15 @@ fn checker_wraps_invalid_interpolation_expressions() {
 }
 
 #[test]
+fn checker_accepts_interpolation_with_nested_balanced_braces() {
+    let source = r#"emit "{ {name: \"Ana\"}[\"name\"] }"
+emit "{regex { one_or_more digit }}"
+"#;
+
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
 fn checker_reports_first_identifier_occurrence() {
     let err = check_source("emit missing()\nemit missing()\n").unwrap_err();
 
@@ -163,13 +172,18 @@ fn checker_rejects_missing_named_capture_in_literal_regex_replacement() {
 }
 
 #[test]
-fn checker_rejects_malformed_regex_replacement_placeholder_syntax() {
-    let err = check_source(r#"emit replace("ana", "[A-Za-z]+", "$name")"#).unwrap_err();
+fn checker_allows_dollar_text_in_literal_text_replacement() {
+    let source = r#"emit replace("ana", "a", "$name")"#;
+
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_rejects_invalid_literal_regex_text_for_regex_builtins() {
+    let err = check_stdlib_source(r#"emit test("ana", "[A-Z")"#).unwrap_err();
 
     assert_eq!(err.code, "E4200");
-    assert!(err
-        .message
-        .contains("regex replacement placeholders must use $(0), $(1), $(name), or '$$'"));
+    assert!(err.message.contains("cannot compile regex"));
 }
 
 #[test]
