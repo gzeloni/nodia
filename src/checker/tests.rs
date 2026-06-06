@@ -8,19 +8,6 @@ use crate::check_source;
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
 use re as __re
-
-val len = __col.len
-val lines = __text.lines
-val unlines = __text.unlines
-val words = __text.words
-val test = __re.test
-val full_match = __re.full_match
-val find = __re.find
-val find_all = __re.find_all
-val replace = __text.replace
-val replace_all = __text.replace_all
-val split = __text.split
-val split_regex = __text.split_regex
 "#;
 
 fn check_stdlib_source(source: &str) -> crate::NodiaResult<()> {
@@ -29,32 +16,39 @@ fn check_stdlib_source(source: &str) -> crate::NodiaResult<()> {
 
 #[test]
 fn checker_accepts_text_builtins() {
-    let source = r#"emit len(lines("a
+    let source = r#"emit __col.len(__text.lines("a
 b"))
-emit unlines(["up", "down"])
-emit len(words("one  two   three"))
-emit test("abc", regex { one_or_more letter })
-emit full_match("abc", regex { one_or_more letter })
-emit find("abc", regex { one_or_more letter })
-emit find_all("abc", regex { one_or_more letter })
-emit replace("abc123", regex { one_or_more digit }, '#')
-emit replace_all("abc123", regex { one_or_more digit }, '#')
-emit split("ana   bruno", regex { one_or_more whitespace })
-emit split_regex("ana   bruno", regex { one_or_more whitespace })
+emit __text.unlines(["up", "down"])
+emit __col.len(__text.words("one  two   three"))
+emit __re.test("abc", regex { one_or_more letter })
+emit __re.full_match("abc", regex { one_or_more letter })
+emit __re.find("abc", regex { one_or_more letter })
+emit __re.find_all("abc", regex { one_or_more letter })
+emit __text.replace("abc123", regex { one_or_more digit }, '#')
+emit __text.replace_all("abc123", regex { one_or_more digit }, '#')
+emit __text.split("ana   bruno", regex { one_or_more whitespace })
+emit __text.split_regex("ana   bruno", regex { one_or_more whitespace })
+emit __text.byte_len("é")
+emit __text.byte_offset("aéb", 2)
+emit __text.scalar_offset("aéb", 3)
 "#;
 
     assert!(check_stdlib_source(source).is_ok());
 }
 
 #[test]
-fn checker_accepts_global_builtins_without_use() {
-    let source = r#"emit upper("ana")
-emit args
-emit stdout
-exit(0)
-"#;
+fn checker_rejects_stdlib_globals_without_use() {
+    let err = check_source(r#"emit upper("ana")"#).unwrap_err();
+    assert_eq!(err.code, "E4100");
+    assert!(err.message.contains("undefined variable 'upper'"));
 
-    assert!(check_source(source).is_ok());
+    let err = check_source(r#"emit args"#).unwrap_err();
+    assert_eq!(err.code, "E4100");
+    assert!(err.message.contains("undefined variable 'args'"));
+
+    let err = check_source(r#"emit stdout"#).unwrap_err();
+    assert_eq!(err.code, "E4100");
+    assert!(err.message.contains("undefined variable 'stdout'"));
 }
 
 #[test]
@@ -161,7 +155,8 @@ emit encode({ok: true}, 2)
 #[test]
 fn checker_rejects_missing_named_capture_in_literal_regex_replacement() {
     let err = check_source(
-        r#"emit replace("ana", regex { named word { one_or_more letter } }, "$(missing)")"#,
+        r#"use text
+emit text.replace("ana", regex { named word { one_or_more letter } }, "$(missing)")"#,
     )
     .unwrap_err();
 
@@ -173,14 +168,15 @@ fn checker_rejects_missing_named_capture_in_literal_regex_replacement() {
 
 #[test]
 fn checker_allows_dollar_text_in_literal_text_replacement() {
-    let source = r#"emit replace("ana", "a", "$name")"#;
+    let source = r#"use text
+emit text.replace("ana", "a", "$name")"#;
 
     assert!(check_source(source).is_ok());
 }
 
 #[test]
 fn checker_rejects_invalid_literal_regex_text_for_regex_builtins() {
-    let err = check_stdlib_source(r#"emit test("ana", "[A-Z")"#).unwrap_err();
+    let err = check_stdlib_source(r#"emit __re.test("ana", "[A-Z")"#).unwrap_err();
 
     assert_eq!(err.code, "E4200");
     assert!(err.message.contains("cannot compile regex"));
