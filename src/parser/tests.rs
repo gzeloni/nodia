@@ -120,6 +120,13 @@ fn parses_lambda_expressions() {
 }
 
 #[test]
+fn parses_bytes_literals() {
+    let tokens = Lexer::new(r#"emit b"a\xff\0""#).tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
 fn parses_stdlib_use_modules() {
     let source = r#"
 use json

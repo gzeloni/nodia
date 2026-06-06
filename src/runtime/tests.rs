@@ -439,16 +439,16 @@ emit __io.readln(src)
 }
 
 #[test]
-fn explicit_utf8_codec_and_sanitation_helpers_are_available_through_text_module() {
+fn explicit_codec_and_sanitation_helpers_are_available_through_text_module() {
     let output = run_source(
-        r#"val encoded = __text.encode_utf8("aéb")
+        r#"val encoded = __text.encode("aéb", __text.utf8)
 emit encoded
-emit __text.decode_utf8(encoded)
-emit __text.decode_utf8_lossy([97, 255, 98])
-emit __text.normalize_lf("a\r\nb\rc\n")
-emit __text.normalize_crlf("a\r\nb\rc\n")
-emit __text.strip_bom(__text.decode_utf8([239, 187, 191, 104, 105]))
-emit __text.drop_nul(__text.decode_utf8([97, 0, 98, 0]))
+emit __text.decode(encoded, __text.utf8)
+emit __text.decode(b"a\xffb", __text.utf8, __text.lossy)
+emit __text.normalize("a\r\nb\rc\n", __text.lf)
+emit __text.normalize("a\r\nb\rc\n", __text.crlf)
+emit __text.strip_bom(__text.decode(b"\xef\xbb\xbfhi", __text.utf8))
+emit __text.drop_nul(__text.decode(b"a\0b\0", __text.utf8))
 "#,
         BTreeMap::new(),
     )
@@ -456,7 +456,7 @@ emit __text.drop_nul(__text.decode_utf8([97, 0, 98, 0]))
 
     assert_eq!(
         output,
-        "[97, 195, 169, 98]\naéb\na�b\na\nb\nc\n\na\r\nb\r\nc\r\n\nhi\nab"
+        "b\"aéb\"\naéb\na�b\na\nb\nc\n\na\r\nb\r\nc\r\n\nhi\nab"
     );
 }
 
@@ -466,9 +466,9 @@ fn byte_io_surfaces_raw_bytes_without_implicit_decoding() {
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("payload.bin");
     let source = format!(
-        r#"__io.write_bytes("{}", [97, 0, 255, 98])
-emit __io.read_bytes("{}")
-emit __text.decode_utf8_lossy(__io.read_bytes("{}"))
+        r#"__io.write("{}", b"a\0\xffb")
+emit __io.read("{}", __io.bytes)
+emit __text.decode(__io.read("{}", __io.bytes), __text.utf8, __text.lossy)
 "#,
         path.display(),
         path.display(),
@@ -485,8 +485,35 @@ emit __text.decode_utf8_lossy(__io.read_bytes("{}"))
     )
     .unwrap();
 
-    assert_eq!(output, "[97, 0, 255, 98]\na\0�b");
+    assert_eq!(output, "b\"a\\0\\xffb\"\na\0�b");
     let _ = fs::remove_dir_all(dir);
+}
+
+#[test]
+fn bytes_are_first_class_sequence_values() {
+    let output = run_source(
+        r#"var raw = b"a\0\xffb"
+emit __col.len(raw)
+emit raw[2]
+emit __col.get(raw, -1, null)
+emit __col.contains(raw, 0)
+emit __col.contains(raw, b"\xffb")
+emit __col.slice(raw, 1, 3)
+emit __col.reverse(raw)
+raw[1] = 120
+emit raw
+for byte in raw {
+  emit byte
+}
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "4\n255\n98\ntrue\ntrue\nb\"\\0\\xff\"\nb\"b\\xff\\0a\"\nb\"ax\\xffb\"\n97\n120\n255\n98"
+    );
 }
 
 #[test]
@@ -623,13 +650,13 @@ fn regex_builtins_execute_against_regex_values() {
 
 val hit = __re.find("go to https://example.com now", pat)
 emit __re.test("go to https://example.com now", pat)
-emit __re.full_match("https://example.com", pat)
+emit __re.test("https://example.com", pat, __re.full)
 emit hit.text
 emit hit.named.scheme
 emit hit.named.host
 emit hit.start
 emit hit.end
-emit __col.len(__re.find_all("http://a https://b", pat))
+emit __col.len(__re.find("http://a https://b", pat, __re.all))
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -672,18 +699,18 @@ emit __col.slice(text, 0, hit.start)
 }
 
 #[test]
-fn text_semantics_expose_explicit_byte_offsets() {
+fn text_semantics_expose_explicit_unit_offsets() {
     let source = r#"val text = "aéb"
-emit __col.len(text)
-emit __text.byte_len(text)
-emit __text.byte_offset(text, 0)
-emit __text.byte_offset(text, 1)
-emit __text.byte_offset(text, 2)
-emit __text.byte_offset(text, 3)
-emit __text.scalar_offset(text, 0)
-emit __text.scalar_offset(text, 1)
-emit __text.scalar_offset(text, 3)
-emit __text.scalar_offset(text, 4)
+emit __text.len(text, __text.scalar)
+emit __text.len(text, __text.byte)
+emit __text.offset(text, __text.scalar, __text.byte, 0)
+emit __text.offset(text, __text.scalar, __text.byte, 1)
+emit __text.offset(text, __text.scalar, __text.byte, 2)
+emit __text.offset(text, __text.scalar, __text.byte, 3)
+emit __text.offset(text, __text.byte, __text.scalar, 0)
+emit __text.offset(text, __text.byte, __text.scalar, 1)
+emit __text.offset(text, __text.byte, __text.scalar, 3)
+emit __text.offset(text, __text.byte, __text.scalar, 4)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -696,12 +723,12 @@ fn text_semantics_normalize_unicode_forms_explicitly() {
 val decomposed = "é"
 
 emit composed == decomposed
-emit __text.nfc(composed)
-emit __text.nfc(decomposed)
-emit __text.nfd(composed)
-emit __text.nfd(decomposed)
-emit __text.nfkc("①")
-emit __text.nfkd("①")
+emit __text.normalize(composed, __text.nfc)
+emit __text.normalize(decomposed, __text.nfc)
+emit __text.normalize(composed, __text.nfd)
+emit __text.normalize(decomposed, __text.nfd)
+emit __text.normalize("①", __text.nfkc)
+emit __text.normalize("①", __text.nfkd)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -715,7 +742,7 @@ val decomposed = "é"
 val words = ["Z", "é", "é", "ECLAIR", "éclair"]
 
 func normalized_key(value) {
-  return __text.casefold(__text.nfc(value))
+  return __text.casefold(__text.normalize(value, __text.nfc))
 }
 
 emit __text.lower("Straße")
@@ -723,7 +750,10 @@ emit __text.casefold("Straße")
 emit __text.casefold("STRASSE")
 emit __text.casefold("Straße") == __text.casefold("STRASSE")
 emit __text.contains(composed, decomposed)
-emit __text.contains(__text.nfc(composed), __text.nfc(decomposed))
+emit __text.contains(
+  __text.normalize(composed, __text.nfc),
+  __text.normalize(decomposed, __text.nfc),
+)
 emit __col.unique([composed, decomposed])
 emit __col.sort(words)
 emit __col.sort_by(normalized_key, words)
@@ -741,13 +771,13 @@ fn text_semantics_add_explicit_scalar_byte_and_grapheme_access_modes() {
     let source = r#"val text = "éx"
 val bytes = "aéb"
 
-emit __text.scalar(text, 0)
-emit __text.scalar(text, 1)
-emit __text.grapheme_len(text)
-emit __text.grapheme(text, 0)
-emit __text.byte_slice(bytes, 1, 3)
-emit __text.scalar_slice(text, 0, 2)
-emit __text.grapheme_slice(text, 0, 1)
+emit __text.at(text, __text.scalar, 0)
+emit __text.at(text, __text.scalar, 1)
+emit __text.len(text, __text.grapheme)
+emit __text.at(text, __text.grapheme, 0)
+emit __text.slice(bytes, __text.byte, 1, 3)
+emit __text.slice(text, __text.scalar, 0, 2)
+emit __text.slice(text, __text.grapheme, 0, 1)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -756,44 +786,68 @@ emit __text.grapheme_slice(text, 0, 1)
 
 #[test]
 fn text_semantics_report_invalid_unit_boundaries_precisely() {
-    let err = run_source(r#"emit __text.scalar("nodia", 9)"#, BTreeMap::new()).unwrap_err();
-    assert!(err
-        .message
-        .contains("scalar() scalar index 9 is out of range for text with 5 scalar value(s)"));
-
-    let err = run_source(r#"emit __text.grapheme("éx", 9)"#, BTreeMap::new()).unwrap_err();
-    assert!(err
-        .message
-        .contains("grapheme() grapheme index 9 is out of range for text with 2 grapheme(s)"));
-
-    let err = run_source(r#"emit __text.byte_slice("é", 1, 2)"#, BTreeMap::new()).unwrap_err();
-    assert!(err
-        .message
-        .contains("byte_slice() byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)"));
-
     let err = run_source(
-        r#"emit __text.scalar_slice("nodia", 4, 2)"#,
+        r#"emit __text.at("nodia", __text.scalar, 9)"#,
         BTreeMap::new(),
     )
     .unwrap_err();
-    assert!(err.message.contains(
-        "scalar_slice() start scalar offset 4 cannot be greater than end scalar offset 2"
-    ));
+    assert!(err
+        .message
+        .contains("at() scalar index 9 is out of range for text with 5 scalar value(s)"));
 
-    let err = run_source(r#"emit __text.grapheme_slice("éx", 3, 4)"#, BTreeMap::new()).unwrap_err();
-    assert!(err.message.contains(
-        "grapheme_slice() grapheme offset 3 is out of range for text with 2 grapheme(s)"
-    ));
+    let err = run_source(
+        r#"emit __text.at("éx", __text.grapheme, 9)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(err
+        .message
+        .contains("at() grapheme index 9 is out of range for text with 2 grapheme(s)"));
+
+    let err = run_source(
+        r#"emit __text.slice("é", __text.byte, 1, 2)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(err
+        .message
+        .contains("slice() byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)"));
+
+    let err = run_source(
+        r#"emit __text.slice("nodia", __text.scalar, 4, 2)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(err
+        .message
+        .contains("slice() start scalar offset 4 cannot be greater than end scalar offset 2"));
+
+    let err = run_source(
+        r#"emit __text.slice("éx", __text.grapheme, 3, 4)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(err
+        .message
+        .contains("slice() grapheme offset 3 is out of range for text with 2 grapheme(s)"));
 }
 
 #[test]
 fn text_semantics_reject_invalid_offset_boundaries() {
-    let err = run_source(r#"emit __text.scalar_offset("é", 1)"#, BTreeMap::new()).unwrap_err();
+    let err = run_source(
+        r#"emit __text.offset("é", __text.byte, __text.scalar, 1)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
     assert!(err
         .message
         .contains("byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)"));
 
-    let err = run_source(r#"emit __text.byte_offset("é", 2)"#, BTreeMap::new()).unwrap_err();
+    let err = run_source(
+        r#"emit __text.offset("é", __text.scalar, __text.byte, 2)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
     assert!(err
         .message
         .contains("scalar offset 2 is out of range for text with 1 scalar value(s)"));
@@ -802,7 +856,7 @@ fn text_semantics_reject_invalid_offset_boundaries() {
 #[test]
 fn regex_builtins_accept_string_patterns() {
     let source = r#"emit __re.test("abc-42", "^[a-z]+-\\d+$")
-emit __re.full_match("abc-42", "^[a-z]+-\\d+$")
+emit __re.test("abc-42", "^[a-z]+-\\d+$", __re.full)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -875,20 +929,17 @@ val url = regex {
 }
 
 emit __text.replace(text, url, "<$(scheme):$(host)>")
-emit __text.replace_all(text, url, "<$(host)>")
+emit __text.replace(text, url, "<$(host)>")
 emit __text.split("ana   bruno\tcarla", regex {
-  one_or_more whitespace
-})
-emit __text.split_regex("ana   bruno\tcarla", regex {
   one_or_more whitespace
 })
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
     assert_eq!(
-            output,
-            "go to <https:example.com> and <http:ana.dev>\ngo to <example.com> and <ana.dev>\n[\"ana\", \"bruno\", \"carla\"]\n[\"ana\", \"bruno\", \"carla\"]"
-        );
+        output,
+        "go to <https:example.com> and <http:ana.dev>\ngo to <example.com> and <ana.dev>\n[\"ana\", \"bruno\", \"carla\"]"
+    );
 }
 
 #[test]
@@ -978,8 +1029,8 @@ emit __json.write(parsed)
 #[test]
 fn json_and_csv_read_accept_explicit_byte_sequences() {
     let output = run_source(
-        r#"val parsed = __json.read(__text.encode_utf8(r'{"name":"Ana","age":30}'))
-val rows = __csv.read(__text.encode_utf8("name,age\nAna,30"), {
+        r#"val parsed = __json.read(__text.encode(r'{"name":"Ana","age":30}', __text.utf8))
+val rows = __csv.read(__text.encode("name,age\nAna,30", __text.utf8), {
   header: true,
   types: true,
 })
@@ -1007,11 +1058,11 @@ fn json_read_rejects_duplicate_object_keys() {
 
 #[test]
 fn json_and_csv_reject_invalid_utf8_byte_inputs() {
-    let err = run_source(r#"emit __json.read([255])"#, BTreeMap::new()).unwrap_err();
+    let err = run_source(r#"emit __json.read(b"\xff")"#, BTreeMap::new()).unwrap_err();
     assert_eq!(err.code, "E2000");
     assert!(err.message.contains("cannot decode bytes as UTF-8"));
 
-    let err = run_source(r#"emit __csv.read([255])"#, BTreeMap::new()).unwrap_err();
+    let err = run_source(r#"emit __csv.read(b"\xff")"#, BTreeMap::new()).unwrap_err();
     assert_eq!(err.code, "E2000");
     assert!(err.message.contains("cannot decode bytes as UTF-8"));
 }
@@ -1304,8 +1355,8 @@ emit "{__text.replace(\"xx\", \"x\", \"}\")}"
 fn formatting_builtins_cover_padding_and_numeric_output() {
     let output = run_source(
         r#"emit __fmt.format("%05d %.2f %-6s", [7, 3.5, "ok"])
-emit __fmt.pad_left("42", 5, "0")
-emit __fmt.pad_right("ok", 5, ".")
+emit __fmt.pad("42", 5, __fmt.left, "0")
+emit __fmt.pad("ok", 5, __fmt.right, ".")
 emit __fmt.fixed(3.14159, 3)
 "#,
         BTreeMap::new(),
@@ -1319,8 +1370,8 @@ emit __fmt.fixed(3.14159, 3)
 fn formatting_builtins_cover_percent_string_precision_and_multichar_padding() {
     let output = run_source(
         r#"emit __fmt.format("%% %.3s", ["Nodia"])
-emit __fmt.pad_left("7", 5, "ab")
-emit __fmt.pad_right("7", 5, "ab")
+emit __fmt.pad("7", 5, __fmt.left, "ab")
+emit __fmt.pad("7", 5, __fmt.right, "ab")
 "#,
         BTreeMap::new(),
     )
@@ -1333,8 +1384,8 @@ emit __fmt.pad_right("7", 5, "ab")
 fn formatting_counts_graphemes_for_string_precision_and_padding() {
     let output = run_source(
         r#"emit __fmt.format("[%2s][%.1s]", ["é", "éx"])
-emit __fmt.pad_left("é", 2, ".")
-emit __fmt.pad_right("é", 2, ".")
+emit __fmt.pad("é", 2, __fmt.left, ".")
+emit __fmt.pad("é", 2, __fmt.right, ".")
 "#,
         BTreeMap::new(),
     )
@@ -1391,8 +1442,8 @@ fn exec_builtin_returns_stdout_stderr_and_status() {
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit __text.decode_utf8(result.stdout)
-emit __text.decode_utf8(result.stderr)
+emit __text.decode(result.stdout, __text.utf8)
+emit __text.decode(result.stderr, __text.utf8)
 emit result.status
 "#,
         BTreeMap::new(),
@@ -1411,8 +1462,8 @@ fn exec_builtin_returns_recoverable_error_for_missing_binary() {
     let output = run_source_with_options(
         r#"val result = __sys.exec("nonexistent_xyz", [])
 emit result.status
-emit result.stdout == []
-emit result.stderr == []
+emit result.stdout == b""
+emit result.stderr == b""
 emit result.error != ""
 "#,
         BTreeMap::new(),
@@ -1552,10 +1603,10 @@ val dt = __dt.datetime({
 emit __dt.isoformat(d)
 emit __dt.isoformat(dt)
 emit __dt.strftime(dt, "%F %T %:z")
-emit __dt.weekday_name(__dt.parse_date("2024-02-29"))
-emit __dt.month_name(__dt.parse_date("2024-02-29"))
-emit __dt.ordinal_day(__dt.parse_date("2024-02-29"))
-emit __dt.iso_week(__dt.parse_date("2021-01-01")).week
+emit __dt.weekday_name(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.month_name(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.ordinal_day(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.iso_week(__dt.parse("2021-01-01", __dt.as_date)).week
 emit __dt.offset_minutes(dt)
 emit __dt.days_in_month(2024, 2)
 emit __dt.is_leap_year(2024)
@@ -1574,19 +1625,21 @@ emit __dt.is_leap_year(2024)
 fn temporal_builtins_cover_epoch_arithmetic_and_json() {
     let output = run_source(
         r#"val end_of_jan = __dt.date(2024, 1, 31)
-val stamp = __dt.parse_datetime("2024-01-31T23:00:00Z")
+val stamp = __dt.parse("2024-01-31T23:00:00Z", __dt.as_datetime)
 val jump = __dt.duration({hours: 2, minutes: 30})
 
-emit __dt.isoformat(__dt.add_months(end_of_jan, 1))
-emit __dt.isoformat(__dt.add_duration(stamp, jump))
-emit __dt.isoformat(__dt.from_unix(0.5))
-emit __dt.unix_seconds(__dt.from_unix(0.5))
-emit __dt.isoformat(__dt.from_unix_ms(1500))
-emit __dt.diff_days(__dt.date(2024, 3, 5), __dt.date(2024, 3, 1))
-emit __dt.diff_seconds(__dt.parse_datetime("1970-01-01T00:00:01.5Z"), __dt.parse_datetime("1970-01-01T00:00:00Z"))
+emit __dt.isoformat(__dt.add(end_of_jan, 1, __dt.months))
+emit __dt.isoformat(__dt.add(stamp, jump))
+emit __dt.isoformat(__dt.bound(end_of_jan, __dt.start))
+emit __dt.isoformat(__dt.bound(end_of_jan, __dt.end))
+emit __dt.isoformat(__dt.from_epoch(0.5, __dt.seconds))
+emit __dt.epoch(__dt.from_epoch(0.5, __dt.seconds), __dt.seconds)
+emit __dt.isoformat(__dt.from_epoch(1500, __dt.milliseconds))
+emit __dt.diff(__dt.date(2024, 3, 5), __dt.date(2024, 3, 1), __dt.days)
+emit __dt.diff(__dt.parse("1970-01-01T00:00:01.5Z", __dt.as_datetime), __dt.parse("1970-01-01T00:00:00Z", __dt.as_datetime), __dt.seconds)
 emit __json.write({
   d: __dt.date(2024, 2, 29),
-  dt: __dt.parse_datetime("2024-02-29T12:00:00Z"),
+  dt: __dt.parse("2024-02-29T12:00:00Z", __dt.as_datetime),
   dur: __dt.duration({minutes: 90}),
 })
 "#,
@@ -1596,7 +1649,7 @@ emit __json.write({
 
     assert_eq!(
         output,
-        "2024-02-29\n2024-02-01T01:30:00Z\n1970-01-01T00:00:00.5Z\n0.5\n1970-01-01T00:00:01.5Z\n4\n1.5\n{\"d\":\"2024-02-29\",\"dt\":\"2024-02-29T12:00:00Z\",\"dur\":\"PT1H30M\"}"
+        "2024-02-29\n2024-02-01T01:30:00Z\n2024-01-31T00:00:00Z\n2024-01-31T23:59:59.999999999Z\n1970-01-01T00:00:00.5Z\n0.5\n1970-01-01T00:00:01.5Z\n4\n1.5\n{\"d\":\"2024-02-29\",\"dt\":\"2024-02-29T12:00:00Z\",\"dur\":\"PT1H30M\"}"
     );
 }
 
@@ -1608,9 +1661,9 @@ fn temporal_values_compare_and_sort_consistently() {
   __dt.date(2024, 1, 1),
   __dt.date(2024, 1, 2),
 ])
-emit __dt.parse_datetime("2024-01-01T00:00:00+02:00") == __dt.parse_datetime("2023-12-31T22:00:00Z")
-emit __dt.parse_datetime("2024-01-01T00:00:00Z") < __dt.parse_datetime("2024-01-02T00:00:00Z")
-emit __dt.parse_duration("PT90S") > __dt.parse_duration("PT1M")
+emit __dt.parse("2024-01-01T00:00:00+02:00", __dt.as_datetime) == __dt.parse("2023-12-31T22:00:00Z", __dt.as_datetime)
+emit __dt.parse("2024-01-01T00:00:00Z", __dt.as_datetime) < __dt.parse("2024-01-02T00:00:00Z", __dt.as_datetime)
+emit __dt.parse("PT90S", __dt.as_duration) > __dt.parse("PT1M", __dt.as_duration)
 "#,
         BTreeMap::new(),
     )

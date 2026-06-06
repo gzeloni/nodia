@@ -13,6 +13,46 @@ use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
 use unicode_segmentation::UnicodeSegmentation;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TextUnit {
+    Byte,
+    Scalar,
+    Grapheme,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum TextCodec {
+    Utf8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DecodeMode {
+    Strict,
+    Lossy,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum NormalizationForm {
+    Lf,
+    Crlf,
+    Nfc,
+    Nfd,
+    Nfkc,
+    Nfkd,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegexTestMode {
+    Any,
+    Full,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RegexFindMode {
+    First,
+    All,
+}
+
 pub(super) fn unary_string(
     args: &[Value],
     name: &str,
@@ -47,38 +87,52 @@ pub(super) fn split_text(args: &[Value], name: &str) -> NodiaResult<Value> {
 }
 
 pub(super) fn regex_test(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(&args, 2, "test")?;
+    if !matches!(args.len(), 2 | 3) {
+        return Err(NodiaError::runtime(format!(
+            "test() expects 2 or 3 argument(s), got {}",
+            args.len()
+        )));
+    }
     let pattern = expect_regex(&args[1], "test", "second")?;
-    Ok(Value::Bool(pattern.is_match(&args[0].to_string())?))
-}
-
-pub(super) fn regex_full_match(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(&args, 2, "full_match")?;
-    let pattern = expect_regex(&args[1], "full_match", "second")?;
-    Ok(Value::Bool(pattern.is_full_match(&args[0].to_string())?))
+    let text = args[0].to_string();
+    let mode = if args.len() == 3 {
+        expect_regex_test_mode(&args[2], "test", "third")?
+    } else {
+        RegexTestMode::Any
+    };
+    Ok(Value::Bool(match mode {
+        RegexTestMode::Any => pattern.is_match(&text)?,
+        RegexTestMode::Full => pattern.is_full_match(&text)?,
+    }))
 }
 
 pub(super) fn regex_find(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(&args, 2, "find")?;
+    if !matches!(args.len(), 2 | 3) {
+        return Err(NodiaError::runtime(format!(
+            "find() expects 2 or 3 argument(s), got {}",
+            args.len()
+        )));
+    }
     let text = args[0].to_string();
     let pattern = expect_regex(&args[1], "find", "second")?;
-    Ok(pattern
-        .find(&text)?
-        .map(regex_match_value)
-        .unwrap_or(Value::Null))
-}
-
-pub(super) fn regex_find_all(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(&args, 2, "find_all")?;
-    let text = args[0].to_string();
-    let pattern = expect_regex(&args[1], "find_all", "second")?;
-    Ok(Value::List(
-        pattern
-            .find_all(&text)?
-            .into_iter()
+    let mode = if args.len() == 3 {
+        expect_regex_find_mode(&args[2], "find", "third")?
+    } else {
+        RegexFindMode::First
+    };
+    Ok(match mode {
+        RegexFindMode::First => pattern
+            .find(&text)?
             .map(regex_match_value)
-            .collect(),
-    ))
+            .unwrap_or(Value::Null),
+        RegexFindMode::All => Value::List(
+            pattern
+                .find_all(&text)?
+                .into_iter()
+                .map(regex_match_value)
+                .collect(),
+        ),
+    })
 }
 
 pub(super) fn contains_text(text: &str, needle: &Value) -> NodiaResult<bool> {
@@ -194,49 +248,6 @@ pub(super) fn dedent(text: &str) -> String {
         .join("\n")
 }
 
-pub(super) fn byte_len(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "byte_len")?;
-    let text = expect_string(&args[0], "byte_len", "first")?;
-    Ok(Value::Int(text.len() as i64))
-}
-
-pub(super) fn grapheme_len(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "grapheme_len")?;
-    let text = expect_string(&args[0], "grapheme_len", "first")?;
-    Ok(Value::Int(text.graphemes(true).count() as i64))
-}
-
-pub(super) fn encode_utf8(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "encode_utf8")?;
-    let text = expect_string(&args[0], "encode_utf8", "first")?;
-    Ok(textcodec::string_to_bytes_value(text))
-}
-
-pub(super) fn decode_utf8(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "decode_utf8")?;
-    let bytes = textcodec::expect_bytes(&args[0], "decode_utf8", "first")?;
-    Ok(Value::String(textcodec::decode_utf8_runtime(
-        bytes,
-        "decode_utf8",
-    )?))
-}
-
-pub(super) fn decode_utf8_lossy(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "decode_utf8_lossy")?;
-    let bytes = textcodec::expect_bytes(&args[0], "decode_utf8_lossy", "first")?;
-    Ok(Value::String(textcodec::decode_utf8_lossy(&bytes)))
-}
-
-pub(super) fn normalize_lf(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "normalize_lf", |text| textcodec::normalize_lf(&text))
-}
-
-pub(super) fn normalize_crlf(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "normalize_crlf", |text| {
-        textcodec::normalize_crlf(&text)
-    })
-}
-
 pub(super) fn strip_bom(args: &[Value]) -> NodiaResult<Value> {
     unary_string(args, "strip_bom", |text| textcodec::strip_bom(&text))
 }
@@ -245,89 +256,104 @@ pub(super) fn drop_nul(args: &[Value]) -> NodiaResult<Value> {
     unary_string(args, "drop_nul", |text| textcodec::drop_nul(&text))
 }
 
-pub(super) fn nfc(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "nfc", |text| text.nfc().collect())
-}
-
-pub(super) fn nfd(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "nfd", |text| text.nfd().collect())
-}
-
-pub(super) fn nfkc(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "nfkc", |text| text.nfkc().collect())
-}
-
-pub(super) fn nfkd(args: &[Value]) -> NodiaResult<Value> {
-    unary_string(args, "nfkd", |text| text.nfkd().collect())
-}
-
 pub(super) fn casefold(args: &[Value]) -> NodiaResult<Value> {
     unary_string(args, "casefold", |text| default_case_fold_str(&text))
 }
 
-pub(super) fn byte_offset(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "byte_offset")?;
-    let text = expect_string(&args[0], "byte_offset", "first")?;
-    let offset = expect_non_negative_offset(&args[1], "byte_offset", "second")?;
+pub(super) fn normalize(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "normalize")?;
+    let text = expect_string(&args[0], "normalize", "first")?;
+    let form = expect_normalization_form(&args[1], "normalize", "second")?;
+    Ok(Value::String(match form {
+        NormalizationForm::Lf => textcodec::normalize_lf(text),
+        NormalizationForm::Crlf => textcodec::normalize_crlf(text),
+        NormalizationForm::Nfc => text.nfc().collect(),
+        NormalizationForm::Nfd => text.nfd().collect(),
+        NormalizationForm::Nfkc => text.nfkc().collect(),
+        NormalizationForm::Nfkd => text.nfkd().collect(),
+    }))
+}
+
+pub(super) fn len(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "len")?;
+    let text = expect_string(&args[0], "len", "first")?;
+    let unit = expect_text_unit(&args[1], "len", "second")?;
+    Ok(Value::Int(match unit {
+        TextUnit::Byte => text.len() as i64,
+        TextUnit::Scalar => text.chars().count() as i64,
+        TextUnit::Grapheme => text.graphemes(true).count() as i64,
+    }))
+}
+
+pub(super) fn encode(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "encode")?;
+    let text = expect_string(&args[0], "encode", "first")?;
+    let codec = expect_text_codec(&args[1], "encode", "second")?;
+    match codec {
+        TextCodec::Utf8 => Ok(textcodec::string_to_bytes_value(text)),
+    }
+}
+
+pub(super) fn decode(args: &[Value]) -> NodiaResult<Value> {
+    if !matches!(args.len(), 2 | 3) {
+        return Err(NodiaError::runtime(format!(
+            "decode() expects 2 or 3 argument(s), got {}",
+            args.len()
+        )));
+    }
+
+    let bytes = textcodec::expect_bytes(&args[0], "decode", "first")?;
+    let codec = expect_text_codec(&args[1], "decode", "second")?;
+    let mode = if args.len() == 3 {
+        expect_decode_mode(&args[2], "decode", "third")?
+    } else {
+        DecodeMode::Strict
+    };
+
+    match (codec, mode) {
+        (TextCodec::Utf8, DecodeMode::Strict) => Ok(Value::String(textcodec::decode_utf8_runtime(
+            bytes, "decode",
+        )?)),
+        (TextCodec::Utf8, DecodeMode::Lossy) => {
+            Ok(Value::String(textcodec::decode_utf8_lossy(&bytes)))
+        }
+    }
+}
+
+pub(super) fn offset(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 4, "offset")?;
+    let text = expect_string(&args[0], "offset", "first")?;
+    let from = expect_text_unit(&args[1], "offset", "second")?;
+    let to = expect_text_unit(&args[2], "offset", "third")?;
+    let offset = expect_non_negative_offset(&args[3], "offset", "fourth")?;
+    let byte_offset = unit_to_byte_offset(text, from, offset, "offset")?;
     Ok(Value::Int(
-        scalar_to_byte_offset(text, offset, "byte_offset")? as i64,
+        byte_to_unit_offset(text, to, byte_offset, "offset")? as i64,
     ))
 }
 
-pub(super) fn scalar(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "scalar")?;
-    let text = expect_string(&args[0], "scalar", "first")?;
-    let index = expect_non_negative_index(&args[1], "scalar", "second")?;
-    Ok(Value::String(scalar_at(text, index, "scalar")?))
+pub(super) fn at(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 3, "at")?;
+    let text = expect_string(&args[0], "at", "first")?;
+    let unit = expect_text_unit(&args[1], "at", "second")?;
+    let index = expect_non_negative_index(&args[2], "at", "third")?;
+    Ok(match unit {
+        TextUnit::Byte => Value::Int(byte_at(text, index, "at")? as i64),
+        TextUnit::Scalar => Value::String(scalar_at(text, index, "at")?),
+        TextUnit::Grapheme => Value::String(grapheme_at(text, index, "at")?),
+    })
 }
 
-pub(super) fn grapheme(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "grapheme")?;
-    let text = expect_string(&args[0], "grapheme", "first")?;
-    let index = expect_non_negative_index(&args[1], "grapheme", "second")?;
-    Ok(Value::String(grapheme_at(text, index, "grapheme")?))
-}
-
-pub(super) fn byte_slice(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 3, "byte_slice")?;
-    let text = expect_string(&args[0], "byte_slice", "first")?;
-    let start = expect_non_negative_offset(&args[1], "byte_slice", "second")?;
-    let end = expect_non_negative_offset(&args[2], "byte_slice", "third")?;
-    validate_byte_offset(text, start, "byte_slice")?;
-    validate_byte_offset(text, end, "byte_slice")?;
-    validate_offset_order(start, end, "byte", "byte_slice")?;
-    Ok(Value::String(text[start..end].to_string()))
-}
-
-pub(super) fn scalar_slice(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 3, "scalar_slice")?;
-    let text = expect_string(&args[0], "scalar_slice", "first")?;
-    let start = expect_non_negative_offset(&args[1], "scalar_slice", "second")?;
-    let end = expect_non_negative_offset(&args[2], "scalar_slice", "third")?;
-    let start_byte = scalar_to_byte_offset(text, start, "scalar_slice")?;
-    let end_byte = scalar_to_byte_offset(text, end, "scalar_slice")?;
-    validate_offset_order(start, end, "scalar", "scalar_slice")?;
+pub(super) fn slice(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 4, "slice")?;
+    let text = expect_string(&args[0], "slice", "first")?;
+    let unit = expect_text_unit(&args[1], "slice", "second")?;
+    let start = expect_non_negative_offset(&args[2], "slice", "third")?;
+    let end = expect_non_negative_offset(&args[3], "slice", "fourth")?;
+    validate_offset_order(start, end, unit_name(unit), "slice")?;
+    let start_byte = unit_to_byte_offset(text, unit, start, "slice")?;
+    let end_byte = unit_to_byte_offset(text, unit, end, "slice")?;
     Ok(Value::String(text[start_byte..end_byte].to_string()))
-}
-
-pub(super) fn grapheme_slice(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 3, "grapheme_slice")?;
-    let text = expect_string(&args[0], "grapheme_slice", "first")?;
-    let start = expect_non_negative_offset(&args[1], "grapheme_slice", "second")?;
-    let end = expect_non_negative_offset(&args[2], "grapheme_slice", "third")?;
-    let start_byte = grapheme_to_byte_offset(text, start, "grapheme_slice")?;
-    let end_byte = grapheme_to_byte_offset(text, end, "grapheme_slice")?;
-    validate_offset_order(start, end, "grapheme", "grapheme_slice")?;
-    Ok(Value::String(text[start_byte..end_byte].to_string()))
-}
-
-pub(super) fn scalar_offset(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "scalar_offset")?;
-    let text = expect_string(&args[0], "scalar_offset", "first")?;
-    let offset = expect_non_negative_offset(&args[1], "scalar_offset", "second")?;
-    Ok(Value::Int(
-        byte_to_scalar_offset(text, offset, "scalar_offset")? as i64,
-    ))
 }
 
 fn expect_string<'a>(value: &'a Value, name: &str, position: &str) -> NodiaResult<&'a str> {
@@ -336,6 +362,89 @@ fn expect_string<'a>(value: &'a Value, name: &str, position: &str) -> NodiaResul
         other => Err(NodiaError::runtime(format!(
             "{name}() expects string as {position} argument, got {}",
             other.type_name()
+        ))),
+    }
+}
+
+fn expect_named_string<'a>(
+    value: &'a Value,
+    name: &str,
+    position: &str,
+    kind: &str,
+) -> NodiaResult<&'a str> {
+    match value {
+        Value::String(text) => Ok(text),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects {kind} as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn expect_text_unit(value: &Value, name: &str, position: &str) -> NodiaResult<TextUnit> {
+    match expect_named_string(value, name, position, "text unit")? {
+        "byte" => Ok(TextUnit::Byte),
+        "scalar" => Ok(TextUnit::Scalar),
+        "grapheme" => Ok(TextUnit::Grapheme),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects byte, scalar, or grapheme as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_text_codec(value: &Value, name: &str, position: &str) -> NodiaResult<TextCodec> {
+    match expect_named_string(value, name, position, "codec")? {
+        "utf8" => Ok(TextCodec::Utf8),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects supported codec as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_decode_mode(value: &Value, name: &str, position: &str) -> NodiaResult<DecodeMode> {
+    match expect_named_string(value, name, position, "decode mode")? {
+        "strict" => Ok(DecodeMode::Strict),
+        "lossy" => Ok(DecodeMode::Lossy),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects strict or lossy as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_normalization_form(
+    value: &Value,
+    name: &str,
+    position: &str,
+) -> NodiaResult<NormalizationForm> {
+    match expect_named_string(value, name, position, "normalization form")? {
+        "lf" => Ok(NormalizationForm::Lf),
+        "crlf" => Ok(NormalizationForm::Crlf),
+        "nfc" => Ok(NormalizationForm::Nfc),
+        "nfd" => Ok(NormalizationForm::Nfd),
+        "nfkc" => Ok(NormalizationForm::Nfkc),
+        "nfkd" => Ok(NormalizationForm::Nfkd),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects lf, crlf, nfc, nfd, nfkc, or nfkd as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_regex_test_mode(value: &Value, name: &str, position: &str) -> NodiaResult<RegexTestMode> {
+    match expect_named_string(value, name, position, "regex test mode")? {
+        "any" => Ok(RegexTestMode::Any),
+        "full" => Ok(RegexTestMode::Full),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects any or full as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_regex_find_mode(value: &Value, name: &str, position: &str) -> NodiaResult<RegexFindMode> {
+    match expect_named_string(value, name, position, "regex find mode")? {
+        "first" => Ok(RegexFindMode::First),
+        "all" => Ok(RegexFindMode::All),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects first or all as {position} argument, got '{other}'"
         ))),
     }
 }
@@ -375,6 +484,15 @@ fn scalar_at(text: &str, index: usize, name: &str) -> NodiaResult<String> {
     })
 }
 
+fn byte_at(text: &str, index: usize, name: &str) -> NodiaResult<u8> {
+    text.as_bytes().get(index).copied().ok_or_else(|| {
+        NodiaError::runtime(format!(
+            "{name}() byte index {index} is out of range for text with {} byte(s)",
+            text.len()
+        ))
+    })
+}
+
 fn grapheme_at(text: &str, index: usize, name: &str) -> NodiaResult<String> {
     let grapheme_len = text.graphemes(true).count();
     text.graphemes(true)
@@ -394,6 +512,46 @@ fn validate_offset_order(start: usize, end: usize, unit: &str, name: &str) -> No
         )));
     }
     Ok(())
+}
+
+fn unit_name(unit: TextUnit) -> &'static str {
+    match unit {
+        TextUnit::Byte => "byte",
+        TextUnit::Scalar => "scalar",
+        TextUnit::Grapheme => "grapheme",
+    }
+}
+
+fn unit_to_byte_offset(
+    text: &str,
+    unit: TextUnit,
+    offset: usize,
+    name: &str,
+) -> NodiaResult<usize> {
+    match unit {
+        TextUnit::Byte => {
+            validate_byte_offset(text, offset, name)?;
+            Ok(offset)
+        }
+        TextUnit::Scalar => scalar_to_byte_offset(text, offset, name),
+        TextUnit::Grapheme => grapheme_to_byte_offset(text, offset, name),
+    }
+}
+
+fn byte_to_unit_offset(
+    text: &str,
+    unit: TextUnit,
+    offset: usize,
+    name: &str,
+) -> NodiaResult<usize> {
+    match unit {
+        TextUnit::Byte => {
+            validate_byte_offset(text, offset, name)?;
+            Ok(offset)
+        }
+        TextUnit::Scalar => byte_to_scalar_offset(text, offset, name),
+        TextUnit::Grapheme => byte_to_grapheme_offset(text, offset, name),
+    }
 }
 
 fn scalar_to_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
@@ -455,4 +613,9 @@ fn validate_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<()
 fn byte_to_scalar_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
     validate_byte_offset(text, offset, name)?;
     Ok(text[..offset].chars().count())
+}
+
+fn byte_to_grapheme_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+    validate_byte_offset(text, offset, name)?;
+    Ok(text[..offset].graphemes(true).count())
 }

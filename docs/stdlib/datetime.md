@@ -72,20 +72,20 @@ P2DT3H0.5S
 
 | Builtin | Behavior |
 | ------- | -------- |
-| `datetime.parse_date(text)` | parses `YYYY-MM-DD` |
-| `datetime.parse_datetime(text)` | parses ISO/RFC3339-style datetime text |
-| `datetime.parse_duration(text)` | parses ISO 8601 duration text |
+| `datetime.parse(text, datetime.as_date)` | parses `YYYY-MM-DD` |
+| `datetime.parse(text, datetime.as_datetime)` | parses ISO/RFC3339-style datetime text |
+| `datetime.parse(text, datetime.as_duration)` | parses ISO 8601 duration text |
 | `datetime.isoformat(value)` | emits canonical ISO text for `date`, `datetime`, `duration` |
 | `datetime.strftime(value, pattern)` | formats `date` or `datetime` with a standard directive subset |
 
-`datetime.parse_datetime(...)` accepts:
+`datetime.parse(..., datetime.as_datetime)` accepts:
 
 * `T`, `t`, or a space between date and time
 * optional fractional seconds
 * optional offsets like `Z`, `+02`, `+0230`, `+02:30`
 * no offset means UTC
 
-`datetime.parse_duration(...)` accepts ISO 8601 day/time durations such as `P3D`,
+`datetime.parse(..., datetime.as_duration)` accepts ISO 8601 day/time durations such as `P3D`,
 `PT4H30M`, `P2DT1.5S`, `-PT15M`. Calendar years/months are intentionally
 rejected because they are not fixed-length durations.
 
@@ -117,7 +117,7 @@ Supported `datetime.strftime(...)` directives:
 ./target/release/nodia eval '
 use datetime
 
-val dt = datetime.parse_datetime("2026-05-27T14:30:05.12+05:30")
+val dt = datetime.parse("2026-05-27T14:30:05.12+05:30", datetime.as_datetime)
 emit datetime.isoformat(dt)
 emit datetime.strftime(dt, "%F %T %:z")
 '
@@ -136,14 +136,14 @@ emit datetime.strftime(dt, "%F %T %:z")
 | `datetime.now(offset)` | current `datetime` rendered in a fixed offset |
 | `datetime.today()` | current UTC `date` |
 | `datetime.today(offset)` | current `date` in a fixed offset |
-| `datetime.from_unix(seconds)` | unix seconds to `datetime` |
-| `datetime.from_unix(seconds, offset)` | same instant rendered in another fixed offset |
-| `datetime.from_unix_ms(milliseconds)` | unix milliseconds to `datetime` |
-| `datetime.unix_seconds(datetime)` | unix timestamp as `int` or `float` |
-| `datetime.unix_ms(datetime)` | unix milliseconds as `int` or `float` |
+| `datetime.from_epoch(value, datetime.seconds)` | unix seconds to `datetime` |
+| `datetime.from_epoch(value, datetime.seconds, offset)` | same instant rendered in another fixed offset |
+| `datetime.from_epoch(value, datetime.milliseconds)` | unix milliseconds to `datetime` |
+| `datetime.epoch(datetime, datetime.seconds)` | unix timestamp as `int` or `float` |
+| `datetime.epoch(datetime, datetime.milliseconds)` | unix milliseconds as `int` or `float` |
 
-`datetime.from_unix(...)` accepts integer or floating-point seconds.
-`datetime.from_unix_ms(...)`
+`datetime.from_epoch(..., datetime.seconds)` accepts integer or floating-point seconds.
+`datetime.from_epoch(..., datetime.milliseconds)`
 accepts integer or floating-point milliseconds.
 
 ## Accessors
@@ -173,16 +173,16 @@ accepts integer or floating-point milliseconds.
 | Builtin | Behavior |
 | ------- | -------- |
 | `datetime.with_offset(datetime, offset)` | same instant, different rendered offset |
-| `datetime.add_days(x, n)` | shifts `date` or `datetime` by calendar days |
-| `datetime.add_months(x, n)` | calendar month arithmetic with end-of-month clamping |
-| `datetime.add_years(x, n)` | calendar year arithmetic with leap-day clamping |
-| `datetime.add_duration(datetime, duration)` | instant arithmetic |
-| `datetime.add_duration(duration, duration)` | duration arithmetic |
-| `datetime.diff_days(a, b)` | difference in whole calendar days |
-| `datetime.diff_seconds(a, b)` | difference in seconds |
-| `datetime.diff_duration(a, b)` | difference as `duration` |
-| `datetime.start_of_day(x)` | midnight `datetime` |
-| `datetime.end_of_day(x)` | `23:59:59.999999999` `datetime` |
+| `datetime.add(x, n, datetime.days)` | shifts `date` or `datetime` by calendar days |
+| `datetime.add(x, n, datetime.months)` | calendar month arithmetic with end-of-month clamping |
+| `datetime.add(x, n, datetime.years)` | calendar year arithmetic with leap-day clamping |
+| `datetime.add(datetime, duration)` | instant arithmetic |
+| `datetime.add(duration, duration)` | duration arithmetic |
+| `datetime.diff(a, b, datetime.days)` | difference in whole calendar days |
+| `datetime.diff(a, b, datetime.seconds)` | difference in seconds |
+| `datetime.diff(a, b, datetime.span)` | difference as `duration` |
+| `datetime.bound(x, datetime.start)` | midnight `datetime` |
+| `datetime.bound(x, datetime.end)` | `23:59:59.999999999` `datetime` |
 
 Ordering works with `<`, `<=`, `>`, `>=` for matching temporal kinds:
 
@@ -196,7 +196,7 @@ Ordering works with `<`, `<=`, `>`, `>=` for matching temporal kinds:
 ./target/release/nodia eval '
 use datetime
 
-emit datetime.parse_datetime("2024-01-01T00:00:00+02:00") == datetime.parse_datetime("2023-12-31T22:00:00Z")
+emit datetime.parse("2024-01-01T00:00:00+02:00", datetime.as_datetime) == datetime.parse("2023-12-31T22:00:00Z", datetime.as_datetime)
 '
 ```
 
@@ -218,7 +218,7 @@ use json
 use datetime
 
 emit json.write({
-  when: datetime.parse_datetime("2024-02-29T12:00:00Z"),
+  when: datetime.parse("2024-02-29T12:00:00Z", datetime.as_datetime),
   due: datetime.date(2024, 3, 5),
   retry_in: datetime.duration({minutes: 15}),
 })

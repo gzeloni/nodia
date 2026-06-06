@@ -4,10 +4,12 @@
 //! Canonical source formatter for the Nodia AST.
 
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
+use crate::interpolation::{self, Chunk as InterpolationChunk};
 use crate::regex::{
     RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
     RegexQuantifierMode, RegexReference,
 };
+use crate::textcodec;
 use crate::value::Value;
 
 const INDENT: &str = "  ";
@@ -368,6 +370,7 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
             }
         }
         Value::String(value) => format_string_literal(value, false, indent, width),
+        Value::Bytes(value) => textcodec::quote_bytes_literal(value),
         Value::List(values) => {
             let exprs = values
                 .iter()
@@ -382,16 +385,19 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
-        Value::Date(value) => format!("datetime.parse_date({})", quote_string(&value.isoformat())),
+        Value::Date(value) => format!(
+            "datetime.parse({}, datetime.as_date)",
+            quote_string(&value.isoformat())
+        ),
         Value::DateTime(value) => {
             format!(
-                "datetime.parse_datetime({})",
+                "datetime.parse({}, datetime.as_datetime)",
                 quote_string(&value.isoformat())
             )
         }
         Value::Duration(value) => {
             format!(
-                "datetime.parse_duration({})",
+                "datetime.parse({}, datetime.as_duration)",
                 quote_string(&value.isoformat())
             )
         }
@@ -706,7 +712,50 @@ fn format_string_literal(value: &str, interpolate: bool, indent: usize, width: u
         return quoted;
     }
 
+    if interpolate {
+        return format_interpolated_string_literal(value, indent, width).unwrap_or(quoted);
+    }
+
     let chunks = split_string_literal(value, width.saturating_sub(4).max(1));
+    render_string_chunks(&chunks, false, indent)
+}
+
+fn format_interpolated_string_literal(value: &str, indent: usize, width: usize) -> Option<String> {
+    let max_chars = width.saturating_sub(4).max(1);
+    let mut pieces = Vec::new();
+    let mut literal = String::new();
+
+    for chunk in interpolation::parse_chunks(value).ok()? {
+        match chunk {
+            InterpolationChunk::Text(text) => literal.push_str(text),
+            InterpolationChunk::EscapedOpen => literal.push_str("{{"),
+            InterpolationChunk::EscapedClose => literal.push_str("}}"),
+            InterpolationChunk::Expr(expr) => {
+                flush_interpolated_literal(&mut pieces, &mut literal, max_chars);
+                pieces.push(format!("{{{expr}}}"));
+            }
+        }
+    }
+
+    flush_interpolated_literal(&mut pieces, &mut literal, max_chars);
+
+    if pieces.is_empty() {
+        pieces.push(String::new());
+    }
+
+    Some(render_string_chunks(&pieces, true, indent))
+}
+
+fn flush_interpolated_literal(pieces: &mut Vec<String>, literal: &mut String, max_chars: usize) {
+    if literal.is_empty() {
+        return;
+    }
+
+    pieces.extend(split_string_literal(literal, max_chars));
+    literal.clear();
+}
+
+fn render_string_chunks(chunks: &[String], interpolate: bool, indent: usize) -> String {
     let mut out = String::new();
     for (index, chunk) in chunks.iter().enumerate() {
         if index > 0 {
@@ -825,6 +874,7 @@ fn current_line_width(indent: usize) -> usize {
 mod tests {
     use super::*;
     use crate::{
+        check_source,
         lexer::Lexer,
         parser::Parser,
         temporal::{DateTimeValue, DateValue, DurationValue},
@@ -905,15 +955,38 @@ emit hit.named.val"#;
 
         assert_eq!(
             format_expr_for_line(&date, 0, 0),
-            r#"datetime.parse_date("2024-02-29")"#
+            r#"datetime.parse("2024-02-29", datetime.as_date)"#
         );
         assert_eq!(
             format_expr_for_line(&datetime, 0, 0),
-            r#"datetime.parse_datetime("2024-02-29T12:00:00Z")"#
+            r#"datetime.parse("2024-02-29T12:00:00Z", datetime.as_datetime)"#
         );
         assert_eq!(
             format_expr_for_line(&duration, 0, 0),
-            r#"datetime.parse_duration("PT15M")"#
+            r#"datetime.parse("PT15M", datetime.as_duration)"#
         );
+    }
+
+    #[test]
+    fn formats_bytes_literals_canonically() {
+        let source = "emit b\"a\\xff\\0b\"";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("emit b\"a\\xff\\0b\""));
+    }
+
+    #[test]
+    fn keeps_long_interpolated_strings_valid_after_formatting() {
+        let source = r#"val user = {profile: {display_name: "Ana"}}
+emit "prefix {{literal}} value={user.profile.display_name} suffix suffix suffix suffix suffix""#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("\"prefix {{literal}} value=\" +"));
+        assert!(formatted.contains("\"{user.profile.display_name}\""));
+        check_source(&formatted).unwrap();
     }
 }

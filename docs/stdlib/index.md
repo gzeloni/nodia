@@ -47,14 +47,11 @@ Available stdlib namespaces:
 * [Date & Time](datetime.md) — dates, datetimes, durations, parsing,
   formatting, epoch conversion, arithmetic.
 * [Data](data.md) — `use json`, `use csv`.
-* [Format](format.md) — `format.format`, `format.pad_left`,
-  `format.pad_right`, `format.fixed`.
+* [Format](format.md) — `format.format`, `format.pad`, `format.fixed`.
 * [System](system.md) — `system.args`, `system.env`, `system.exit`.
 * [Conversion](conversion.md) — `conversion.string`, `conversion.bool`,
   `conversion.int`, `conversion.float`.
-* [Regex](regex.md) — `re.test`, `re.full_match`, `re.find`,
-  `re.find_all`, `re.replace`, `re.replace_all`, `re.split`,
-  `re.split_regex`.
+* [Regex](regex.md) — `re.test`, `re.find`, `re.replace`, `re.split`.
 * [IO](io.md) — file, path, directory, glob, and stream builtins.
 
 ## Arity Checking

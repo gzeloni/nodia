@@ -294,10 +294,8 @@ impl<'a> State<'a> {
             return Ok(());
         };
         match target.as_str() {
-            "replace" | "replace_all" => self.check_replace_call_diagnostics(args),
-            "test" | "full_match" | "find" | "find_all" => {
-                self.check_regex_match_pattern_diagnostics(args)
-            }
+            "replace" => self.check_replace_call_diagnostics(args),
+            "test" | "find" => self.check_regex_match_pattern_diagnostics(args),
             _ => Ok(()),
         }
     }
@@ -332,7 +330,7 @@ impl<'a> State<'a> {
     }
 
     fn check_regex_match_pattern_diagnostics(&self, args: &[Expr]) -> NodiaResult<()> {
-        if args.len() != 2 {
+        if args.len() < 2 {
             return Ok(());
         }
 

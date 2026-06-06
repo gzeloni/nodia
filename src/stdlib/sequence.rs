@@ -15,13 +15,17 @@ pub(super) fn slice(args: &[Value]) -> NodiaResult<Value> {
             let (start, end) = normalize_bounds(values.len(), start, end);
             Ok(Value::List(values[start..end].to_vec()))
         }
+        Value::Bytes(value) => {
+            let (start, end) = normalize_bounds(value.len(), start, end);
+            Ok(Value::Bytes(value[start..end].to_vec()))
+        }
         Value::String(value) => {
             let chars = value.chars().collect::<Vec<_>>();
             let (start, end) = normalize_bounds(chars.len(), start, end);
             Ok(Value::String(chars[start..end].iter().collect()))
         }
         other => Err(NodiaError::runtime(format!(
-            "slice() expects list or string, got {}",
+            "slice() expects list, bytes or string, got {}",
             other.type_name()
         ))),
     }
@@ -35,9 +39,14 @@ pub(super) fn reverse(args: &[Value]) -> NodiaResult<Value> {
             values.reverse();
             Ok(Value::List(values))
         }
+        Value::Bytes(value) => {
+            let mut value = value.clone();
+            value.reverse();
+            Ok(Value::Bytes(value))
+        }
         Value::String(value) => Ok(Value::String(value.chars().rev().collect())),
         other => Err(NodiaError::runtime(format!(
-            "reverse() expects list or string, got {}",
+            "reverse() expects list, bytes or string, got {}",
             other.type_name()
         ))),
     }
@@ -98,6 +107,7 @@ pub(super) fn compare_values(left: &Value, right: &Value) -> Ordering {
         (Value::Int(a), Value::Float(b)) => (*a as f64).partial_cmp(b).unwrap_or(Ordering::Equal),
         (Value::Float(a), Value::Int(b)) => a.partial_cmp(&(*b as f64)).unwrap_or(Ordering::Equal),
         (Value::String(a), Value::String(b)) => a.cmp(b),
+        (Value::Bytes(a), Value::Bytes(b)) => a.cmp(b),
         (Value::Bool(a), Value::Bool(b)) => a.cmp(b),
         (Value::Date(a), Value::Date(b)) => a.cmp(b),
         (Value::DateTime(a), Value::DateTime(b)) => a.cmp(b),
@@ -114,15 +124,16 @@ fn value_rank(value: &Value) -> u8 {
         Value::Bool(_) => 1,
         Value::Int(_) | Value::Float(_) => 2,
         Value::String(_) => 3,
-        Value::List(_) => 4,
-        Value::Map(_) => 5,
-        Value::Date(_) => 6,
-        Value::DateTime(_) => 7,
-        Value::Duration(_) => 8,
-        Value::Regex(_) => 9,
-        Value::Stream(_) => 10,
-        Value::UseBinding(_, _) => 11,
-        Value::BuiltinFunction(_) => 12,
-        Value::Function(_) => 13,
+        Value::Bytes(_) => 4,
+        Value::List(_) => 5,
+        Value::Map(_) => 6,
+        Value::Date(_) => 7,
+        Value::DateTime(_) => 8,
+        Value::Duration(_) => 9,
+        Value::Regex(_) => 10,
+        Value::Stream(_) => 11,
+        Value::UseBinding(_, _) => 12,
+        Value::BuiltinFunction(_) => 13,
+        Value::Function(_) => 14,
     }
 }

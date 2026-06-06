@@ -58,7 +58,7 @@ pub enum Stmt {
         then_branch: Vec<Stmt>,
         else_branch: Vec<Stmt>,
     },
-    /// Iteration over list, map, or string values.
+    /// Iteration over list, map, string, or bytes values.
     For {
         binding: ForBinding,
         iterable: Expr,

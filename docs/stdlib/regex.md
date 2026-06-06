@@ -2,19 +2,18 @@
 
 Import this namespace with `use re`.
 
-`test`, `full_match`, `find`, and `find_all` accept a **pattern** that can be
+`test` and `find` accept a **pattern** that can be
 either a regex value (produced by `regex { ... }`) or a plain string. A plain
 string there is compiled as raw regex text.
 
-`replace`, `replace_all`, `split`, and `split_regex` share the text-builtin
-surface: pass a regex value for regex behavior, or a plain string for literal
-text behavior.
+`replace` and `split` share the text-builtin surface: pass a regex value for
+regex behavior, or a plain string for literal text behavior.
 
 Regex execution works over the exact text you pass in. If a pipeline needs
 canonical or compatibility equivalence across Unicode forms, normalize first
-with `text.nfc(...)` or `text.nfkc(...)`.
+with `text.normalize(..., text.nfc)` or `text.normalize(..., text.nfkc)`.
 Regex remains text-only even after the byte APIs in `0.7.x`: if your input
-comes from `io.read_bytes(...)` or `system.exec(...)`, decode and sanitize it
+comes from `io.read(..., io.bytes)` or `system.exec(...)`, decode and sanitize it
 explicitly before matching.
 
 For DSL syntax, see [Regex DSL](../language/regex.md).
@@ -37,20 +36,20 @@ emit re.test("go to https://example.com now", regex {
 true
 ```
 
-## `full_match(text, pattern)`
+## `test(text, pattern, re.full)`
 
 Returns `true` only when the **entire** text matches:
 
 ```bash
 ./target/release/nodia eval '
 use re
-emit re.full_match("abc-42", regex {
+emit re.test("abc-42", regex {
   start
   one_or_more letter
   "-"
   one_or_more digit
   end
-})
+}, re.full)
 '
 ```
 
@@ -58,7 +57,7 @@ emit re.full_match("abc-42", regex {
 true
 ```
 
-A pattern that already contains `start` / `end` and a `full_match` call are
+A pattern that already contains `start` / `end` and a `re.full` match mode are
 redundant; pick one and stick with it for clarity.
 
 ## `find(text, pattern)`
@@ -116,13 +115,12 @@ example.com
 
 `start` and `end` are **Unicode scalar value offsets** (not byte offsets), so
 they line up with `collections.len(string)` and `collections.slice(...)`. Use
-`text.scalar_slice(...)` when you want to slice on the same unit, or
-`text.byte_offset(...)` / `text.scalar_offset(...)` when you need to cross the
-byte/scalar boundary. See
+`text.slice(..., text.scalar, ...)` when you want to slice on the same unit,
+or `text.offset(...)` when you need to cross the byte/scalar boundary. See
 [Text Semantics](../reference/text-semantics.md) for the official `0.7.4`
 model.
 
-## `find_all(text, pattern)`
+## `find(text, pattern, re.all)`
 
 Returns a list of all non-overlapping match maps:
 
@@ -130,14 +128,14 @@ Returns a list of all non-overlapping match maps:
 ./target/release/nodia eval '
 use re
 use collections as col
-emit col.len(re.find_all("http://a https://b", regex {
+emit col.len(re.find("http://a https://b", regex {
   either {
     branch { "http" }
     branch { "https" }
   }
   "://"
   one_or_more letter
-}))
+}, re.all))
 '
 ```
 
@@ -220,10 +218,6 @@ emit re.replace("abc", regex { end }, ">")
 abc>
 ```
 
-## `replace_all(text, pattern, replacement)`
-
-Explicit alias of `replace(...)`. Same behavior; the name documents intent.
-
 ## `split(text, pattern)`
 
 Splits on every match. The pattern can be a literal string or a regex:
@@ -254,20 +248,15 @@ emit re.split("xay", regex { zero_or_more "a" })
 ["", "x", "y", ""]
 ```
 
-## `split_regex(text, pattern)`
-
-Explicit alias of `split(...)` when you want the regex intent to be obvious
-at the call site.
-
 ## String Patterns In Matching Builtins
 
-`test`, `full_match`, `find`, and `find_all` accept plain string patterns,
+`test` and `find` accept plain string patterns,
 which are treated as raw regex text:
 
 ```bash
 ./target/release/nodia eval '
 use re
-emit re.full_match("abc-42", "^[a-z]+-\\d+$")
+emit re.test("abc-42", "^[a-z]+-\\d+$", re.full)
 '
 ```
 
@@ -275,8 +264,8 @@ emit re.full_match("abc-42", "^[a-z]+-\\d+$")
 true
 ```
 
-`replace`, `replace_all`, `split`, and `split_regex` do **not** compile plain
-strings as raw regex text. Pass a regex value when you want regex mode there.
+`replace` and `split` do **not** compile plain strings as raw regex text. Pass
+a regex value when you want regex mode there.
 
 The Nodia regex DSL is recommended for new code because it stays readable as
 patterns grow.

@@ -112,36 +112,39 @@ pub fn format(args: &[Value]) -> NodiaResult<Value> {
     Ok(Value::String(out))
 }
 
-pub fn pad_left(args: &[Value]) -> NodiaResult<Value> {
-    pad(args, "pad_left", false)
+#[derive(Clone, Copy)]
+enum PadAlign {
+    Left,
+    Right,
 }
 
-pub fn pad_right(args: &[Value]) -> NodiaResult<Value> {
-    pad(args, "pad_right", true)
+pub fn pad(args: &[Value]) -> NodiaResult<Value> {
+    if args.len() != 3 && args.len() != 4 {
+        return Err(NodiaError::runtime(format!(
+            "pad() expects 3 or 4 argument(s), got {}",
+            args.len()
+        )));
+    }
+    let text = args[0].to_string();
+    let width = expect_non_negative_usize(&args[1], "pad", "second")?;
+    let align = expect_pad_align(&args[2], "pad", "third")?;
+    let pad = if let Some(value) = args.get(3) {
+        expect_string(value, "pad", "fourth")?
+    } else {
+        " ".to_string()
+    };
+    Ok(Value::String(apply_width(
+        &text,
+        Some(width),
+        matches!(align, PadAlign::Right),
+        &pad,
+    )?))
 }
 
 pub fn fixed(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(&args, 2, "fixed")?;
     let digits = expect_non_negative_usize(&args[1], "fixed", "second")?;
     Ok(Value::String(format_float(to_float(&args[0])?, digits)))
-}
-
-fn pad(args: &[Value], name: &str, right: bool) -> NodiaResult<Value> {
-    if args.len() != 2 && args.len() != 3 {
-        return Err(NodiaError::runtime(format!(
-            "{name}() expects 2 or 3 argument(s), got {}",
-            args.len()
-        )));
-    }
-    let text = args[0].to_string();
-    let width = expect_non_negative_usize(&args[1], name, "second")?;
-    let pad = if let Some(value) = args.get(2) {
-        expect_string(value, name, "third")?
-    } else {
-        " ".to_string()
-    };
-    let padded = apply_width(&text, Some(width), right, &pad)?;
-    Ok(Value::String(padded))
 }
 
 fn format_string(value: &Value, precision: Option<usize>) -> String {
@@ -203,6 +206,22 @@ fn expect_non_negative_usize(value: &Value, name: &str, position: &str) -> Nodia
         ))),
         other => Err(NodiaError::runtime(format!(
             "{name}() expects int as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn expect_pad_align(value: &Value, name: &str, position: &str) -> NodiaResult<PadAlign> {
+    match value {
+        Value::String(value) => match value.as_str() {
+            "left" => Ok(PadAlign::Left),
+            "right" => Ok(PadAlign::Right),
+            other => Err(NodiaError::runtime(format!(
+                "{name}() expects left or right as {position} argument, got '{other}'"
+            ))),
+        },
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects alignment as {position} argument, got {}",
             other.type_name()
         ))),
     }

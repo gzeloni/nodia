@@ -71,6 +71,16 @@ impl Lexer {
                     line,
                     column,
                 )),
+                'b' if self.peek_next() == Some('"') => tokens.push(Token::new(
+                    TokenKind::Bytes(self.byte_string(line, column, '"')?),
+                    line,
+                    column,
+                )),
+                'b' if self.peek_next() == Some('\'') => tokens.push(Token::new(
+                    TokenKind::Bytes(self.byte_string(line, column, '\'')?),
+                    line,
+                    column,
+                )),
                 '"' if self.peek_next() == Some('"') && self.peek_n(2) == Some('"') => {
                     tokens.push(Token::new(
                         TokenKind::RawString(self.triple_string(line, column)?),
@@ -269,6 +279,51 @@ impl Lexer {
         Err(NodiaError::new("unterminated raw string", line, column))
     }
 
+    fn byte_string(&mut self, line: usize, column: usize, quote: char) -> NodiaResult<Vec<u8>> {
+        self.advance();
+        self.advance();
+        let mut out = Vec::new();
+        while let Some(ch) = self.peek() {
+            if ch == quote {
+                self.advance();
+                return Ok(out);
+            }
+            if ch == '\\' {
+                self.advance();
+                let escaped = self
+                    .advance()
+                    .ok_or_else(|| NodiaError::new("unterminated byte escape", line, column))?;
+                match escaped {
+                    'n' => out.push(b'\n'),
+                    'r' => out.push(b'\r'),
+                    't' => out.push(b'\t'),
+                    '0' => out.push(0),
+                    '"' => out.push(b'"'),
+                    '\'' => out.push(b'\''),
+                    '\\' => out.push(b'\\'),
+                    'x' => {
+                        let high = self
+                            .advance()
+                            .ok_or_else(|| NodiaError::new("invalid byte escape", line, column))?;
+                        let low = self
+                            .advance()
+                            .ok_or_else(|| NodiaError::new("invalid byte escape", line, column))?;
+                        let high = hex_digit(high)
+                            .ok_or_else(|| NodiaError::new("invalid byte escape", line, column))?;
+                        let low = hex_digit(low)
+                            .ok_or_else(|| NodiaError::new("invalid byte escape", line, column))?;
+                        out.push((high << 4) | low);
+                    }
+                    other => push_utf8_byte(&mut out, other),
+                }
+            } else {
+                self.advance();
+                push_utf8_byte(&mut out, ch);
+            }
+        }
+        Err(NodiaError::new("unterminated bytes literal", line, column))
+    }
+
     fn triple_string(&mut self, line: usize, column: usize) -> NodiaResult<String> {
         self.advance();
         self.advance();
@@ -357,6 +412,20 @@ fn looks_like_raw_json(value: &str) -> bool {
     trimmed.starts_with('{') || trimmed.starts_with('[')
 }
 
+fn push_utf8_byte(out: &mut Vec<u8>, ch: char) {
+    let mut encoded = [0; 4];
+    out.extend_from_slice(ch.encode_utf8(&mut encoded).as_bytes());
+}
+
+fn hex_digit(ch: char) -> Option<u8> {
+    match ch {
+        '0'..='9' => Some(ch as u8 - b'0'),
+        'a'..='f' => Some(ch as u8 - b'a' + 10),
+        'A'..='F' => Some(ch as u8 - b'A' + 10),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -387,6 +456,16 @@ mod tests {
         assert!(tokens
             .iter()
             .any(|token| matches!(token.kind, TokenKind::Float(value) if value == 1e10)));
+    }
+
+    #[test]
+    fn tokenizes_bytes_literals_and_hex_escapes() {
+        let tokens = Lexer::new(r#"emit b"aé\xff\0""#).tokenize().unwrap();
+
+        assert!(tokens.iter().any(|token| matches!(
+            token.kind,
+            TokenKind::Bytes(ref value) if value == &[97, 195, 169, 255, 0]
+        )));
     }
 
     #[test]

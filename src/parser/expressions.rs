@@ -212,6 +212,7 @@ impl Parser {
                 value,
                 interpolate: false,
             }),
+            TokenKind::Bytes(value) => Ok(Expr::Literal(Value::Bytes(value))),
             TokenKind::Lambda => self.lambda_expression(),
             TokenKind::Regex => self.regex_literal(),
             TokenKind::Identifier(name) => Ok(Expr::Identifier(name)),

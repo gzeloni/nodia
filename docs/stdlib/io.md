@@ -53,16 +53,19 @@ Import this namespace with `use io`.
 | `read(path)`           | read a whole file into a string                         |
 | `read(stream)`         | read the rest of a readable stream                      |
 | `read(stream, size)`   | read a UTF-8-safe chunk using `size` as a byte budget   |
-| `read_bytes(path)`     | read a whole file into `list<int>` bytes                |
-| `read_bytes(stream)`   | read the rest of a readable stream into bytes           |
-| `read_bytes(stream, size)` | read up to `size` raw bytes without UTF-8 decoding |
+| `read(path, io.bytes)` | read a whole file into `bytes`                          |
+| `read(stream, io.bytes)` | read the rest of a readable stream into bytes         |
+| `read(stream, io.bytes, size)` | read up to `size` raw bytes without UTF-8 decoding |
 | `readln(stream)`       | read one line; `null` at EOF                            |
 
 `readln(stream)` strips a trailing `\n` or `\r\n` and still returns the final
 line when the file does not end with a newline.
 All text readers are UTF-8 strict: invalid bytes fail with `E3000`.
-When you need undecoded input, use `read_bytes(...)` and choose
-`text.decode_utf8(...)` or `text.decode_utf8_lossy(...)` explicitly.
+When you need undecoded input, use `read(..., io.bytes)` and choose
+`text.decode(..., text.utf8)` or `text.decode(..., text.utf8, text.lossy)`
+explicitly.
+The resulting value is `bytes`, so direct indexing returns `int` bytes and
+`collections.slice(...)` returns another `bytes` value.
 
 ## Writing
 
@@ -71,17 +74,21 @@ All file writes (where `path` or `mode = "write"/"append"` is involved) require
 
 | Builtin                      | Behavior                                            |
 | ---------------------------- | --------------------------------------------------- |
-| `write(path, text)`          | write a whole file, replacing it                    |
-| `write(stream, text)`        | write text to a stream (no newline added)           |
+| `write(path, value)`         | write text or raw bytes, replacing existing content |
+| `write(stream, value)`       | write text or raw bytes to a stream                 |
 | `writeln(stream, text)`      | write text and a newline to a stream                |
-| `append(path, text)`         | append text to a file                               |
-| `write_bytes(path, bytes)`   | write raw bytes, replacing existing content         |
-| `write_bytes(stream, bytes)` | write raw bytes to a writable file stream or stderr |
-| `append_bytes(path, bytes)`  | append raw bytes to a file                          |
+| `append(path, value)`        | append text or raw bytes to a file                  |
 
-`write_bytes(io.stdout, ...)` is rejected on purpose. `io.stdout` is still the
+`write(io.stdout, b"...")` is rejected on purpose. `io.stdout` is still the
 program text-output channel used by `emit`, so raw bytes must go to files or
 `io.stderr`.
+
+```nodia
+use io
+
+io.write("payload.bin", b"\0\x01\x02\xff")
+io.append("payload.bin", b"\n")
+```
 
 ## Examples
 
@@ -149,7 +156,7 @@ io.close(src)
 
 `read(stream, size)` never returns half of a UTF-8 scalar value. If the chunk
 boundary would split one, the runtime reads slightly further to return valid
-text. Use `byte_len(text)` when you need to compare chunk size with UTF-8
+text. Use `text.len(text, text.byte)` when you need to compare chunk size with UTF-8
 storage length. `read(stream, 0)` is a no-op that returns `""`.
 
 ### Raw Bytes With Explicit Decode
@@ -158,13 +165,13 @@ storage length. `read(stream, 0)` is a no-op that returns `""`.
 use io
 use text
 
-val raw = io.read_bytes("payload.bin")
+val raw = io.read("payload.bin", io.bytes)
 val cleaned = text.drop_nul(
   text.strip_bom(
-    text.decode_utf8_lossy(raw),
+    text.decode(raw, text.utf8, text.lossy),
   ),
 )
-emit text.normalize_lf(cleaned)
+emit text.normalize(cleaned, text.lf)
 ```
 
 ### Stream-Style Stdout

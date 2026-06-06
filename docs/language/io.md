@@ -124,8 +124,9 @@ emit text.upper(content)
 
 All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
 `E3000` IO error; it is never silently replaced with lossy text.
-If a pipeline must keep the raw bytes first, use `read_bytes(...)` and decode
-later with `text.decode_utf8(...)` or `text.decode_utf8_lossy(...)`.
+If a pipeline must keep the raw bytes first, use `read(..., io.bytes)` and decode
+later with `text.decode(..., text.utf8)` or
+`text.decode(..., text.utf8, text.lossy)`.
 
 ### `read(stream)`
 
@@ -155,7 +156,7 @@ io.close(src)
 
 The returned text is always valid UTF-8. If the requested byte budget lands in
 the middle of a multi-byte scalar value, the runtime reads a little further to
-finish that scalar instead of splitting it. Use `byte_len(text)` when you need
+finish that scalar instead of splitting it. Use `text.len(text, text.byte)` when you need
 to compare chunk sizes with UTF-8 storage length. `read(stream, 0)` returns
 `""` without advancing the stream or forcing EOF.
 
@@ -180,21 +181,22 @@ io.close(src)
 Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
 `E3000` instead of decoding lossily.
 
-### `read_bytes(path)` / `read_bytes(stream)` / `read_bytes(stream, size)`
+### `read(path, io.bytes)` / `read(stream, io.bytes)` / `read(stream, io.bytes, size)`
 
-Raw byte readers return `list<int>` where each element is one byte in
-`0..255`:
+Raw byte readers return `bytes`:
 
 ```nodia
 use io
 use text
 
-val raw = io.read_bytes("input.bin")
-emit text.decode_utf8_lossy(raw)
+val raw = io.read("input.bin", io.bytes)
+emit text.decode(raw, text.utf8, text.lossy)
 ```
 
 These APIs do not decode, normalize, or sanitize anything on their own.
-They exist so the decode choice stays explicit in the script.
+They exist so the decode choice stays explicit in the script. `raw[index]`
+returns one `int` byte, and `collections.slice(raw, start, end)` returns
+another `bytes` value.
 
 ## Writing
 
@@ -263,18 +265,18 @@ io.append("app.log", "started\n")
 
 Requires `--allow-write`.
 
-### `write_bytes(path, bytes)` / `write_bytes(stream, bytes)` / `append_bytes(path, bytes)`
+### `write(path, bytes)` / `write(stream, bytes)` / `append(path, bytes)`
 
-These variants write raw bytes from a `list<int>`:
+These variants write raw bytes from a `bytes` value:
 
 ```nodia
 use io
 
-io.write_bytes("payload.bin", [0, 1, 2, 255])
-io.append_bytes("payload.bin", [10])
+io.write("payload.bin", b"\0\x01\x02\xff")
+io.append("payload.bin", b"\n")
 ```
 
-`write_bytes(io.stdout, ...)` is intentionally rejected because `stdout`
+`write(io.stdout, b"...")` is intentionally rejected because `stdout`
 remains the structured text-output channel for `emit` and `io.write(...)`.
 
 ## Write Permission

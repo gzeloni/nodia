@@ -9,12 +9,13 @@ Import this namespace with `use collections`.
 
 ### `len(value)`
 
-Length of a string, list, or map.
+Length of a string, bytes, list, or map.
 
 ```bash
 ./target/release/nodia eval '
 use collections
 emit collections.len("abc")
+emit collections.len(b"a\xff")
 emit collections.len([1, 2, 3])
 emit collections.len({name: "Ana"})
 '
@@ -22,13 +23,14 @@ emit collections.len({name: "Ana"})
 
 ```text
 3
+2
 3
 1
 ```
 
 `collections.len` on a string is the official Unicode scalar value count in
-`0.7.4`. Use `text.byte_len(text)` when you need UTF-8 storage length, and
-`text.grapheme_len(text)` when you need grapheme-cluster count. See
+`0.7.4`. Use `text.len(text, text.byte)` when you need UTF-8 storage length,
+and `text.len(text, text.grapheme)` when you need grapheme-cluster count. See
 [Text Semantics](../reference/text-semantics.md) for the contract shared by
 `len`, `slice`, and regex offsets.
 
@@ -75,15 +77,15 @@ emit collections.entries({name: "Ana", role: "dev"})'
 
 ### `contains(map, key)`
 
-See [`contains`](text.md#tests) — works on strings, lists, and maps.
+See [`contains`](text.md#tests) — works on strings, bytes, lists, and maps.
 
 ### `get(value, key, default)`
 
 Safe lookup with fallback:
 
 * maps look up `key` after converting it to string;
-* lists and strings use `key` as an index;
-* negative indexes count from the end for lists and strings.
+* lists, bytes, and strings use `key` as an index;
+* negative indexes count from the end for lists, bytes, and strings.
 
 Direct string indexing with `text[index]` shares the same negative-index
 normalization. See [Text Semantics](../reference/text-semantics.md).
@@ -93,6 +95,7 @@ normalization. See [Text Semantics](../reference/text-semantics.md).
 use collections
 emit collections.get({name: "Ana"}, "name", "missing")
 emit collections.get({name: "Ana"}, "role", "missing")
+emit collections.get(b"a\xff", -1, null)
 emit collections.get(["a", "b"], 5, "missing")
 emit collections.get("nodia", -1, "?")
 '
@@ -101,6 +104,7 @@ emit collections.get("nodia", -1, "?")
 ```text
 Ana
 missing
+255
 missing
 a
 ```
@@ -157,15 +161,18 @@ b
 null
 ```
 
+## Sequence Helpers
+
 ### `slice(value, start, end)`
 
-Slices a list or string by index. Negative indexes count from the end:
+Slices a list, bytes, or string by index. Negative indexes count from the end:
 
 ```bash
 ./target/release/nodia eval '
 use collections
 emit collections.slice(["a", "b", "c", "d"], 1, 3)
 emit collections.slice(["a", "b", "c", "d"], -3, -1)
+emit collections.slice(b"a\xffb", 1, 3)
 emit collections.slice("nodia", 1, 4)
 '
 ```
@@ -173,30 +180,33 @@ emit collections.slice("nodia", 1, 4)
 ```text
 ["b", "c"]
 ["b", "c"]
+b"\xffb"
 odi
 ```
 
 `start` is inclusive, `end` is exclusive. Out-of-bounds bounds are clamped
 gracefully rather than raising. On strings, those bounds use the same Unicode
 scalar offsets as `len(string)` and regex match offsets. For strict explicit
-unit-aware slicing, use `text.scalar_slice(...)`, `text.byte_slice(...)`, or
-`text.grapheme_slice(...)`. See
+unit-aware slicing, use `text.slice(..., text.scalar, ...)`,
+`text.slice(..., text.byte, ...)`, or `text.slice(..., text.grapheme, ...)`. See
 [Text Semantics](../reference/text-semantics.md).
 
 ### `reverse(value)`
 
-Reverses a list or string:
+Reverses a list, bytes, or string:
 
 ```bash
 ./target/release/nodia eval '
 use collections
 emit collections.reverse([1, 2, 3])
+emit collections.reverse(b"a\xffb")
 emit collections.reverse("abc")
 '
 ```
 
 ```text
 [3, 2, 1]
+b"b\xffa"
 cba
 ```
 
@@ -220,7 +230,8 @@ emit collections.sort(["c", "a", "b"])
 
 For string lists, this order is based on the exact scalar sequence. If your
 pipeline needs normalization-aware order, compute an explicit key with
-`collections.sort_by(...)` and `text.nfc(...)` / `text.casefold(...)`.
+`collections.sort_by(...)`, `text.normalize(..., text.nfc)`, and
+`text.casefold(...)`.
 
 ### `unique(list)`
 

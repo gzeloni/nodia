@@ -72,6 +72,7 @@ pub enum TokenKind {
     Float(f64),
     String(String),
     RawString(String),
+    Bytes(Vec<u8>),
     Comment(String),
     Plus,
     Minus,
@@ -149,6 +150,7 @@ impl TokenKind {
             TokenKind::Float(_) => "Float",
             TokenKind::String(_) => "String",
             TokenKind::RawString(_) => "RawString",
+            TokenKind::Bytes(_) => "Bytes",
             TokenKind::Comment(_) => "Comment",
             TokenKind::Plus => "Plus",
             TokenKind::Minus => "Minus",
@@ -184,6 +186,7 @@ impl TokenKind {
             | TokenKind::String(value)
             | TokenKind::RawString(value)
             | TokenKind::Comment(value) => Some(value.clone()),
+            TokenKind::Bytes(value) => Some(format!("{value:?}")),
             TokenKind::Int(value) => Some(value.to_string()),
             TokenKind::Float(value) => Some(value.to_string()),
             _ => None,

@@ -12,10 +12,11 @@ fixed set of kinds.
 | `int`      | `42`, `-3`                                           |
 | `float`    | `3.14`, `0.0`, `1e10`                                |
 | `string`   | `"hello"`, `'hello'`, `r"hello"`, `"""triple"""`     |
+| `bytes`    | `b"hello"`, `b"\xff\0"`                              |
 | `list`     | `[1, 2, 3]`                                          |
 | `map`      | `{name: "Ana", role: "dev"}`                         |
 | `date`     | `datetime.date(2026, 5, 27)`                         |
-| `datetime` | `datetime.parse_datetime("2026-05-27T14:30:05Z")`    |
+| `datetime` | `datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime)` |
 | `duration` | `datetime.duration({hours: 2, minutes: 30})`         |
 | `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `io.open("f.txt", "read")` |
 | `function` | `func greet(name) { ... }`                           |
@@ -50,6 +51,23 @@ The trailing-dot form `10.` is **not** part of the language.
 
 See [Strings & Interpolation](strings.md).
 
+### Bytes
+
+`bytes` is the explicit raw-byte kind. Use it when a pipeline must delay or
+avoid UTF-8 decoding entirely:
+
+```nodia
+val raw = b"\xef\xbb\xbfhi\0"
+```
+
+Byte literals do not interpolate. They support the standard single-line
+escapes plus `\0` and `\xNN`. Non-ASCII characters inside a bytes literal are
+encoded as UTF-8 bytes.
+
+`bytes[index]` returns an `int` in `0..255`, and `collections.slice(bytes, ...)`
+returns another `bytes` value. Common producers are `text.encode(..., text.utf8)`,
+`io.read(..., io.bytes)`, and `system.exec(...).stdout`.
+
 ### Lists And Maps
 
 See [Lists & Maps](collections.md).
@@ -71,6 +89,7 @@ rules are:
 | `int`      | false if `0`          |
 | `float`    | false if `0.0`        |
 | `string`   | false if empty (`""`) |
+| `bytes`    | false if empty (`b""`) |
 | `list`     | false if empty (`[]`) |
 | `map`      | false if empty (`{}`) |
 | `date`     | always true           |
@@ -123,7 +142,7 @@ false
 false
 ```
 
-Lists and maps compare element-wise / key-wise. `date` compares by calendar
-day, `datetime` compares by instant, and `duration` compares by exact stored
-length. Functions, streams, regexes, and `use` references compare by identity
-in v0.7.
+Bytes compare by exact byte sequence. Lists and maps compare element-wise /
+key-wise. `date` compares by calendar day, `datetime` compares by instant, and
+`duration` compares by exact stored length. Functions, streams, regexes, and
+`use` references compare by identity in v0.7.

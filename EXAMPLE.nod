@@ -39,14 +39,16 @@ func size_bucket(n) {
   return "big"
 }
 
-section("Text And Unicode")
+section("Text, Bytes, And Unicode")
 val messy = "  ana   bruno\tcarla  "
 val unicode = "aéb"
+val encoded = text.encode(unicode, text.utf8)
 val composed = "é"
 val decomposed = "é"
 val circled = "①"
 val street = "Straße"
-val noisy = [239, 187, 191, 97, 13, 10, 98, 0, 255]
+val noisy = b"\xef\xbb\xbfa\r\nb\0\xff"
+var packet = b"a\0\xffb"
 emit text.trim(messy)
 emit text.words(messy)
 emit text.replace(
@@ -56,20 +58,30 @@ emit text.replace(
   },
   "#",
 )
-emit "scalars={col.len(unicode)} " +
-  "bytes={text.byte_len(unicode)}"
-emit "scalar->byte(2)={text.byte_offset(unicode, 2)}"
-emit "byte->scalar(3)={text.scalar_offset(unicode, 3)}"
-emit "graphemes={text.grapheme_len(decomposed + \"x\")}"
-emit "scalar-slice={text.scalar_slice(decomposed + \"x\", 0, 2)}"
-emit "grapheme-slice={text.grapheme_slice(decomposed + \"x\", 0, 1)}"
-emit "byte-slice={text.byte_slice(unicode, 1, 3)}"
+emit "scalars={text.len(unicode, text.scalar)} " + "bytes={text.len(unicode, text.byte)}"
+emit 'scalar->byte(2)={text.offset(unicode, text.scalar, text.byte, 2)}'
+emit 'byte->scalar(3)={text.offset(unicode, text.byte, text.scalar, 3)}'
+emit 'graphemes={text.len(decomposed + "x", text.grapheme)}'
+emit 'scalar-slice={text.slice(decomposed + "x", text.scalar, 0, 2)}'
+emit 'grapheme-slice={text.slice(decomposed + "x", text.grapheme, 0, 1)}'
+emit "byte-slice={text.slice(unicode, text.byte, 1, 3)}"
 emit "raw-eq={composed == decomposed}"
-emit "nfc-eq={text.nfc(composed) == text.nfc(decomposed)}"
-emit "nfkc(①)={text.nfkc(circled)}"
+emit 'nfc-eq={text.normalize(composed, text.nfc) == text.normalize(decomposed, text.nfc)}'
+emit "nfkc(①)={text.normalize(circled, text.nfkc)}"
 emit "casefold={text.casefold(street)}"
-emit "encode/decode={text.decode_utf8(text.encode_utf8(unicode))}"
-emit text.normalize_lf(text.drop_nul(text.strip_bom(text.decode_utf8_lossy(noisy))))
+emit encoded
+emit "encoded-slice={col.slice(encoded, 1, 3)}"
+packet[1] = 120
+emit packet
+emit "encode/decode={text.decode(encoded, text.utf8)}"
+emit text.normalize(
+  text.drop_nul(
+    text.strip_bom(
+      text.decode(noisy, text.utf8, text.lossy),
+    ),
+  ),
+  text.lf,
+)
 section("Collections And Numbers")
 val values = [3, 1, 4, 1, 5, 9]
 emit col.sort(values)
@@ -124,12 +136,13 @@ emit hit.named.host
 emit col.slice(sample, 0, hit.start)
 section("JSON And CSV")
 val doc = json.read(
-  text.encode_utf8(
-    "{{\"name\":\"Ana\",\"active\":true,\"scores\":[7,8,9]}}",
+  text.encode(
+    r'{"name":"Ana","active":true,"scores":[7,8,9]}',
+    text.utf8,
   ),
 )
 val rows = csv.read(
-  text.encode_utf8("name,age\nAna,30\nBia,25"),
+  text.encode("name,age\nAna,30\nBia,25", text.utf8),
   {
     header: true,
     types: true,
@@ -140,8 +153,11 @@ emit json.write(doc, 2)
 emit rows[1].age + 5
 emit csv.write(rows)
 section("Date And Time")
-val base = datetime.parse_datetime("2024-01-31T23:00:00Z")
-val next = datetime.add_duration(
+val base = datetime.parse(
+  "2024-01-31T23:00:00Z",
+  datetime.as_datetime,
+)
+val next = datetime.add(
   base,
   datetime.duration(
     {
@@ -151,7 +167,11 @@ val next = datetime.add_duration(
   ),
 )
 emit datetime.isoformat(
-  datetime.add_months(datetime.date(2024, 1, 31), 1),
+  datetime.add(
+    datetime.date(2024, 1, 31),
+    1,
+    datetime.months,
+  ),
 )
 emit datetime.isoformat(next)
 emit datetime.strftime(next, "%F %T %:z")
@@ -183,8 +203,8 @@ if col.get(input, "run_process", false) {
     "/bin/sh",
     ["-c", "printf out; printf err 1>&2; exit 7"],
   )
-  emit text.decode_utf8(result.stdout)
-  emit text.decode_utf8(result.stderr)
+  emit text.decode(result.stdout, text.utf8)
+  emit text.decode(result.stderr, text.utf8)
   emit result.status
 }
 

@@ -140,7 +140,7 @@ val pat = regex(case_insensitive) {
 
 val text = "see http://a.example or https://b.example for details"
 
-for hit in re.find_all(text, pat) {
+for hit in re.find(text, pat, re.all) {
   emit "{hit.named.scheme} -> {hit.named.host}"
 }
 '
@@ -184,9 +184,9 @@ emit text.split("/usr/local/bin", "/")'
 use json
 use text
 
-val doc = json.read(text.encode_utf8("""
+val doc = json.read(text.encode("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-"""))
+""", text.utf8))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -206,7 +206,7 @@ Ana
 use csv
 use text
 
-val rows = csv.read(text.encode_utf8("name,role\nAna,dev\n\"Bia, Jr\",ops"), true)
+val rows = csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true)
 emit rows[0].name
 emit rows[1]
 '
@@ -291,10 +291,10 @@ for section in meta.sections {
 ./target/release/nodia eval '
 use datetime
 
-val base = datetime.parse_datetime("2024-01-31T23:00:00Z")
-val next = datetime.add_duration(base, datetime.duration({hours: 2, minutes: 30}))
+val base = datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime)
+val next = datetime.add(base, datetime.duration({hours: 2, minutes: 30}))
 
-emit datetime.isoformat(datetime.add_months(datetime.date(2024, 1, 31), 1))
+emit datetime.isoformat(datetime.add(datetime.date(2024, 1, 31), 1, datetime.months))
 emit datetime.isoformat(next)
 emit datetime.strftime(next, "%F %T %:z")
 '
@@ -322,8 +322,8 @@ val date = regex {
   end
 }
 
-emit re.full_match("2026-05-26", date)
-emit re.full_match("2026/05/26", date)
+emit re.test("2026-05-26", date, re.full)
+emit re.test("2026/05/26", date, re.full)
 '
 ```
 
@@ -468,8 +468,8 @@ val result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit text.decode_utf8(result.stdout)
-emit text.decode_utf8(result.stderr)
+emit text.decode(result.stdout, text.utf8)
+emit text.decode(result.stderr, text.utf8)
 emit result.status
 ' --allow-process
 ```
@@ -609,11 +609,11 @@ val composed = "é"
 val decomposed = "é"
 
 func key(value) {
-  return text.casefold(text.nfc(value))
+  return text.casefold(text.normalize(value, text.nfc))
 }
 
 emit composed == decomposed
-emit text.nfc(composed) == text.nfc(decomposed)
+emit text.normalize(composed, text.nfc) == text.normalize(decomposed, text.nfc)
 emit text.casefold("Straße") == text.casefold("STRASSE")
 emit collections.sort(["Z", "é", "é"])
 emit collections.sort_by(key, ["Z", "é", "é"])
@@ -635,12 +635,12 @@ true
 use text
 use collections
 
-val text = "éx"
-emit collections.len(text)
-emit text.grapheme_len(text)
-emit text.scalar_slice(text, 0, 2)
-emit text.grapheme_slice(text, 0, 1)
-emit text.byte_slice("aéb", 1, 3)
+val sample = "éx"
+emit collections.len(sample)
+emit text.len(sample, text.grapheme)
+emit text.slice(sample, text.scalar, 0, 2)
+emit text.slice(sample, text.grapheme, 0, 1)
+emit text.slice("aéb", text.byte, 1, 3)
 '
 ```
 
@@ -658,9 +658,9 @@ é
 ./target/release/nodia eval '
 use text
 
-val raw = [239, 187, 191, 97, 13, 10, 98, 0, 255]
-val decoded = text.decode_utf8_lossy(raw)
-emit text.normalize_lf(text.drop_nul(text.strip_bom(decoded)))
+val raw = b"\xef\xbb\xbfa\r\nb\0\xff"
+val decoded = text.decode(raw, text.utf8, text.lossy)
+emit text.normalize(text.drop_nul(text.strip_bom(decoded)), text.lf)
 '
 ```
 
@@ -676,8 +676,8 @@ b�
 use format
 
 emit format.format("[%2s][%.1s]", ["é", "éx"])
-emit format.pad_left("é", 2, ".")
-emit format.pad_right("é", 2, ".")
+emit format.pad("é", 2, format.left, ".")
+emit format.pad("é", 2, format.right, ".")
 '
 ```
 

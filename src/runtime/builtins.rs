@@ -38,7 +38,6 @@ impl Runtime {
                 Value::Bool(self.eof_stream(self.expect_stream(&args[0], "eof", "first")?)?)
             }
             "read" => self.read_builtin(args)?,
-            "read_bytes" => self.read_bytes_builtin(args)?,
             "readln" => {
                 self.expect_arity(args, 1, "readln")?;
                 match self.read_line_stream(self.expect_stream(&args[0], "readln", "first")?)? {
@@ -47,19 +46,18 @@ impl Runtime {
                 }
             }
             "write" => self.write_builtin(args, false)?,
-            "write_bytes" => self.write_bytes_builtin(args)?,
             "writeln" => self.write_builtin(args, true)?,
             "append" => {
                 self.expect_arity(args, 2, "append")?;
                 let path = self.expect_string(&args[0], "append", "first")?;
-                fsio::append_path(&path, &args[1].to_string(), self.options.allow_write)?;
-                Value::Null
-            }
-            "append_bytes" => {
-                self.expect_arity(args, 2, "append_bytes")?;
-                let path = self.expect_string(&args[0], "append_bytes", "first")?;
-                let bytes = textcodec::expect_bytes(&args[1], "append_bytes", "second")?;
-                fsio::append_path_bytes(&path, &bytes, self.options.allow_write)?;
+                match &args[1] {
+                    Value::Bytes(bytes) => {
+                        fsio::append_path_bytes(&path, bytes, self.options.allow_write)?;
+                    }
+                    value => {
+                        fsio::append_path(&path, &value.to_string(), self.options.allow_write)?;
+                    }
+                }
                 Value::Null
             }
             _ => return Ok(None),
@@ -169,8 +167,8 @@ impl Runtime {
                 );
             }
             Err(err) => {
-                result.insert("stdout".to_string(), Value::List(Vec::new()));
-                result.insert("stderr".to_string(), Value::List(Vec::new()));
+                result.insert("stdout".to_string(), Value::Bytes(Vec::new()));
+                result.insert("stderr".to_string(), Value::Bytes(Vec::new()));
                 result.insert("status".to_string(), Value::Int(-1));
                 result.insert("error".to_string(), Value::String(err.to_string()));
             }
@@ -254,47 +252,62 @@ impl Runtime {
     }
 
     pub(super) fn read_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
-        if args.len() == 1 {
-            return match &args[0] {
-                Value::String(path) => fsio::read_path(path).map(Value::String),
-                Value::Stream(stream) => self.read_stream(*stream).map(Value::String),
-                other => Err(NodiaError::runtime(format!(
-                    "read() expects path or stream, got {}",
-                    other.type_name()
-                ))),
-            };
+        match args {
+            [source] => self.read_value(source, ReadKind::Text),
+            [source, Value::Int(_)] => {
+                let stream = self.expect_stream(source, "read", "first")?;
+                let size = self.expect_non_negative_size(&args[1], "read", "second")?;
+                self.read_chunk_value(stream, size, ReadKind::Text)
+            }
+            [source, mode] => self.read_value(source, expect_read_kind(mode, "read", "second")?),
+            [source, mode, size] => {
+                let stream = self.expect_stream(source, "read", "first")?;
+                let size = self.expect_non_negative_size(size, "read", "third")?;
+                self.read_chunk_value(stream, size, expect_read_kind(mode, "read", "second")?)
+            }
+            _ => Err(NodiaError::runtime(format!(
+                "read() expects 1, 2, or 3 argument(s), got {}",
+                args.len()
+            ))),
         }
-        if args.len() == 2 {
-            let stream = self.expect_stream(&args[0], "read", "first")?;
-            let size = self.expect_non_negative_size(&args[1], "read", "second")?;
-            return self.read_chunk_stream(stream, size).map(Value::String);
-        }
-        Err(NodiaError::runtime(format!(
-            "read() expects 1 or 2 argument(s), got {}",
-            args.len()
-        )))
     }
 
     pub(super) fn write_builtin(&mut self, args: &[Value], line: bool) -> NodiaResult<Value> {
         self.expect_arity(args, 2, if line { "writeln" } else { "write" })?;
-        let mut text = args[1].to_string();
         if line {
+            let mut text = args[1].to_string();
             text.push('\n');
+            match &args[0] {
+                Value::String(_) => {
+                    return Err(NodiaError::runtime(
+                        "writeln() expects stream as first argument",
+                    ));
+                }
+                Value::Stream(stream) => self.write_stream(*stream, &text)?,
+                other => {
+                    return Err(NodiaError::runtime(format!(
+                        "writeln() expects path or stream, got {}",
+                        other.type_name()
+                    )));
+                }
+            }
+            return Ok(Value::Null);
         }
-        match &args[0] {
-            Value::String(path) if !line => {
-                fsio::write_path(path, &text, self.options.allow_write)?;
+
+        match (&args[0], &args[1]) {
+            (Value::String(path), Value::Bytes(bytes)) => {
+                fsio::write_path_bytes(path, bytes, self.options.allow_write)?;
             }
-            Value::String(_) => {
-                return Err(NodiaError::runtime(
-                    "writeln() expects stream as first argument",
-                ));
+            (Value::Stream(stream), Value::Bytes(bytes)) => {
+                self.write_bytes_stream(*stream, bytes)?;
             }
-            Value::Stream(stream) => self.write_stream(*stream, &text)?,
-            other => {
+            (Value::String(path), value) => {
+                fsio::write_path(path, &value.to_string(), self.options.allow_write)?;
+            }
+            (Value::Stream(stream), value) => self.write_stream(*stream, &value.to_string())?,
+            (other, _) => {
                 return Err(NodiaError::runtime(format!(
-                    "{}() expects path or stream, got {}",
-                    if line { "writeln" } else { "write" },
+                    "write() expects path or stream, got {}",
                     other.type_name()
                 )));
             }
@@ -302,48 +315,35 @@ impl Runtime {
         Ok(Value::Null)
     }
 
-    pub(super) fn read_bytes_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
-        if args.len() == 1 {
-            return match &args[0] {
-                Value::String(path) => fsio::read_path_bytes(path).map(textcodec::bytes_to_value),
-                Value::Stream(stream) => self
-                    .read_bytes_stream(*stream)
-                    .map(textcodec::bytes_to_value),
-                other => Err(NodiaError::runtime(format!(
-                    "read_bytes() expects path or stream, got {}",
-                    other.type_name()
-                ))),
-            };
+    fn read_value(&mut self, source: &Value, kind: ReadKind) -> NodiaResult<Value> {
+        match (source, kind) {
+            (Value::String(path), ReadKind::Text) => fsio::read_path(path).map(Value::String),
+            (Value::String(path), ReadKind::Bytes) => {
+                fsio::read_path_bytes(path).map(textcodec::bytes_to_value)
+            }
+            (Value::Stream(stream), ReadKind::Text) => self.read_stream(*stream).map(Value::String),
+            (Value::Stream(stream), ReadKind::Bytes) => self
+                .read_bytes_stream(*stream)
+                .map(textcodec::bytes_to_value),
+            (other, _) => Err(NodiaError::runtime(format!(
+                "read() expects path or stream, got {}",
+                other.type_name()
+            ))),
         }
-        if args.len() == 2 {
-            let stream = self.expect_stream(&args[0], "read_bytes", "first")?;
-            let size = self.expect_non_negative_size(&args[1], "read_bytes", "second")?;
-            return self
+    }
+
+    fn read_chunk_value(
+        &mut self,
+        stream: StreamId,
+        size: usize,
+        kind: ReadKind,
+    ) -> NodiaResult<Value> {
+        match kind {
+            ReadKind::Text => self.read_chunk_stream(stream, size).map(Value::String),
+            ReadKind::Bytes => self
                 .read_chunk_bytes_stream(stream, size)
-                .map(textcodec::bytes_to_value);
+                .map(textcodec::bytes_to_value),
         }
-        Err(NodiaError::runtime(format!(
-            "read_bytes() expects 1 or 2 argument(s), got {}",
-            args.len()
-        )))
-    }
-
-    pub(super) fn write_bytes_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
-        self.expect_arity(args, 2, "write_bytes")?;
-        let bytes = textcodec::expect_bytes(&args[1], "write_bytes", "second")?;
-        match &args[0] {
-            Value::String(path) => {
-                fsio::write_path_bytes(path, &bytes, self.options.allow_write)?;
-            }
-            Value::Stream(stream) => self.write_bytes_stream(*stream, &bytes)?,
-            other => {
-                return Err(NodiaError::runtime(format!(
-                    "write_bytes() expects path or stream, got {}",
-                    other.type_name()
-                )));
-            }
-        }
-        Ok(Value::Null)
     }
 
     pub(super) fn read_stream(&mut self, stream: StreamId) -> NodiaResult<String> {
@@ -502,5 +502,27 @@ impl Runtime {
             }
             StreamId::File(_) => self.io.borrow_mut().eof(stream),
         }
+    }
+}
+
+#[derive(Clone, Copy)]
+enum ReadKind {
+    Text,
+    Bytes,
+}
+
+fn expect_read_kind(value: &Value, name: &str, position: &str) -> NodiaResult<ReadKind> {
+    match value {
+        Value::String(mode) => match mode.as_str() {
+            "text" => Ok(ReadKind::Text),
+            "bytes" => Ok(ReadKind::Bytes),
+            other => Err(NodiaError::runtime(format!(
+                "{name}() expects text or bytes as {position} argument, got '{other}'"
+            ))),
+        },
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects read mode as {position} argument, got {}",
+            other.type_name()
+        ))),
     }
 }

@@ -24,6 +24,13 @@ pub fn get(args: &[Value]) -> NodiaResult<Value> {
                 .and_then(|index| values.get(index).cloned())
                 .unwrap_or(default))
         }
+        Value::Bytes(values) => {
+            let index = normalize_index(values.len(), to_int(&args[1])?);
+            Ok(index
+                .and_then(|index| values.get(index).copied())
+                .map(|byte| Value::Int(byte as i64))
+                .unwrap_or(default))
+        }
         Value::String(value) => {
             let index = to_int(&args[1])?;
             let index = if index < 0 {
@@ -37,7 +44,7 @@ pub fn get(args: &[Value]) -> NodiaResult<Value> {
                 .unwrap_or(default))
         }
         other => Err(NodiaError::runtime(format!(
-            "get() expects map, list or string as first argument, got {}",
+            "get() expects map, list, bytes or string as first argument, got {}",
             other.type_name()
         ))),
     }

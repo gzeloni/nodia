@@ -161,6 +161,7 @@ impl Runtime {
         let ordering = match (&left, &right) {
             (Value::Int(a), Value::Int(b)) => a.cmp(b),
             (Value::String(a), Value::String(b)) => a.cmp(b),
+            (Value::Bytes(a), Value::Bytes(b)) => a.cmp(b),
             (Value::Date(a), Value::Date(b)) => a.cmp(b),
             (Value::DateTime(a), Value::DateTime(b)) => a.cmp(b),
             (Value::Duration(a), Value::Duration(b)) => a.cmp(b),
@@ -195,6 +196,26 @@ impl Runtime {
                     )));
                 }
                 Ok(values[normalized as usize].clone())
+            }
+            Value::Bytes(value) => {
+                let index = match index {
+                    Value::Int(value) => value,
+                    other => {
+                        return Err(NodiaError::runtime(format!(
+                            "bytes index must be int, got {}",
+                            other.type_name()
+                        )))
+                    }
+                };
+                let len = value.len() as i64;
+                let normalized = if index < 0 { len + index } else { index };
+                if normalized < 0 || normalized >= len {
+                    return Err(NodiaError::runtime(format!(
+                        "bytes index {index} out of bounds for length {}",
+                        value.len()
+                    )));
+                }
+                Ok(Value::Int(value[normalized as usize] as i64))
             }
             Value::String(value) => {
                 let index = match index {
@@ -390,6 +411,21 @@ impl Runtime {
                     None => Ok(None),
                 }
             }
+            (Value::Bytes(mut bytes), TargetStep::Index(index)) => {
+                let index = self.normalize_bytes_index(bytes.len(), index)?;
+                if rest.is_empty() {
+                    bytes[index] = self.expect_byte_value(new_value)?;
+                    return Ok(Some(Value::Bytes(bytes)));
+                }
+                let child = Value::Int(bytes[index] as i64);
+                match self.update_value_path(child, rest, new_value)? {
+                    Some(updated) => {
+                        bytes[index] = self.expect_byte_value(updated)?;
+                        Ok(Some(Value::Bytes(bytes)))
+                    }
+                    None => Ok(None),
+                }
+            }
             (Value::String(_), TargetStep::Index(_)) => Err(NodiaError::runtime(
                 "cannot assign through string scalar index",
             )),
@@ -423,6 +459,38 @@ impl Runtime {
         Ok(normalized as usize)
     }
 
+    pub(super) fn normalize_bytes_index(&self, len: usize, index: &Value) -> NodiaResult<usize> {
+        let index = match index {
+            Value::Int(value) => *value,
+            other => {
+                return Err(NodiaError::runtime(format!(
+                    "bytes index must be int, got {}",
+                    other.type_name()
+                )))
+            }
+        };
+        let normalized = if index < 0 { len as i64 + index } else { index };
+        if normalized < 0 || normalized as usize >= len {
+            return Err(NodiaError::runtime(format!(
+                "bytes index {index} out of bounds for length {len}"
+            )));
+        }
+        Ok(normalized as usize)
+    }
+
+    pub(super) fn expect_byte_value(&self, value: Value) -> NodiaResult<u8> {
+        match value {
+            Value::Int(value) if (0..=255).contains(&value) => Ok(value as u8),
+            Value::Int(value) => Err(NodiaError::runtime(format!(
+                "bytes assignment expects int in range 0..255, got {value}"
+            ))),
+            other => Err(NodiaError::runtime(format!(
+                "bytes assignment expects int, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
     pub(super) fn iterable_values(
         &self,
         binding: &ForBinding,
@@ -441,6 +509,10 @@ impl Runtime {
     pub(super) fn iterable_single_values(&self, iterable: Value) -> NodiaResult<Vec<Value>> {
         match iterable {
             Value::List(values) => Ok(values),
+            Value::Bytes(value) => Ok(value
+                .into_iter()
+                .map(|byte| Value::Int(byte as i64))
+                .collect()),
             Value::String(value) => Ok(value
                 .chars()
                 .map(|ch| Value::String(ch.to_string()))

@@ -7,12 +7,7 @@ use crate::error::{NodiaError, NodiaResult};
 use crate::value::Value;
 
 pub(crate) fn bytes_to_value(bytes: Vec<u8>) -> Value {
-    Value::List(
-        bytes
-            .into_iter()
-            .map(|byte| Value::Int(byte as i64))
-            .collect(),
-    )
+    Value::Bytes(bytes)
 }
 
 pub(crate) fn string_to_bytes_value(text: &str) -> Value {
@@ -20,32 +15,13 @@ pub(crate) fn string_to_bytes_value(text: &str) -> Value {
 }
 
 pub(crate) fn expect_bytes(value: &Value, name: &str, position: &str) -> NodiaResult<Vec<u8>> {
-    let Value::List(values) = value else {
+    let Value::Bytes(bytes) = value else {
         return Err(NodiaError::runtime(format!(
-            "{name}() expects list<int> as {position} argument, got {}",
+            "{name}() expects bytes as {position} argument, got {}",
             value.type_name()
         )));
     };
-
-    let mut bytes = Vec::with_capacity(values.len());
-    for (index, item) in values.iter().enumerate() {
-        match item {
-            Value::Int(byte) if (0..=255).contains(byte) => bytes.push(*byte as u8),
-            Value::Int(byte) => {
-                return Err(NodiaError::runtime(format!(
-                    "{name}() expects byte values in range 0..255 at {position} argument index {index}, got {byte}"
-                )))
-            }
-            other => {
-                return Err(NodiaError::runtime(format!(
-                    "{name}() expects int byte values at {position} argument index {index}, got {}",
-                    other.type_name()
-                )))
-            }
-        }
-    }
-
-    Ok(bytes)
+    Ok(bytes.clone())
 }
 
 pub(crate) fn decode_utf8(bytes: Vec<u8>) -> Result<String, String> {
@@ -79,4 +55,65 @@ pub(crate) fn strip_bom(text: &str) -> String {
 
 pub(crate) fn drop_nul(text: &str) -> String {
     text.chars().filter(|ch| *ch != '\0').collect()
+}
+
+pub(crate) fn quote_bytes_literal(bytes: &[u8]) -> String {
+    let mut out = String::from("b\"");
+    let mut index = 0usize;
+    while index < bytes.len() {
+        match bytes[index] {
+            b'\\' => {
+                out.push_str("\\\\");
+                index += 1;
+            }
+            b'"' => {
+                out.push_str("\\\"");
+                index += 1;
+            }
+            b'\n' => {
+                out.push_str("\\n");
+                index += 1;
+            }
+            b'\r' => {
+                out.push_str("\\r");
+                index += 1;
+            }
+            b'\t' => {
+                out.push_str("\\t");
+                index += 1;
+            }
+            0 => {
+                out.push_str("\\0");
+                index += 1;
+            }
+            byte if matches!(byte, 0x20..=0x7e) => {
+                out.push(byte as char);
+                index += 1;
+            }
+            _ => {
+                if let Some((ch, len)) = decode_one_visible_char(&bytes[index..]) {
+                    out.push(ch);
+                    index += len;
+                } else {
+                    out.push_str(&format!("\\x{:02x}", bytes[index]));
+                    index += 1;
+                }
+            }
+        }
+    }
+    out.push('"');
+    out
+}
+
+fn decode_one_visible_char(bytes: &[u8]) -> Option<(char, usize)> {
+    for len in 2..=4 {
+        let slice = bytes.get(..len)?;
+        let text = std::str::from_utf8(slice).ok()?;
+        let mut chars = text.chars();
+        let ch = chars.next()?;
+        if chars.next().is_none() && !ch.is_control() && ch != '"' && ch != '\\' {
+            return Some((ch, len));
+        }
+    }
+    None
 }

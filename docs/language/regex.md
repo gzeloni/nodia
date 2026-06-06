@@ -3,7 +3,7 @@
 Nodia has a native, readable regex DSL. A `regex { ... }` block
 evaluates to a first-class **regex value**. When emitted, interpolated, or
 converted with `conversion.string(...)`, it renders to classic regex text. When used
-with the regex builtins (`test`, `find`, `find_all`, `full_match`, `replace`,
+with the regex builtins (`test`, `find`, `replace`,
 `split`), it executes against text.
 
 ## A First Pattern
@@ -242,7 +242,7 @@ val p = regex {
   }
 }
 emit p
-emit re.find_all("yes/maybe/no", p)
+emit re.find("yes/maybe/no", p, re.all)
 '
 ```
 
@@ -288,7 +288,7 @@ val p = regex {
   }
 }
 emit p
-emit re.find_all("a, b , c", p)
+emit re.find("a, b , c", p, re.all)
 '
 ```
 
@@ -308,7 +308,7 @@ val p = regex {
   }
 }
 emit p
-emit re.find_all("ab12cd34", p)
+emit re.find("ab12cd34", p, re.all)
 '
 ```
 
@@ -336,7 +336,7 @@ val p = regex {
   followed_by { "px" }
 }
 emit p
-emit re.find_all("12px 7em 3px 99", p)
+emit re.find("12px 7em 3px 99", p, re.all)
 '
 ```
 
@@ -408,19 +408,19 @@ The full set of regex builtins is documented in
 [Standard Library / Regex](../stdlib/regex.md). The most common ones are:
 
 * `re.test(text, pattern)` — does the pattern match anywhere?
-* `re.full_match(text, pattern)` — does the whole text match?
+* `re.test(text, pattern, re.full)` — does the whole text match?
 * `re.find(text, pattern)` — first match as a structured map, or `null`.
-* `re.find_all(text, pattern)` — list of all non-overlapping matches.
+* `re.find(text, pattern, re.all)` — list of all non-overlapping matches.
 * `re.replace(text, pattern, replacement)` — replace literal text, or regex
   matches when `pattern` is a regex value; supports `$(0)`, `$(1)`, `$(name)`,
   `$$` placeholders in regex mode.
 * `re.split(text, pattern)` — split on a literal separator, or on regex matches
   when `pattern` is a regex value.
 
-`test`, `full_match`, `find`, and `find_all` accept regex values **or** plain
-strings. A plain string there is compiled as raw regex text. `replace`,
-`replace_all`, `split`, and `split_regex` share the text-builtin behavior: a
-plain string stays literal text, while a regex value enables regex mode.
+`test` and `find` accept regex values **or** plain strings. A plain string
+there is compiled as raw regex text. `replace` and `split` share the
+text-builtin behavior: a plain string stays literal text, while a regex value
+enables regex mode.
 
 ## Match Shape
 
@@ -440,9 +440,9 @@ A `re.find(...)` hit is a map:
 ```
 
 `start` and `end` are **Unicode scalar value offsets**, so they line up with
-`len(string)` and `slice(...)`. Use `text.scalar_slice(...)` when you want to
-slice on the same unit, or `byte_offset(...)` / `scalar_offset(...)` when you
-need to cross the byte/scalar boundary. See
+`len(string)` and `slice(...)`. Use `text.slice(..., text.scalar, ...)` when
+you want to slice on the same unit, or `text.offset(...)` when you need to
+cross the byte/scalar boundary. See
 [Text Semantics](../reference/text-semantics.md) for the official `0.7.4`
 model.
 

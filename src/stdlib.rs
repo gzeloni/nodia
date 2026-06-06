@@ -20,19 +20,26 @@ use std::collections::BTreeMap;
 pub type ModuleItemSpec = (&'static str, &'static str, Option<&'static [usize]>);
 
 const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("utf8", "text.utf8", None),
+    ("strict", "text.strict", None),
+    ("lossy", "text.lossy", None),
+    ("lf", "text.lf", None),
+    ("crlf", "text.crlf", None),
+    ("nfc", "text.nfc", None),
+    ("nfd", "text.nfd", None),
+    ("nfkc", "text.nfkc", None),
+    ("nfkd", "text.nfkd", None),
+    ("byte", "text.byte", None),
+    ("scalar", "text.scalar", None),
+    ("grapheme", "text.grapheme", None),
     ("upper", "upper", Some(&[1])),
     ("lower", "lower", Some(&[1])),
     ("casefold", "casefold", Some(&[1])),
     ("capitalize", "capitalize", Some(&[1])),
     ("trim", "trim", Some(&[1])),
-    ("nfc", "nfc", Some(&[1])),
-    ("nfd", "nfd", Some(&[1])),
-    ("nfkc", "nfkc", Some(&[1])),
-    ("nfkd", "nfkd", Some(&[1])),
+    ("normalize", "text.normalize", Some(&[2])),
     ("replace", "replace", Some(&[3])),
-    ("replace_all", "replace_all", Some(&[3])),
     ("split", "split", Some(&[2])),
-    ("split_regex", "split_regex", Some(&[2])),
     ("join", "join", Some(&[2])),
     ("lines", "lines", Some(&[1])),
     ("unlines", "unlines", Some(&[1])),
@@ -42,22 +49,14 @@ const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("ends", "ends", Some(&[2])),
     ("indent", "indent", Some(&[2])),
     ("dedent", "dedent", Some(&[1])),
-    ("byte_len", "byte_len", Some(&[1])),
-    ("grapheme_len", "grapheme_len", Some(&[1])),
-    ("encode_utf8", "encode_utf8", Some(&[1])),
-    ("decode_utf8", "decode_utf8", Some(&[1])),
-    ("decode_utf8_lossy", "decode_utf8_lossy", Some(&[1])),
-    ("normalize_lf", "normalize_lf", Some(&[1])),
-    ("normalize_crlf", "normalize_crlf", Some(&[1])),
+    ("len", "text.len", Some(&[2])),
+    ("encode", "text.encode", Some(&[2])),
+    ("decode", "text.decode", Some(&[2, 3])),
     ("strip_bom", "strip_bom", Some(&[1])),
     ("drop_nul", "drop_nul", Some(&[1])),
-    ("byte_offset", "byte_offset", Some(&[2])),
-    ("scalar_offset", "scalar_offset", Some(&[2])),
-    ("scalar", "scalar", Some(&[2])),
-    ("grapheme", "grapheme", Some(&[2])),
-    ("byte_slice", "byte_slice", Some(&[3])),
-    ("scalar_slice", "scalar_slice", Some(&[3])),
-    ("grapheme_slice", "grapheme_slice", Some(&[3])),
+    ("offset", "text.offset", Some(&[4])),
+    ("at", "text.at", Some(&[3])),
+    ("slice", "text.slice", Some(&[4])),
 ];
 
 const NUMBERS_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -107,39 +106,39 @@ const COLLECTIONS_MODULE_ITEMS: &[ModuleItemSpec] = &[
 ];
 
 const FORMAT_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("left", "format.left", None),
+    ("right", "format.right", None),
     ("format", "format", Some(&[2])),
-    ("pad_left", "pad_left", Some(&[2, 3])),
-    ("pad_right", "pad_right", Some(&[2, 3])),
+    ("pad", "format.pad", Some(&[3, 4])),
     ("fixed", "fixed", Some(&[2])),
 ];
 
 const REGEX_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("test", "test", Some(&[2])),
-    ("full_match", "full_match", Some(&[2])),
-    ("find", "find", Some(&[2])),
-    ("find_all", "find_all", Some(&[2])),
+    ("any", "re.any", None),
+    ("full", "re.full", None),
+    ("first", "re.first", None),
+    ("all", "re.all", None),
+    ("test", "test", Some(&[2, 3])),
+    ("find", "find", Some(&[2, 3])),
     ("replace", "replace", Some(&[3])),
-    ("replace_all", "replace_all", Some(&[3])),
     ("split", "split", Some(&[2])),
-    ("split_regex", "split_regex", Some(&[2])),
 ];
 
 const IO_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("stdin", "stdin", None),
     ("stdout", "stdout", None),
     ("stderr", "stderr", None),
+    ("text", "io.text", None),
+    ("bytes", "io.bytes", None),
     ("open", "open", Some(&[2])),
     ("close", "close", Some(&[1])),
     ("flush", "flush", Some(&[1])),
     ("eof", "eof", Some(&[1])),
-    ("read", "read", Some(&[1, 2])),
-    ("read_bytes", "read_bytes", Some(&[1, 2])),
+    ("read", "read", Some(&[1, 2, 3])),
     ("readln", "readln", Some(&[1])),
     ("write", "write", Some(&[2])),
-    ("write_bytes", "write_bytes", Some(&[2])),
     ("writeln", "writeln", Some(&[2])),
     ("append", "append", Some(&[2])),
-    ("append_bytes", "append_bytes", Some(&[2])),
     ("basename", "basename", Some(&[1])),
     ("dirname", "dirname", Some(&[1])),
     ("exists", "exists", Some(&[1])),
@@ -157,20 +156,27 @@ const SYSTEM_MODULE_ITEMS: &[ModuleItemSpec] = &[
 ];
 
 const DATETIME_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("as_date", "datetime.as_date", None),
+    ("as_datetime", "datetime.as_datetime", None),
+    ("as_duration", "datetime.as_duration", None),
+    ("seconds", "datetime.seconds", None),
+    ("milliseconds", "datetime.milliseconds", None),
+    ("days", "datetime.days", None),
+    ("months", "datetime.months", None),
+    ("years", "datetime.years", None),
+    ("span", "datetime.span", None),
+    ("start", "datetime.start", None),
+    ("end", "datetime.end", None),
     ("now", "now", Some(&[0, 1])),
     ("today", "today", Some(&[0, 1])),
     ("date", "date", Some(&[1, 3])),
     ("datetime", "datetime", Some(&[1, 6, 7])),
     ("duration", "duration", Some(&[1])),
-    ("parse_date", "parse_date", Some(&[1])),
-    ("parse_datetime", "parse_datetime", Some(&[1])),
-    ("parse_duration", "parse_duration", Some(&[1])),
+    ("parse", "datetime.parse", Some(&[2])),
     ("isoformat", "isoformat", Some(&[1])),
     ("strftime", "strftime", Some(&[2])),
-    ("from_unix", "from_unix", Some(&[1, 2])),
-    ("from_unix_ms", "from_unix_ms", Some(&[1])),
-    ("unix_seconds", "unix_seconds", Some(&[1])),
-    ("unix_ms", "unix_ms", Some(&[1])),
+    ("from_epoch", "datetime.from_epoch", Some(&[2, 3])),
+    ("epoch", "datetime.epoch", Some(&[2])),
     ("year", "year", Some(&[1])),
     ("month", "month", Some(&[1])),
     ("day", "day", Some(&[1])),
@@ -188,15 +194,9 @@ const DATETIME_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("is_leap_year", "is_leap_year", Some(&[1])),
     ("date_only", "date_only", Some(&[1])),
     ("with_offset", "with_offset", Some(&[2])),
-    ("add_days", "add_days", Some(&[2])),
-    ("add_months", "add_months", Some(&[2])),
-    ("add_years", "add_years", Some(&[2])),
-    ("add_duration", "add_duration", Some(&[2])),
-    ("diff_days", "diff_days", Some(&[2])),
-    ("diff_seconds", "diff_seconds", Some(&[2])),
-    ("diff_duration", "diff_duration", Some(&[2])),
-    ("start_of_day", "start_of_day", Some(&[1])),
-    ("end_of_day", "end_of_day", Some(&[1])),
+    ("add", "datetime.add", Some(&[2, 3])),
+    ("diff", "datetime.diff", Some(&[3])),
+    ("bound", "datetime.bound", Some(&[2])),
 ];
 
 const JSON_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -224,12 +224,9 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             }
         })?,
         "trim" => text::unary_string(args, "trim", |s| s.trim().to_string())?,
-        "nfc" => text::nfc(args)?,
-        "nfd" => text::nfd(args)?,
-        "nfkc" => text::nfkc(args)?,
-        "nfkd" => text::nfkd(args)?,
-        "replace" | "replace_all" => text::replace_text(args, name)?,
-        "split" | "split_regex" => text::split_text(args, name)?,
+        "text.normalize" => text::normalize(args)?,
+        "replace" => text::replace_text(args, name)?,
+        "split" => text::split_text(args, name)?,
         "join" => {
             expect_arity(&args, 2, "join")?;
             let values = expect_list(&args[0], "join", "first")?;
@@ -273,13 +270,12 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             )
         }
         "test" => text::regex_test(args)?,
-        "full_match" => text::regex_full_match(args)?,
         "find" => text::regex_find(args)?,
-        "find_all" => text::regex_find_all(args)?,
         "contains" => {
             expect_arity(&args, 2, "contains")?;
             Value::Bool(match &args[0] {
                 Value::String(value) => text::contains_text(value, &args[1])?,
+                Value::Bytes(value) => contains_bytes(value, &args[1])?,
                 Value::List(values) => values.contains(&args[1]),
                 Value::Map(values) => values.contains_key(&args[1].to_string()),
                 other => {
@@ -303,22 +299,14 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             expect_arity(&args, 1, "dedent")?;
             Value::String(text::dedent(&args[0].to_string()))
         }
-        "byte_len" => text::byte_len(args)?,
-        "grapheme_len" => text::grapheme_len(args)?,
-        "encode_utf8" => text::encode_utf8(args)?,
-        "decode_utf8" => text::decode_utf8(args)?,
-        "decode_utf8_lossy" => text::decode_utf8_lossy(args)?,
-        "normalize_lf" => text::normalize_lf(args)?,
-        "normalize_crlf" => text::normalize_crlf(args)?,
+        "text.len" => text::len(args)?,
+        "text.encode" => text::encode(args)?,
+        "text.decode" => text::decode(args)?,
         "strip_bom" => text::strip_bom(args)?,
         "drop_nul" => text::drop_nul(args)?,
-        "byte_offset" => text::byte_offset(args)?,
-        "scalar_offset" => text::scalar_offset(args)?,
-        "scalar" => text::scalar(args)?,
-        "grapheme" => text::grapheme(args)?,
-        "byte_slice" => text::byte_slice(args)?,
-        "scalar_slice" => text::scalar_slice(args)?,
-        "grapheme_slice" => text::grapheme_slice(args)?,
+        "text.offset" => text::offset(args)?,
+        "text.at" => text::at(args)?,
+        "text.slice" => text::slice(args)?,
         "keys" => {
             expect_arity(&args, 1, "keys")?;
             let Value::Map(values) = &args[0] else {
@@ -364,6 +352,7 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             expect_arity(&args, 1, "len")?;
             let len = match &args[0] {
                 Value::String(value) => value.chars().count(),
+                Value::Bytes(value) => value.len(),
                 Value::List(value) => value.len(),
                 Value::Map(value) => value.len(),
                 other => {
@@ -388,8 +377,7 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             Value::String(args[0].to_string())
         }
         "format" => formatting::format(args)?,
-        "pad_left" => formatting::pad_left(args)?,
-        "pad_right" => formatting::pad_right(args)?,
+        "format.pad" => formatting::pad(args)?,
         "fixed" => formatting::fixed(args)?,
         "basename" => pathing::basename(args)?,
         "dirname" => pathing::dirname(args)?,
@@ -403,15 +391,11 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "date" => datetime::date(args)?,
         "datetime" => datetime::datetime(args)?,
         "duration" => datetime::duration(args)?,
-        "parse_date" => datetime::parse_date(args)?,
-        "parse_datetime" => datetime::parse_datetime(args)?,
-        "parse_duration" => datetime::parse_duration(args)?,
+        "datetime.parse" => datetime::parse(args)?,
         "isoformat" => datetime::isoformat(args)?,
         "strftime" => datetime::strftime(args)?,
-        "from_unix" => datetime::from_unix(args)?,
-        "from_unix_ms" => datetime::from_unix_ms(args)?,
-        "unix_seconds" => datetime::unix_seconds(args)?,
-        "unix_ms" => datetime::unix_ms(args)?,
+        "datetime.from_epoch" => datetime::from_epoch(args)?,
+        "datetime.epoch" => datetime::epoch(args)?,
         "year" => datetime::year(args)?,
         "month" => datetime::month(args)?,
         "day" => datetime::day(args)?,
@@ -429,15 +413,9 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "is_leap_year" => datetime::is_leap_year_value(args)?,
         "date_only" => datetime::date_only(args)?,
         "with_offset" => datetime::with_offset(args)?,
-        "add_days" => datetime::add_days(args)?,
-        "add_months" => datetime::add_months(args)?,
-        "add_years" => datetime::add_years(args)?,
-        "add_duration" => datetime::add_duration(args)?,
-        "diff_days" => datetime::diff_days(args)?,
-        "diff_seconds" => datetime::diff_seconds(args)?,
-        "diff_duration" => datetime::diff_duration(args)?,
-        "start_of_day" => datetime::start_of_day(args)?,
-        "end_of_day" => datetime::end_of_day(args)?,
+        "datetime.add" => datetime::add(args)?,
+        "datetime.diff" => datetime::diff(args)?,
+        "datetime.bound" => datetime::bound(args)?,
         "json.read" => data::json_read(args)?,
         "json.write" => data::json_write(args)?,
         "csv.read" => data::csv_read(args)?,
@@ -593,4 +571,23 @@ pub(crate) fn to_float(value: &Value) -> NodiaResult<f64> {
 
 pub(crate) fn compare_values(left: &Value, right: &Value) -> std::cmp::Ordering {
     sequence::compare_values(left, right)
+}
+
+fn contains_bytes(haystack: &[u8], needle: &Value) -> NodiaResult<bool> {
+    match needle {
+        Value::Int(value) if (0..=255).contains(value) => Ok(haystack.contains(&(*value as u8))),
+        Value::Int(value) => Err(NodiaError::runtime(format!(
+            "contains() expects byte needle in range 0..255 for bytes input, got {value}"
+        ))),
+        Value::Bytes(bytes) => {
+            if bytes.is_empty() {
+                return Ok(true);
+            }
+            Ok(haystack.windows(bytes.len()).any(|window| window == bytes))
+        }
+        other => Err(NodiaError::runtime(format!(
+            "contains() expects int or bytes as second argument for bytes input, got {}",
+            other.type_name()
+        ))),
+    }
 }

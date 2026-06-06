@@ -14,7 +14,7 @@ use json
 
 ### `json.read(text_or_bytes)`
 
-Parses either a JSON string or a UTF-8 byte sequence (`list<int>`) into Nodia
+Parses either a JSON string or a UTF-8 byte sequence (`bytes`) into Nodia
 values:
 
 * objects become maps;
@@ -29,9 +29,9 @@ values:
 use json
 use text
 
-val doc = json.read(text.encode_utf8("""
+val doc = json.read(text.encode("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-"""))
+""", text.utf8))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -48,11 +48,12 @@ When you embed JSON directly inside source, prefer `r'...'` or triple-quoted
 strings. `r"..."` usually is not a good JSON delimiter because the first `"`
 inside the JSON closes the raw string.
 Duplicate object keys are rejected instead of silently overwriting earlier
-entries. When the first argument is bytes, `json.read(...)` decodes them as
-strict UTF-8 before parsing. Invalid UTF-8 is a runtime error. If your source
-can be dirty, sanitize it first with `text.strip_bom(...)`,
-`text.normalize_lf(...)`, `text.drop_nul(...)`, or decode lossily with
-`text.decode_utf8_lossy(...)` before handing the resulting text to `json.read`.
+entries. When the first argument is bytes, `json.read(...)` decodes them with
+`text.decode(..., text.utf8)` before parsing. Invalid UTF-8 is a runtime
+error. If your source can be dirty, sanitize it first with `text.strip_bom(...)`,
+`text.normalize(..., text.lf)`, `text.drop_nul(...)`, or decode lossily with
+`text.decode(..., text.utf8, text.lossy)` before handing the resulting text to
+`json.read`.
 
 ### `json.write(value)`
 
@@ -144,7 +145,7 @@ list of strings:
 use csv
 use text
 
-emit csv.read(text.encode_utf8("name,role\nAna,dev\n\"Bia, Jr\",ops"))
+emit csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8))
 '
 ```
 
@@ -165,7 +166,7 @@ result becomes a list of maps:
 use csv
 use text
 
-val rows = csv.read(text.encode_utf8("name,role\nAna,dev\n\"Bia, Jr\",ops"), true)
+val rows = csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true)
 emit rows[0].name
 emit rows[1]
 '
@@ -177,8 +178,8 @@ Ana
 ```
 
 Duplicate header names are rejected instead of silently collapsing fields.
-When the first argument is bytes, `csv.read(...)` decodes them as strict
-UTF-8 before parsing.
+When the first argument is bytes, `csv.read(...)` decodes them with
+`text.decode(..., text.utf8)` before parsing.
 
 ### `csv.read(text_or_bytes, {header: true, types: true})`
 

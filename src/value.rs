@@ -6,6 +6,7 @@
 use crate::ast::Stmt;
 use crate::regex::RuntimeRegex;
 use crate::temporal::{DateTimeValue, DateValue, DurationValue};
+use crate::textcodec;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::fmt;
@@ -62,6 +63,7 @@ pub enum Value {
     Int(i64),
     Float(f64),
     String(String),
+    Bytes(Vec<u8>),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
     Date(DateValue),
@@ -94,6 +96,7 @@ impl Value {
             Value::Int(value) => *value != 0,
             Value::Float(value) => *value != 0.0,
             Value::String(value) => !value.is_empty(),
+            Value::Bytes(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
             Value::Date(_) => true,
@@ -115,6 +118,7 @@ impl Value {
             Value::Int(_) => "int",
             Value::Float(_) => "float",
             Value::String(_) => "string",
+            Value::Bytes(_) => "bytes",
             Value::List(_) => "list",
             Value::Map(_) => "map",
             Value::Date(_) => "date",
@@ -147,6 +151,7 @@ impl Value {
                     write!(f, "{value}")
                 }
             }
+            Value::Bytes(value) => write!(f, "{}", textcodec::quote_bytes_literal(value)),
             Value::List(values) => {
                 write!(f, "[")?;
                 for (index, value) in values.iter().enumerate() {
@@ -189,6 +194,7 @@ impl PartialEq for Value {
             (Value::Int(a), Value::Int(b)) => a == b,
             (Value::Float(a), Value::Float(b)) => a == b,
             (Value::String(a), Value::String(b)) => a == b,
+            (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
             (Value::Date(a), Value::Date(b)) => a == b,

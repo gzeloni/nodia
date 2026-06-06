@@ -97,6 +97,6 @@ nodia 0.7.4
 
 Nodia 0.7.4 is the current text-semantics baseline: text values are UTF-8,
 legacy string indexing/slicing remain scalar-based, regex offsets stay scalar,
-and explicit helpers now cover byte boundaries, grapheme-aware access, strict
-UTF-8 encode/decode, newline normalization, messy-input sanitation,
+and explicit helpers now cover byte boundaries, grapheme-aware access, codec-
+parameterized encode/decode, normalization forms, messy-input sanitation,
 bytes-aware JSON/CSV reads, and grapheme-safe formatting.

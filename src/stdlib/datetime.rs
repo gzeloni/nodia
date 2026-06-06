@@ -15,6 +15,39 @@ use std::collections::BTreeMap;
 const SECONDS_PER_DAY: i64 = 86_400;
 const NANOS_PER_SECOND: i128 = 1_000_000_000;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ParseKind {
+    Date,
+    DateTime,
+    Duration,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum EpochUnit {
+    Seconds,
+    Milliseconds,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum AddUnit {
+    Days,
+    Months,
+    Years,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum DiffUnit {
+    Days,
+    Seconds,
+    Span,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BoundSide {
+    Start,
+    End,
+}
+
 pub fn now(args: &[Value]) -> NodiaResult<Value> {
     if args.len() > 1 {
         return Err(NodiaError::runtime(format!(
@@ -146,31 +179,15 @@ pub fn duration(args: &[Value]) -> NodiaResult<Value> {
     )?))
 }
 
-pub fn parse_date(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "parse_date")?;
-    Ok(Value::Date(DateValue::parse_iso(&expect_string(
-        &args[0],
-        "parse_date",
-        "first",
-    )?)?))
-}
-
-pub fn parse_datetime(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "parse_datetime")?;
-    Ok(Value::DateTime(DateTimeValue::parse_iso(&expect_string(
-        &args[0],
-        "parse_datetime",
-        "first",
-    )?)?))
-}
-
-pub fn parse_duration(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "parse_duration")?;
-    Ok(Value::Duration(DurationValue::parse_iso(&expect_string(
-        &args[0],
-        "parse_duration",
-        "first",
-    )?)?))
+pub fn parse(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "parse")?;
+    let text = expect_string(&args[0], "parse", "first")?;
+    let kind = expect_parse_kind(&args[1], "parse", "second")?;
+    Ok(match kind {
+        ParseKind::Date => Value::Date(DateValue::parse_iso(&text)?),
+        ParseKind::DateTime => Value::DateTime(DateTimeValue::parse_iso(&text)?),
+        ParseKind::Duration => Value::Duration(DurationValue::parse_iso(&text)?),
+    })
 }
 
 pub fn isoformat(args: &[Value]) -> NodiaResult<Value> {
@@ -204,54 +221,39 @@ pub fn strftime(args: &[Value]) -> NodiaResult<Value> {
     Ok(Value::String(text))
 }
 
-pub fn from_unix(args: &[Value]) -> NodiaResult<Value> {
-    if args.len() != 1 && args.len() != 2 {
+pub fn from_epoch(args: &[Value]) -> NodiaResult<Value> {
+    if args.len() != 2 && args.len() != 3 {
         return Err(NodiaError::runtime(format!(
-            "from_unix() expects 1 or 2 argument(s), got {}",
+            "from_epoch() expects 2 or 3 argument(s), got {}",
             args.len()
         )));
     }
+    let unit = expect_epoch_unit(&args[1], "from_epoch", "second")?;
     let offset = args
-        .get(1)
-        .map(|value| expect_offset(value, "from_unix", "second"))
+        .get(2)
+        .map(|value| expect_offset(value, "from_epoch", "third"))
         .transpose()?
         .unwrap_or(0);
-    let (seconds, nanosecond) = expect_unix_seconds_value(&args[0], "from_unix", "first")?;
-    Ok(Value::DateTime(DateTimeValue::from_unix_seconds(
-        seconds, nanosecond, offset,
-    )?))
+    Ok(Value::DateTime(match unit {
+        EpochUnit::Seconds => {
+            let (seconds, nanosecond) = expect_unix_seconds_value(&args[0], "from_epoch", "first")?;
+            DateTimeValue::from_unix_seconds(seconds, nanosecond, offset)?
+        }
+        EpochUnit::Milliseconds => DateTimeValue::from_unix_milliseconds(
+            expect_unix_ms(&args[0], "from_epoch", "first")?,
+            offset,
+        )?,
+    }))
 }
 
-pub fn from_unix_ms(args: &[Value]) -> NodiaResult<Value> {
-    if args.len() != 1 && args.len() != 2 {
-        return Err(NodiaError::runtime(format!(
-            "from_unix_ms() expects 1 or 2 argument(s), got {}",
-            args.len()
-        )));
-    }
-    let offset = args
-        .get(1)
-        .map(|value| expect_offset(value, "from_unix_ms", "second"))
-        .transpose()?
-        .unwrap_or(0);
-    Ok(Value::DateTime(DateTimeValue::from_unix_milliseconds(
-        expect_unix_ms(&args[0], "from_unix_ms", "first")?,
-        offset,
-    )?))
-}
-
-pub fn unix_seconds(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "unix_seconds")?;
-    Ok(value_number(
-        expect_datetime(&args[0], "unix_seconds", "first")?.unix_seconds(),
-    ))
-}
-
-pub fn unix_ms(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "unix_ms")?;
-    Ok(value_number(
-        expect_datetime(&args[0], "unix_ms", "first")?.unix_milliseconds(),
-    ))
+pub fn epoch(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "epoch")?;
+    let unit = expect_epoch_unit(&args[1], "epoch", "second")?;
+    let value = expect_datetime(&args[0], "epoch", "first")?;
+    Ok(value_number(match unit {
+        EpochUnit::Seconds => value.unix_seconds(),
+        EpochUnit::Milliseconds => value.unix_milliseconds(),
+    }))
 }
 
 pub fn year(args: &[Value]) -> NodiaResult<Value> {
@@ -413,124 +415,152 @@ pub fn with_offset(args: &[Value]) -> NodiaResult<Value> {
     ))
 }
 
-pub fn add_days(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "add_days")?;
-    let amount = expect_i64(&args[1], "add_days", "second")?;
-    match &args[0] {
+pub fn add(args: &[Value]) -> NodiaResult<Value> {
+    match args {
+        [value, delta] => add_duration_value(value, delta, "add"),
+        [value, amount, unit] => {
+            let unit = expect_add_unit(unit, "add", "third")?;
+            match unit {
+                AddUnit::Days => add_days_value(value, expect_i64(amount, "add", "second")?, "add"),
+                AddUnit::Months => {
+                    add_months_value(value, expect_i32(amount, "add", "second")?, "add")
+                }
+                AddUnit::Years => {
+                    add_years_value(value, expect_i32(amount, "add", "second")?, "add")
+                }
+            }
+        }
+        _ => Err(NodiaError::runtime(format!(
+            "add() expects 2 or 3 argument(s), got {}",
+            args.len()
+        ))),
+    }
+}
+
+pub fn diff(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 3, "diff")?;
+    let unit = expect_diff_unit(&args[2], "diff", "third")?;
+    match unit {
+        DiffUnit::Days => {
+            let left = expect_date_like(&args[0], "diff", "first")?;
+            let right = expect_date_like(&args[1], "diff", "second")?;
+            Ok(Value::Int(
+                (left.days_since_epoch() - right.days_since_epoch()) as i64,
+            ))
+        }
+        DiffUnit::Seconds => Ok(value_number(diff_seconds_number(
+            &args[0], &args[1], "diff",
+        )?)),
+        DiffUnit::Span => Ok(Value::Duration(diff_span_value(
+            &args[0], &args[1], "diff",
+        )?)),
+    }
+}
+
+pub fn bound(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "bound")?;
+    let side = expect_bound_side(&args[1], "bound", "second")?;
+    match side {
+        BoundSide::Start => bound_start_value(&args[0], "bound"),
+        BoundSide::End => bound_end_value(&args[0], "bound"),
+    }
+}
+
+fn add_days_value(value: &Value, amount: i64, name: &str) -> NodiaResult<Value> {
+    match value {
         Value::Date(value) => Ok(Value::Date(value.add_days(amount)?)),
         Value::DateTime(value) => Ok(Value::DateTime(value.add_days(amount)?)),
         other => Err(NodiaError::runtime(format!(
-            "add_days() expects date or datetime as first argument, got {}",
+            "{name}() expects date or datetime as first argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub fn add_months(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "add_months")?;
-    let amount = expect_i32(&args[1], "add_months", "second")?;
-    match &args[0] {
+fn add_months_value(value: &Value, amount: i32, name: &str) -> NodiaResult<Value> {
+    match value {
         Value::Date(value) => Ok(Value::Date(value.add_months(amount)?)),
         Value::DateTime(value) => Ok(Value::DateTime(value.add_months(amount)?)),
         other => Err(NodiaError::runtime(format!(
-            "add_months() expects date or datetime as first argument, got {}",
+            "{name}() expects date or datetime as first argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub fn add_years(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "add_years")?;
-    let amount = expect_i32(&args[1], "add_years", "second")?;
-    match &args[0] {
+fn add_years_value(value: &Value, amount: i32, name: &str) -> NodiaResult<Value> {
+    match value {
         Value::Date(value) => Ok(Value::Date(value.add_years(amount)?)),
         Value::DateTime(value) => Ok(Value::DateTime(value.add_years(amount)?)),
         other => Err(NodiaError::runtime(format!(
-            "add_years() expects date or datetime as first argument, got {}",
+            "{name}() expects date or datetime as first argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub fn add_duration(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "add_duration")?;
-    let duration = expect_duration(&args[1], "add_duration", "second")?;
-    match &args[0] {
+fn add_duration_value(value: &Value, delta: &Value, name: &str) -> NodiaResult<Value> {
+    let duration = expect_duration(delta, name, "second")?;
+    match value {
         Value::DateTime(value) => Ok(Value::DateTime(value.add_duration(duration)?)),
         Value::Duration(value) => Ok(Value::Duration(DurationValue::from_total_nanoseconds(
             value.total_nanoseconds() + duration.total_nanoseconds(),
         ))),
         other => Err(NodiaError::runtime(format!(
-            "add_duration() expects datetime or duration as first argument, got {}",
+            "{name}() expects datetime or duration as first argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub fn diff_days(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "diff_days")?;
-    let left = expect_date_like(&args[0], "diff_days", "first")?;
-    let right = expect_date_like(&args[1], "diff_days", "second")?;
-    Ok(Value::Int(
-        (left.days_since_epoch() - right.days_since_epoch()) as i64,
-    ))
-}
-
-pub fn diff_seconds(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "diff_seconds")?;
-    let seconds = match (&args[0], &args[1]) {
-        (Value::Date(left), Value::Date(right)) => {
-            duration_seconds_number(DurationValue::from_total_nanoseconds(
+fn diff_seconds_number(left: &Value, right: &Value, name: &str) -> NodiaResult<ValueNumber> {
+    match (left, right) {
+        (Value::Date(left), Value::Date(right)) => Ok(duration_seconds_number(
+            DurationValue::from_total_nanoseconds(
                 (left.days_since_epoch() as i128 - right.days_since_epoch() as i128)
                     * SECONDS_PER_DAY as i128
                     * NANOS_PER_SECOND,
-            ))
-        }
+            ),
+        )),
         (Value::DateTime(left), Value::DateTime(right)) => {
-            duration_seconds_number(left.diff(*right))
+            Ok(duration_seconds_number(left.diff(*right)))
         }
-        (Value::Duration(left), Value::Duration(right)) => {
-            duration_seconds_number(DurationValue::from_total_nanoseconds(
+        (Value::Duration(left), Value::Duration(right)) => Ok(duration_seconds_number(
+            DurationValue::from_total_nanoseconds(
                 left.total_nanoseconds() - right.total_nanoseconds(),
-            ))
-        }
-        (left, right) => {
-            return Err(NodiaError::runtime(format!(
-                "diff_seconds() expects date/date, datetime/datetime or duration/duration, got {}/{}",
-                left.type_name(),
-                right.type_name()
-            )));
-        }
-    };
-    Ok(value_number(seconds))
+            ),
+        )),
+        (left, right) => Err(NodiaError::runtime(format!(
+            "{name}() expects date/date, datetime/datetime or duration/duration for seconds, got {}/{}",
+            left.type_name(),
+            right.type_name()
+        ))),
+    }
 }
 
-pub fn diff_duration(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 2, "diff_duration")?;
-    let value = match (&args[0], &args[1]) {
-        (Value::Date(left), Value::Date(right)) => DurationValue::from_total_nanoseconds(
+fn diff_span_value(left: &Value, right: &Value, name: &str) -> NodiaResult<DurationValue> {
+    match (left, right) {
+        (Value::Date(left), Value::Date(right)) => Ok(DurationValue::from_total_nanoseconds(
             (left.days_since_epoch() as i128 - right.days_since_epoch() as i128)
                 * SECONDS_PER_DAY as i128
                 * NANOS_PER_SECOND,
-        ),
-        (Value::DateTime(left), Value::DateTime(right)) => left.diff(*right),
-        (Value::Duration(left), Value::Duration(right)) => DurationValue::from_total_nanoseconds(
-            left.total_nanoseconds() - right.total_nanoseconds(),
-        ),
-        (left, right) => {
-            return Err(NodiaError::runtime(format!(
-                "diff_duration() expects matching date, datetime or duration values, got {}/{}",
-                left.type_name(),
-                right.type_name()
-            )));
+        )),
+        (Value::DateTime(left), Value::DateTime(right)) => Ok(left.diff(*right)),
+        (Value::Duration(left), Value::Duration(right)) => {
+            Ok(DurationValue::from_total_nanoseconds(
+                left.total_nanoseconds() - right.total_nanoseconds(),
+            ))
         }
-    };
-    Ok(Value::Duration(value))
+        (left, right) => Err(NodiaError::runtime(format!(
+            "{name}() expects matching date, datetime or duration values for span, got {}/{}",
+            left.type_name(),
+            right.type_name()
+        ))),
+    }
 }
 
-pub fn start_of_day(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "start_of_day")?;
-    match &args[0] {
+fn bound_start_value(value: &Value, name: &str) -> NodiaResult<Value> {
+    match value {
         Value::Date(value) => Ok(Value::DateTime(DateTimeValue::new(
             value.year(),
             value.month(),
@@ -543,15 +573,14 @@ pub fn start_of_day(args: &[Value]) -> NodiaResult<Value> {
         )?)),
         Value::DateTime(value) => Ok(Value::DateTime(value.start_of_day())),
         other => Err(NodiaError::runtime(format!(
-            "start_of_day() expects date or datetime, got {}",
+            "{name}() expects date or datetime as first argument, got {}",
             other.type_name()
         ))),
     }
 }
 
-pub fn end_of_day(args: &[Value]) -> NodiaResult<Value> {
-    expect_arity(args, 1, "end_of_day")?;
-    match &args[0] {
+fn bound_end_value(value: &Value, name: &str) -> NodiaResult<Value> {
+    match value {
         Value::Date(value) => Ok(Value::DateTime(DateTimeValue::new(
             value.year(),
             value.month(),
@@ -564,7 +593,7 @@ pub fn end_of_day(args: &[Value]) -> NodiaResult<Value> {
         )?)),
         Value::DateTime(value) => Ok(Value::DateTime(value.end_of_day())),
         other => Err(NodiaError::runtime(format!(
-            "end_of_day() expects date or datetime, got {}",
+            "{name}() expects date or datetime as first argument, got {}",
             other.type_name()
         ))),
     }
@@ -647,6 +676,74 @@ fn expect_string(value: &Value, name: &str, position: &str) -> NodiaResult<Strin
         other => Err(NodiaError::runtime(format!(
             "{name}() expects string as {position} argument, got {}",
             other.type_name()
+        ))),
+    }
+}
+
+fn expect_named_string<'a>(
+    value: &'a Value,
+    name: &str,
+    position: &str,
+    kind: &str,
+) -> NodiaResult<&'a str> {
+    match value {
+        Value::String(value) => Ok(value),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects {kind} as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn expect_parse_kind(value: &Value, name: &str, position: &str) -> NodiaResult<ParseKind> {
+    match expect_named_string(value, name, position, "parse kind")? {
+        "date" => Ok(ParseKind::Date),
+        "datetime" => Ok(ParseKind::DateTime),
+        "duration" => Ok(ParseKind::Duration),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects as_date, as_datetime, or as_duration as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_epoch_unit(value: &Value, name: &str, position: &str) -> NodiaResult<EpochUnit> {
+    match expect_named_string(value, name, position, "epoch unit")? {
+        "seconds" => Ok(EpochUnit::Seconds),
+        "milliseconds" => Ok(EpochUnit::Milliseconds),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects seconds or milliseconds as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_add_unit(value: &Value, name: &str, position: &str) -> NodiaResult<AddUnit> {
+    match expect_named_string(value, name, position, "add unit")? {
+        "days" => Ok(AddUnit::Days),
+        "months" => Ok(AddUnit::Months),
+        "years" => Ok(AddUnit::Years),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects days, months, or years as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_diff_unit(value: &Value, name: &str, position: &str) -> NodiaResult<DiffUnit> {
+    match expect_named_string(value, name, position, "diff unit")? {
+        "days" => Ok(DiffUnit::Days),
+        "seconds" => Ok(DiffUnit::Seconds),
+        "span" => Ok(DiffUnit::Span),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects days, seconds, or span as {position} argument, got '{other}'"
+        ))),
+    }
+}
+
+fn expect_bound_side(value: &Value, name: &str, position: &str) -> NodiaResult<BoundSide> {
+    match expect_named_string(value, name, position, "boundary side")? {
+        "start" => Ok(BoundSide::Start),
+        "end" => Ok(BoundSide::End),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects start or end as {position} argument, got '{other}'"
         ))),
     }
 }

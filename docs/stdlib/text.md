@@ -1,7 +1,7 @@
 # Text Builtins
 
-All text builtins are pure: they return new strings (or new lists for
-`split`/`lines`/`words`), never mutate.
+All text builtins are pure: they return new strings, bytes, or new lists for
+`split` / `lines` / `words`, never mutate.
 
 Import this namespace with `use text`.
 
@@ -60,119 +60,79 @@ strasse
 
 ## Normalization
 
-### `nfc(text)`
+### `normalize(text, form)`
 
-Canonical decomposition followed by canonical composition:
+Applies an explicit normalization form. The second argument should be one of:
+
+* `text.lf`
+* `text.crlf`
+* `text.nfc`
+* `text.nfd`
+* `text.nfkc`
+* `text.nfkd`
+
+Examples:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.nfc("é")'
+emit text.normalize("é", text.nfc)
+emit text.normalize("é", text.nfd)
+emit text.normalize("①", text.nfkc)
+emit text.normalize("a\r\nb\rc\n", text.lf)
+emit text.normalize("a\r\nb\rc\n", text.crlf)'
 ```
 
 ```text
 é
-```
-
-### `nfd(text)`
-
-Canonical decomposition:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.nfd("é")'
-```
-
-```text
 é
-```
-
-### `nfkc(text)`
-
-Compatibility decomposition followed by canonical composition:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.nfkc("①")'
-```
-
-```text
 1
+a
+b
+c
+
+a\r\nb\r\nc\r\n
 ```
 
 ## Bytes And Sanitation
 
-Byte sequences are represented as `list<int>` where every element must be in
-`0..255`.
+`bytes` is a first-class value kind for explicit undecoded data. Use `b"..."`
+or `b'...'` when you need a literal byte buffer. These literals do not
+interpolate. They support `\n`, `\r`, `\t`, `\0`, `\\`, `\"`, `\'`, and
+`\xNN`. Non-ASCII characters inside a bytes literal are encoded as UTF-8
+bytes, so use `\xNN` when you need an exact opaque byte sequence.
 
-### `encode_utf8(text)`
+### `encode(text, codec)`
 
-Encodes UTF-8 text into a byte list:
+Encodes text into bytes. Today the supported codec is `text.utf8`:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.encode_utf8("aéb")'
+emit text.encode("aéb", text.utf8)'
 ```
 
 ```text
-[97, 195, 169, 98]
+b"aéb"
 ```
 
-### `decode_utf8(bytes)`
+### `decode(bytes, codec)` / `decode(bytes, codec, mode)`
 
-Decodes a byte list as UTF-8. Invalid UTF-8 is a runtime error:
+Decodes bytes into text. Today the supported codec is `text.utf8`.
+The optional third argument can be `text.strict` or `text.lossy`. Omitting it
+defaults to strict decoding.
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.decode_utf8([97, 195, 169, 98])'
+emit text.decode(b"a\xc3\xa9b", text.utf8)
+emit text.decode(b"a\xffb", text.utf8, text.lossy)'
 ```
 
 ```text
 aéb
-```
-
-Use this with `io.read_bytes(...)` and `system.exec(...).stdout` /
-`system.exec(...).stderr` when a pipeline must keep decoding explicit.
-
-### `decode_utf8_lossy(bytes)`
-
-Decodes a byte list as UTF-8, replacing invalid sequences with `�`:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.decode_utf8_lossy([97, 255, 98])'
-```
-
-```text
 a�b
 ```
 
-This is the only lossy UTF-8 decode surface in the language today.
-
-### `normalize_lf(text)`
-
-Normalizes `\r\n` and bare `\r` into `\n`:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.normalize_lf("a\r\nb\rc\n")'
-```
-
-```text
-a
-b
-c
-```
-
-### `normalize_crlf(text)`
-
-Normalizes every line ending into `\r\n`:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.normalize_crlf("a\r\nb\rc\n")'
-```
-
-The output contains CRLF line endings even when the source mixed styles.
+Use this with `io.read(..., io.bytes)` and `system.exec(...).stdout` /
+`system.exec(...).stderr` when a pipeline must keep decoding explicit.
 
 ### `strip_bom(text)`
 
@@ -180,7 +140,7 @@ Removes one leading Unicode BOM when present:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.strip_bom(text.decode_utf8([239, 187, 191, 104, 105]))'
+emit text.strip_bom(text.decode(b"\xef\xbb\xbfhi", text.utf8))'
 ```
 
 ```text
@@ -193,24 +153,11 @@ Removes every `U+0000` code point:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.drop_nul(text.decode_utf8([97, 0, 98, 0]))'
+emit text.drop_nul(text.decode(b"a\0b\0", text.utf8))'
 ```
 
 ```text
 ab
-```
-
-### `nfkd(text)`
-
-Compatibility decomposition:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.nfkd("①")'
-```
-
-```text
-1
 ```
 
 ## Whitespace
@@ -311,11 +258,6 @@ emit text.split("xay", regex { zero_or_more "a" })
 ["", "a", "b", "c", ""]
 ["", "x", "y", ""]
 ```
-
-### `split_regex(text, pattern)`
-
-Explicit regex-only alias of `split(...)`. Use when you want the regex intent
-to be obvious at the call site.
 
 ### `join(list, sep)`
 
@@ -433,17 +375,14 @@ emit text.replace("https://example.com", regex {
 <https:example.com>
 ```
 
-### `replace_all(text, from, to)`
-
-Explicit alias of `replace(...)`. The name makes the whole-text intent
-obvious in scripts; the behavior is identical.
-
 ## Tests
 
 ### `contains(value, needle)`
 
 * For strings: substring check.
   If `needle` is a regex, this becomes a regex match test.
+* For bytes: byte membership when `needle` is an `int` in `0..255`,
+  or subsequence membership when `needle` is `bytes`.
 * For lists: element membership.
 * For maps: key presence.
 
@@ -452,12 +391,16 @@ obvious in scripts; the behavior is identical.
 use text
 emit text.contains("adamantite", "mant")
 emit text.contains("abc42def", regex { one_or_more digit })
+emit text.contains(b"abc42", 98)
+emit text.contains(b"abc42", b"c4")
 emit text.contains(["compiler", "streams"], "streams")
 emit text.contains({name: "Ana"}, "name")
 '
 ```
 
 ```text
+true
+true
 true
 true
 true
@@ -482,7 +425,7 @@ val composed = "é"
 val decomposed = "é"
 
 emit composed == decomposed
-emit text.nfc(composed) == text.nfc(decomposed)
+emit text.normalize(composed, text.nfc) == text.normalize(decomposed, text.nfc)
 emit text.casefold("Straße") == text.casefold("STRASSE")
 '
 ```
@@ -501,7 +444,7 @@ use text
 use collections
 
 func key(value) {
-  return text.casefold(text.nfc(value))
+  return text.casefold(text.normalize(value, text.nfc))
 }
 
 emit collections.sort(["Z", "é", "é"])
@@ -539,91 +482,48 @@ true
 ## Length
 
 `collections.len(text)` returns the Unicode scalar count for strings. It also
-works on lists and maps — see [Collections](collections.md).
+works on bytes, lists, and maps — see [Collections](collections.md).
 
-Use `text.grapheme_len(text)` when you need extended grapheme cluster count,
-and `text.byte_len(text)` when you need UTF-8 storage length.
+Use `text.len(text, text.grapheme)` when you need extended grapheme cluster
+count, and `text.len(text, text.byte)` when you need UTF-8 storage length.
 
 ## Unit-Aware Access
 
 These helpers are strict and explicit: the first argument must be a string, and
 their indexes/offsets are non-negative.
 
-### `scalar(text, scalar_index)`
+### `at(text, unit, index)`
 
-Returns one Unicode scalar value as a string:
+Returns one element of the chosen text unit. `unit` may be `text.byte`,
+`text.scalar`, or `text.grapheme`.
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.scalar("nodia", 1)'
+emit text.at("nodia", text.scalar, 1)
+emit text.at("éx", text.grapheme, 0)
+emit text.at("é", text.byte, 0)'
 ```
 
 ```text
 o
-```
-
-### `grapheme_len(text)`
-
-Counts extended grapheme clusters:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.grapheme_len("éx")'
-```
-
-```text
-2
-```
-
-### `grapheme(text, grapheme_index)`
-
-Returns one extended grapheme cluster as a string:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.grapheme("éx", 0)'
-```
-
-```text
 é
+195
 ```
 
-### `byte_slice(text, start_byte_offset, end_byte_offset)`
+### `slice(text, unit, start, end)`
 
-Slices by explicit UTF-8 byte boundaries:
+Slices text by explicit byte, scalar, or grapheme offsets:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.byte_slice("aéb", 1, 3)'
+emit text.slice("aéb", text.byte, 1, 3)
+emit text.slice("éx", text.scalar, 0, 2)
+emit text.slice("éx", text.grapheme, 0, 1)'
 ```
 
 ```text
 é
-```
-
-### `scalar_slice(text, start_scalar_offset, end_scalar_offset)`
-
-Slices by explicit scalar offsets:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.scalar_slice("éx", 0, 2)'
-```
-
-```text
 é
-```
-
-### `grapheme_slice(text, start_grapheme_offset, end_grapheme_offset)`
-
-Slices by explicit grapheme-cluster offsets:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.grapheme_slice("éx", 0, 1)'
-```
-
-```text
 é
 ```
 
@@ -633,48 +533,41 @@ For the legacy clamped scalar behavior, keep using `collections.get(...)` and
 
 ## Boundary Conversions
 
-### `byte_len(text)`
+### `len(text, unit)`
 
-Returns the UTF-8 byte length:
+Counts the chosen unit explicitly:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.byte_len("é")'
+emit text.len("é", text.byte)
+emit text.len("éx", text.scalar)
+emit text.len("éx", text.grapheme)'
 ```
 
 ```text
 2
+3
+2
 ```
 
-### `byte_offset(text, scalar_offset)`
+### `offset(text, from_unit, to_unit, offset)`
 
-Converts a scalar offset into a byte offset:
+Converts a boundary from one text unit into another:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.byte_offset("aéb", 2)'
+emit text.offset("aéb", text.scalar, text.byte, 2)
+emit text.offset("aéb", text.byte, text.scalar, 3)
+emit text.offset("éx", text.grapheme, text.byte, 1)'
 ```
 
 ```text
 3
-```
-
-`scalar_offset` must be between `0` and `len(text)`.
-
-### `scalar_offset(text, byte_offset)`
-
-Converts a UTF-8 byte boundary into a scalar offset:
-
-```bash
-./target/release/nodia eval 'use text
-emit text.scalar_offset("aéb", 3)'
-```
-
-```text
 2
+3
 ```
 
-If `byte_offset` points into the middle of one UTF-8 sequence, this is a
+If the source offset points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
 See [Text Semantics](../reference/text-semantics.md) for the full `0.7.4`

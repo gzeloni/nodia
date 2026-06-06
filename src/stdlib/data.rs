@@ -304,11 +304,11 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
 fn expect_text_input(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
     match value {
         Value::String(value) => Ok(value.clone()),
-        Value::List(_) => {
+        Value::Bytes(_) => {
             textcodec::decode_utf8_runtime(textcodec::expect_bytes(value, name, position)?, name)
         }
         other => Err(NodiaError::runtime(format!(
-            "{name}() expects string or list<int> as {position} argument, got {}",
+            "{name}() expects string or bytes as {position} argument, got {}",
             other.type_name()
         ))),
     }

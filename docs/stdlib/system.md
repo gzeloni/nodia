@@ -49,8 +49,8 @@ Runs a subprocess and returns:
 
 ```nodia
 {
-  stdout: [111, 117, 116],
-  stderr: [101, 114, 114],
+  stdout: b"out",
+  stderr: b"err",
   status: 0,
 }
 ```
@@ -65,8 +65,8 @@ val result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit text.decode_utf8(result.stdout)
-emit text.decode_utf8(result.stderr)
+emit text.decode(result.stdout, text.utf8)
+emit text.decode(result.stderr, text.utf8)
 emit result.status
 ' --allow-process
 ```
@@ -77,10 +77,11 @@ err
 7
 ```
 
-`stdout` and `stderr` are raw byte sequences represented as `list<int>`.
+`stdout` and `stderr` are raw `bytes` values.
 This keeps subprocess decoding explicit and avoids hidden lossy conversion.
-Use `text.decode_utf8(...)` for strict decoding or `text.decode_utf8_lossy(...)`
-when replacement semantics are actually desired.
+Use `text.decode(..., text.utf8)` for strict decoding or
+`text.decode(..., text.utf8, text.lossy)` when replacement semantics are
+actually desired.
 
 ## `exit()` / `exit(code)`
 

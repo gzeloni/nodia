@@ -20,6 +20,20 @@ emit 'hello'
 Single- and double-quoted strings are equivalent in v0.7.4 — they accept the
 same escape sequences and use the same interpolation rules.
 
+### Byte Literals
+
+Use `b"..."` or `b'...'` for raw byte buffers:
+
+```nodia
+emit b"ABC"
+emit b"\xff\0"
+```
+
+Byte literals are not strings: they do not interpolate, and they produce a
+`bytes` value instead of `string`. They support `\n`, `\r`, `\t`, `\0`,
+`\\`, `\"`, `\'`, and `\xNN`. Non-ASCII characters inside the literal are
+encoded as UTF-8 bytes.
+
 ### Raw Strings
 
 Use `r"..."` or `r'...'` when you want literal braces, backslashes, or JSON

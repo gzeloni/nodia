@@ -22,7 +22,7 @@ Supported modifiers:
 * precision: `%.2f`, `%.3s`
 
 For `%s`, precision truncates grapheme clusters from the rendered string form.
-String width and `pad_left(...)` / `pad_right(...)` width are also grapheme
+String width and `pad(...)` width are also grapheme
 based, so visible characters with combining marks stay intact. `%%` emits a
 literal percent sign.
 
@@ -50,15 +50,16 @@ emit format.format("[%2s][%.1s]", ["é", "éx"])
 [ é][é]
 ```
 
-## `pad_left(value, width)` / `pad_left(value, width, pad)`
+## `pad(value, width, align)` / `pad(value, width, align, pad)`
 
-Pads the string form of a value on the left:
+Pads the string form of a value to the requested width. Use `format.left` or
+`format.right` as the alignment mode:
 
 ```bash
 ./target/release/nodia eval '
 use format
-emit format.pad_left("42", 5)
-emit format.pad_left("42", 5, "0")
+emit format.pad("42", 5, format.left)
+emit format.pad("42", 5, format.left, "0")
 '
 ```
 
@@ -67,14 +68,12 @@ emit format.pad_left("42", 5, "0")
 00042
 ```
 
-## `pad_right(value, width)` / `pad_right(value, width, pad)`
-
-Pads on the right:
+Right padding:
 
 ```bash
 ./target/release/nodia eval '
 use format
-emit format.pad_right("ok", 5, ".")
+emit format.pad("ok", 5, format.right, ".")
 '
 ```
 
