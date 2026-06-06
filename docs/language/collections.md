@@ -48,7 +48,8 @@ Out-of-bounds access is a runtime error (`E2000`).
 For the precise string-position contract around `slice(...)` and regex
 offsets, see [Text Semantics](../reference/text-semantics.md). Direct
 string indexing follows the same negative-index normalization as list
-indexing.
+indexing. For explicit non-negative scalar/grapheme access and strict
+unit-aware slicing, `use text`.
 
 ### Iteration
 

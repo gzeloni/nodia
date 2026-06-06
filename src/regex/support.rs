@@ -22,7 +22,7 @@ pub(super) fn replacement_name_is_valid(name: &str) -> bool {
     chars.all(|ch| ch == '_' || ch.is_ascii_alphanumeric())
 }
 
-pub(super) fn char_offset(text: &str, byte_offset: usize) -> usize {
+pub(super) fn scalar_offset(text: &str, byte_offset: usize) -> usize {
     text[..byte_offset].chars().count()
 }
 

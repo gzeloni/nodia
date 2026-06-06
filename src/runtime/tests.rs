@@ -589,7 +589,7 @@ emit __col.len(__re.find_all("http://a https://b", pat))
 }
 
 #[test]
-fn regex_find_reports_char_offsets() {
+fn regex_find_reports_scalar_offsets() {
     let source = r#"val hit = __re.find("é ana", regex {
   named word {
     one_or_more letter
@@ -686,9 +686,61 @@ emit __col.sort_by(normalized_key, words)
 }
 
 #[test]
+fn text_semantics_add_explicit_scalar_byte_and_grapheme_access_modes() {
+    let source = r#"val text = "éx"
+val bytes = "aéb"
+
+emit __text.scalar(text, 0)
+emit __text.scalar(text, 1)
+emit __text.grapheme_len(text)
+emit __text.grapheme(text, 0)
+emit __text.byte_slice(bytes, 1, 3)
+emit __text.scalar_slice(text, 0, 2)
+emit __text.grapheme_slice(text, 0, 1)
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "e\ń\n2\né\né\né\né");
+}
+
+#[test]
+fn text_semantics_report_invalid_unit_boundaries_precisely() {
+    let err = run_source(r#"emit __text.scalar("nodia", 9)"#, BTreeMap::new()).unwrap_err();
+    assert!(err
+        .message
+        .contains("scalar() scalar index 9 is out of range for text with 5 scalar value(s)"));
+
+    let err = run_source(r#"emit __text.grapheme("éx", 9)"#, BTreeMap::new()).unwrap_err();
+    assert!(err
+        .message
+        .contains("grapheme() grapheme index 9 is out of range for text with 2 grapheme(s)"));
+
+    let err = run_source(r#"emit __text.byte_slice("é", 1, 2)"#, BTreeMap::new()).unwrap_err();
+    assert!(err
+        .message
+        .contains("byte_slice() byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)"));
+
+    let err = run_source(
+        r#"emit __text.scalar_slice("nodia", 4, 2)"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+    assert!(err.message.contains(
+        "scalar_slice() start scalar offset 4 cannot be greater than end scalar offset 2"
+    ));
+
+    let err = run_source(r#"emit __text.grapheme_slice("éx", 3, 4)"#, BTreeMap::new()).unwrap_err();
+    assert!(err.message.contains(
+        "grapheme_slice() grapheme offset 3 is out of range for text with 2 grapheme(s)"
+    ));
+}
+
+#[test]
 fn text_semantics_reject_invalid_offset_boundaries() {
     let err = run_source(r#"emit __text.scalar_offset("é", 1)"#, BTreeMap::new()).unwrap_err();
-    assert!(err.message.contains("does not point to a UTF-8 boundary"));
+    assert!(err
+        .message
+        .contains("byte offset 1 is not a UTF-8 boundary in text with 2 byte(s)"));
 
     let err = run_source(r#"emit __text.byte_offset("é", 2)"#, BTreeMap::new()).unwrap_err();
     assert!(err
@@ -1151,7 +1203,7 @@ fn direct_string_index_reports_bounds_with_length() {
 
     assert!(err
         .message
-        .contains("string index -9 out of bounds for length 5"));
+        .contains("string scalar index -9 is out of range for text with 5 scalar value(s)"));
 }
 
 #[test]

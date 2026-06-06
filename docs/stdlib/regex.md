@@ -113,9 +113,10 @@ example.com
 
 `start` and `end` are **Unicode scalar value offsets** (not byte offsets), so
 they line up with `collections.len(string)` and `collections.slice(...)`. Use
-`text.byte_offset(...)` / `text.scalar_offset(...)` when you need explicit
-UTF-8 byte boundaries. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.1`
+`text.scalar_slice(...)` when you want to slice on the same unit, or
+`text.byte_offset(...)` / `text.scalar_offset(...)` when you need to cross the
+byte/scalar boundary. See
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.2`
 model.
 
 ## `find_all(text, pattern)`

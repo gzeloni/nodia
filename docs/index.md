@@ -4,7 +4,7 @@
 output**, and **data/math workflows**. It is intentionally not a systems
 language, an application platform, or a general-purpose scripting language.
 
-The current release is **Nodia 0.7.1**, implemented in Rust on top of the
+The current release is **Nodia 0.7.2**, implemented in Rust on top of the
 standard library plus targeted Unicode/regex crates, including
 [`fancy-regex`](https://crates.io/crates/fancy-regex).
 
@@ -90,13 +90,12 @@ extension and no fallback resolution into non-`.nod` paths.
 ```
 
 ```text
-nodia 0.7.1
+nodia 0.7.2
 ```
 
 ## Status
 
-Nodia 0.7.1 is the current text-semantics baseline: text values are UTF-8,
-`len(string)`, `slice(string, ...)`, indexing, and regex offsets are
-scalar-based, `byte_len`, `byte_offset`, and `scalar_offset` expose explicit
-byte boundaries, and normalization-aware comparisons are spelled explicitly
-with `text.nfc(...)`, `text.nfkc(...)`, and `text.casefold(...)`.
+Nodia 0.7.2 is the current text-semantics baseline: text values are UTF-8,
+legacy string indexing/slicing remain scalar-based, regex offsets stay scalar,
+and explicit helpers now cover byte boundaries, grapheme-aware access, and
+strict unit-aware slicing.

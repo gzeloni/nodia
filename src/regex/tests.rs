@@ -73,7 +73,7 @@ fn supports_scoped_flags_and_any_codepoint() {
 }
 
 #[test]
-fn compiled_regex_reports_matches_with_char_offsets() {
+fn compiled_regex_reports_matches_with_scalar_offsets() {
     let pattern = RegexPattern {
         flags: vec![RegexFlag::CaseInsensitive],
         body: vec![RegexNode::Group {

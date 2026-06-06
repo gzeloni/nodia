@@ -201,7 +201,7 @@ impl Runtime {
                     Value::Int(value) => value,
                     other => {
                         return Err(NodiaError::runtime(format!(
-                            "string index must be int, got {}",
+                            "string scalar index must be int, got {}",
                             other.type_name()
                         )))
                     }
@@ -210,7 +210,7 @@ impl Runtime {
                 let normalized = if index < 0 { len + index } else { index };
                 if normalized < 0 || normalized >= len {
                     return Err(NodiaError::runtime(format!(
-                        "string index {index} out of bounds for length {len}",
+                        "string scalar index {index} is out of range for text with {len} scalar value(s)",
                     )));
                 }
                 value
@@ -219,7 +219,7 @@ impl Runtime {
                     .map(|ch| Value::String(ch.to_string()))
                     .ok_or_else(|| {
                         NodiaError::runtime(format!(
-                            "string index {index} out of bounds for length {len}",
+                            "string scalar index {index} is out of range for text with {len} scalar value(s)",
                         ))
                     })
             }
@@ -390,9 +390,9 @@ impl Runtime {
                     None => Ok(None),
                 }
             }
-            (Value::String(_), TargetStep::Index(_)) => {
-                Err(NodiaError::runtime("cannot assign through string index"))
-            }
+            (Value::String(_), TargetStep::Index(_)) => Err(NodiaError::runtime(
+                "cannot assign through string scalar index",
+            )),
             (other, TargetStep::Field(_)) => Err(NodiaError::runtime(format!(
                 "cannot assign field on {}",
                 other.type_name()

@@ -440,10 +440,97 @@ true
 `collections.len(text)` returns the Unicode scalar count for strings. It also
 works on lists and maps — see [Collections](collections.md).
 
-## Text Semantics
+Use `text.grapheme_len(text)` when you need extended grapheme cluster count,
+and `text.byte_len(text)` when you need UTF-8 storage length.
 
-These helpers make UTF-8 byte boundaries explicit. They are strict: the first
-argument must be a string.
+## Unit-Aware Access
+
+These helpers are strict and explicit: the first argument must be a string, and
+their indexes/offsets are non-negative.
+
+### `scalar(text, scalar_index)`
+
+Returns one Unicode scalar value as a string:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.scalar("nodia", 1)'
+```
+
+```text
+o
+```
+
+### `grapheme_len(text)`
+
+Counts extended grapheme clusters:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.grapheme_len("éx")'
+```
+
+```text
+2
+```
+
+### `grapheme(text, grapheme_index)`
+
+Returns one extended grapheme cluster as a string:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.grapheme("éx", 0)'
+```
+
+```text
+é
+```
+
+### `byte_slice(text, start_byte_offset, end_byte_offset)`
+
+Slices by explicit UTF-8 byte boundaries:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.byte_slice("aéb", 1, 3)'
+```
+
+```text
+é
+```
+
+### `scalar_slice(text, start_scalar_offset, end_scalar_offset)`
+
+Slices by explicit scalar offsets:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.scalar_slice("éx", 0, 2)'
+```
+
+```text
+é
+```
+
+### `grapheme_slice(text, start_grapheme_offset, end_grapheme_offset)`
+
+Slices by explicit grapheme-cluster offsets:
+
+```bash
+./target/release/nodia eval 'use text
+emit text.grapheme_slice("éx", 0, 1)'
+```
+
+```text
+é
+```
+
+These helpers reject invalid indexes, invalid boundaries, and reversed ranges.
+For the legacy clamped scalar behavior, keep using `collections.get(...)` and
+`collections.slice(...)`.
+
+## Boundary Conversions
 
 ### `byte_len(text)`
 
@@ -489,5 +576,5 @@ emit text.scalar_offset("aéb", 3)'
 If `byte_offset` points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
-See [Text Semantics](../reference/text-semantics.md) for the full `0.7.1`
+See [Text Semantics](../reference/text-semantics.md) for the full `0.7.2`
 model shared by string indexing, slicing, regex offsets, and chunked reads.

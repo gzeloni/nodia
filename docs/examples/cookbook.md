@@ -1,7 +1,7 @@
 # Cookbook
 
 End-to-end examples that you can paste into `eval` or save into a `.nod` file
-and run. Each example has been verified with the `0.7.1` release binary.
+and run. Each example has been verified with the `0.7.2` release binary.
 
 ## 1. Hello, World
 
@@ -623,4 +623,28 @@ true
 true
 ["Z", "é", "é"]
 ["Z", "é", "é"]
+```
+
+## 26. Slice Text By Byte, Scalar, And Grapheme Units
+
+```bash
+./target/release/nodia eval '
+use text
+use collections
+
+val text = "éx"
+emit collections.len(text)
+emit text.grapheme_len(text)
+emit text.scalar_slice(text, 0, 2)
+emit text.grapheme_slice(text, 0, 1)
+emit text.byte_slice("aéb", 1, 3)
+'
+```
+
+```text
+3
+2
+é
+é
+é
 ```

@@ -27,7 +27,8 @@ emit collections.len({name: "Ana"})
 ```
 
 `collections.len` on a string is the official Unicode scalar value count in
-`0.7.1`. Use `text.byte_len(text)` when you need UTF-8 storage length. See
+`0.7.2`. Use `text.byte_len(text)` when you need UTF-8 storage length, and
+`text.grapheme_len(text)` when you need grapheme-cluster count. See
 [Text Semantics](../reference/text-semantics.md) for the contract shared by
 `len`, `slice`, and regex offsets.
 
@@ -177,7 +178,9 @@ odi
 
 `start` is inclusive, `end` is exclusive. Out-of-bounds bounds are clamped
 gracefully rather than raising. On strings, those bounds use the same Unicode
-scalar value positions as `len(string)` and regex match offsets. See
+scalar offsets as `len(string)` and regex match offsets. For strict explicit
+unit-aware slicing, use `text.scalar_slice(...)`, `text.byte_slice(...)`, or
+`text.grapheme_slice(...)`. See
 [Text Semantics](../reference/text-semantics.md).
 
 ### `reverse(value)`

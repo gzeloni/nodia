@@ -78,8 +78,8 @@ impl RuntimeRegex {
         }
         Ok(RegexMatch {
             text: matched.as_str().to_string(),
-            start: char_offset(text, matched.start()),
-            end: char_offset(text, matched.end()),
+            start: scalar_offset(text, matched.start()),
+            end: scalar_offset(text, matched.end()),
             groups,
             named,
         })

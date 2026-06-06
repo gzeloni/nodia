@@ -16,17 +16,18 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.7.1`.
+Nodia is experimental. The current release is `v0.7.2`.
 
 The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
 positions stay scalar-based, byte boundaries are part of the public model, and
-normalization/case-folding are explicit helpers rather than implicit magic.
+normalization/case-folding plus unit-aware access stay explicit rather than
+implicit magic.
 
 ## Install From Source
 
 Nodia is implemented in Rust and uses the standard library plus
-`fancy-regex`, `unicode-normalization`, and `caseless` for regex execution and
-explicit Unicode text semantics.
+`fancy-regex`, `unicode-normalization`, `unicode-segmentation`, and `caseless`
+for regex execution and explicit Unicode text semantics.
 
 ```bash
 cargo build --release
@@ -472,6 +473,12 @@ Text (`use text`):
 | `text.byte_len(text)` | Returns the UTF-8 byte length |
 | `text.byte_offset(text, scalar_offset)` | Converts scalar offsets to byte offsets |
 | `text.scalar_offset(text, byte_offset)` | Converts byte offsets to scalar offsets |
+| `text.scalar(text, scalar_index)` | Returns one Unicode scalar value |
+| `text.grapheme_len(text)` | Counts grapheme clusters |
+| `text.grapheme(text, grapheme_index)` | Returns one grapheme cluster |
+| `text.byte_slice(text, start, end)` | Slices with explicit byte offsets |
+| `text.scalar_slice(text, start, end)` | Slices with explicit scalar offsets |
+| `text.grapheme_slice(text, start, end)` | Slices with explicit grapheme offsets |
 
 Math (`use numbers`):
 

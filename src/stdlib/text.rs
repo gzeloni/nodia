@@ -10,6 +10,7 @@ use crate::{NodiaError, NodiaResult};
 use caseless::default_case_fold_str;
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
+use unicode_segmentation::UnicodeSegmentation;
 
 pub(super) fn unary_string(
     args: &[Value],
@@ -198,6 +199,12 @@ pub(super) fn byte_len(args: &[Value]) -> NodiaResult<Value> {
     Ok(Value::Int(text.len() as i64))
 }
 
+pub(super) fn grapheme_len(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 1, "grapheme_len")?;
+    let text = expect_string(&args[0], "grapheme_len", "first")?;
+    Ok(Value::Int(text.graphemes(true).count() as i64))
+}
+
 pub(super) fn nfc(args: &[Value]) -> NodiaResult<Value> {
     unary_string(args, "nfc", |text| text.nfc().collect())
 }
@@ -225,6 +232,53 @@ pub(super) fn byte_offset(args: &[Value]) -> NodiaResult<Value> {
     Ok(Value::Int(
         scalar_to_byte_offset(text, offset, "byte_offset")? as i64,
     ))
+}
+
+pub(super) fn scalar(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "scalar")?;
+    let text = expect_string(&args[0], "scalar", "first")?;
+    let index = expect_non_negative_index(&args[1], "scalar", "second")?;
+    Ok(Value::String(scalar_at(text, index, "scalar")?))
+}
+
+pub(super) fn grapheme(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 2, "grapheme")?;
+    let text = expect_string(&args[0], "grapheme", "first")?;
+    let index = expect_non_negative_index(&args[1], "grapheme", "second")?;
+    Ok(Value::String(grapheme_at(text, index, "grapheme")?))
+}
+
+pub(super) fn byte_slice(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 3, "byte_slice")?;
+    let text = expect_string(&args[0], "byte_slice", "first")?;
+    let start = expect_non_negative_offset(&args[1], "byte_slice", "second")?;
+    let end = expect_non_negative_offset(&args[2], "byte_slice", "third")?;
+    validate_byte_offset(text, start, "byte_slice")?;
+    validate_byte_offset(text, end, "byte_slice")?;
+    validate_offset_order(start, end, "byte", "byte_slice")?;
+    Ok(Value::String(text[start..end].to_string()))
+}
+
+pub(super) fn scalar_slice(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 3, "scalar_slice")?;
+    let text = expect_string(&args[0], "scalar_slice", "first")?;
+    let start = expect_non_negative_offset(&args[1], "scalar_slice", "second")?;
+    let end = expect_non_negative_offset(&args[2], "scalar_slice", "third")?;
+    let start_byte = scalar_to_byte_offset(text, start, "scalar_slice")?;
+    let end_byte = scalar_to_byte_offset(text, end, "scalar_slice")?;
+    validate_offset_order(start, end, "scalar", "scalar_slice")?;
+    Ok(Value::String(text[start_byte..end_byte].to_string()))
+}
+
+pub(super) fn grapheme_slice(args: &[Value]) -> NodiaResult<Value> {
+    expect_arity(args, 3, "grapheme_slice")?;
+    let text = expect_string(&args[0], "grapheme_slice", "first")?;
+    let start = expect_non_negative_offset(&args[1], "grapheme_slice", "second")?;
+    let end = expect_non_negative_offset(&args[2], "grapheme_slice", "third")?;
+    let start_byte = grapheme_to_byte_offset(text, start, "grapheme_slice")?;
+    let end_byte = grapheme_to_byte_offset(text, end, "grapheme_slice")?;
+    validate_offset_order(start, end, "grapheme", "grapheme_slice")?;
+    Ok(Value::String(text[start_byte..end_byte].to_string()))
 }
 
 pub(super) fn scalar_offset(args: &[Value]) -> NodiaResult<Value> {
@@ -259,6 +313,49 @@ fn expect_non_negative_offset(value: &Value, name: &str, position: &str) -> Nodi
     }
 }
 
+fn expect_non_negative_index(value: &Value, name: &str, position: &str) -> NodiaResult<usize> {
+    match value {
+        Value::Int(value) if *value >= 0 => Ok(*value as usize),
+        Value::Int(_) => Err(NodiaError::runtime(format!(
+            "{name}() expects non-negative int as {position} argument"
+        ))),
+        other => Err(NodiaError::runtime(format!(
+            "{name}() expects int as {position} argument, got {}",
+            other.type_name()
+        ))),
+    }
+}
+
+fn scalar_at(text: &str, index: usize, name: &str) -> NodiaResult<String> {
+    let scalar_len = text.chars().count();
+    text.chars().nth(index).map(|ch| ch.to_string()).ok_or_else(|| {
+        NodiaError::runtime(format!(
+            "{name}() scalar index {index} is out of range for text with {scalar_len} scalar value(s)"
+        ))
+    })
+}
+
+fn grapheme_at(text: &str, index: usize, name: &str) -> NodiaResult<String> {
+    let grapheme_len = text.graphemes(true).count();
+    text.graphemes(true)
+        .nth(index)
+        .map(str::to_string)
+        .ok_or_else(|| {
+            NodiaError::runtime(format!(
+                "{name}() grapheme index {index} is out of range for text with {grapheme_len} grapheme(s)"
+            ))
+        })
+}
+
+fn validate_offset_order(start: usize, end: usize, unit: &str, name: &str) -> NodiaResult<()> {
+    if start > end {
+        return Err(NodiaError::runtime(format!(
+            "{name}() start {unit} offset {start} cannot be greater than end {unit} offset {end}"
+        )));
+    }
+    Ok(())
+}
+
 fn scalar_to_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
     let scalar_len = text.chars().count();
     if offset > scalar_len {
@@ -278,7 +375,26 @@ fn scalar_to_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<u
         .unwrap_or(text.len()))
 }
 
-fn byte_to_scalar_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+fn grapheme_to_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+    let grapheme_len = text.graphemes(true).count();
+    if offset > grapheme_len {
+        return Err(NodiaError::runtime(format!(
+            "{name}() grapheme offset {offset} is out of range for text with {grapheme_len} grapheme(s)"
+        )));
+    }
+
+    if offset == grapheme_len {
+        return Ok(text.len());
+    }
+
+    Ok(text
+        .grapheme_indices(true)
+        .nth(offset)
+        .map(|(offset, _)| offset)
+        .unwrap_or(text.len()))
+}
+
+fn validate_byte_offset(text: &str, offset: usize, name: &str) -> NodiaResult<()> {
     if offset > text.len() {
         return Err(NodiaError::runtime(format!(
             "{name}() byte offset {offset} is out of range for text with {} byte(s)",
@@ -288,9 +404,15 @@ fn byte_to_scalar_offset(text: &str, offset: usize, name: &str) -> NodiaResult<u
 
     if !text.is_char_boundary(offset) {
         return Err(NodiaError::runtime(format!(
-            "{name}() byte offset {offset} does not point to a UTF-8 boundary"
+            "{name}() byte offset {offset} is not a UTF-8 boundary in text with {} byte(s)",
+            text.len()
         )));
     }
 
+    Ok(())
+}
+
+fn byte_to_scalar_offset(text: &str, offset: usize, name: &str) -> NodiaResult<usize> {
+    validate_byte_offset(text, offset, name)?;
     Ok(text[..offset].chars().count())
 }

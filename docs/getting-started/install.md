@@ -10,8 +10,8 @@ produces is `nodia`.
 
 The crate depends on the Rust standard library plus
 [`fancy-regex`](https://crates.io/crates/fancy-regex),
-`unicode-normalization`, and `caseless` for regex execution and explicit
-Unicode text normalization/case-folding.
+`unicode-normalization`, `unicode-segmentation`, and `caseless` for regex
+execution and explicit Unicode text normalization/case-folding/segmentation.
 
 ## Clone
 
@@ -57,7 +57,7 @@ Throughout this site every example uses the release binary:
 ```
 
 ```text
-nodia 0.7.1
+nodia 0.7.2
 ```
 
 JSON metadata:
@@ -67,12 +67,12 @@ JSON metadata:
 ```
 
 ```json
-{"name":"nodia","version":"0.7.1","rust_std_only":false}
+{"name":"nodia","version":"0.7.2","rust_std_only":false}
 ```
 
 `rust_std_only: false` reflects the current runtime shape: Nodia now depends on
 targeted third-party crates for regex execution and explicit Unicode
-normalization/case-folding.
+normalization/case-folding/segmentation.
 
 ## Quick Smoke Test
 

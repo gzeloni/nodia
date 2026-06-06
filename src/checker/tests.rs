@@ -36,6 +36,12 @@ emit __text.nfkd("①")
 emit __text.casefold("Straße")
 emit __text.byte_offset("aéb", 2)
 emit __text.scalar_offset("aéb", 3)
+emit __text.scalar("éx", 1)
+emit __text.grapheme_len("éx")
+emit __text.grapheme("éx", 0)
+emit __text.byte_slice("aéb", 1, 3)
+emit __text.scalar_slice("éx", 0, 2)
+emit __text.grapheme_slice("éx", 0, 1)
 "#;
 
     assert!(check_stdlib_source(source).is_ok());

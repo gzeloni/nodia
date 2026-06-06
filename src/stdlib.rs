@@ -43,8 +43,14 @@ const TEXT_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("indent", "indent", Some(&[2])),
     ("dedent", "dedent", Some(&[1])),
     ("byte_len", "byte_len", Some(&[1])),
+    ("grapheme_len", "grapheme_len", Some(&[1])),
     ("byte_offset", "byte_offset", Some(&[2])),
     ("scalar_offset", "scalar_offset", Some(&[2])),
+    ("scalar", "scalar", Some(&[2])),
+    ("grapheme", "grapheme", Some(&[2])),
+    ("byte_slice", "byte_slice", Some(&[3])),
+    ("scalar_slice", "scalar_slice", Some(&[3])),
+    ("grapheme_slice", "grapheme_slice", Some(&[3])),
 ];
 
 const NUMBERS_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -288,8 +294,14 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             Value::String(text::dedent(&args[0].to_string()))
         }
         "byte_len" => text::byte_len(args)?,
+        "grapheme_len" => text::grapheme_len(args)?,
         "byte_offset" => text::byte_offset(args)?,
         "scalar_offset" => text::scalar_offset(args)?,
+        "scalar" => text::scalar(args)?,
+        "grapheme" => text::grapheme(args)?,
+        "byte_slice" => text::byte_slice(args)?,
+        "scalar_slice" => text::scalar_slice(args)?,
+        "grapheme_slice" => text::grapheme_slice(args)?,
         "keys" => {
             expect_arity(&args, 1, "keys")?;
             let Value::Map(values) = &args[0] else {
