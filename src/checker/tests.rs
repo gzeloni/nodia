@@ -8,6 +8,7 @@ use crate::check_source;
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
 use re as __re
+use result as __res
 "#;
 
 fn check_stdlib_source(source: &str) -> crate::NodiaResult<()> {
@@ -137,6 +138,7 @@ use format as fmt
 use re
 use io
 use system
+use result
 use datetime as dt
 use json
 use csv as table
@@ -151,6 +153,7 @@ emit fmt.fixed(3.14, 1)
 emit re.find("ana 42", regex { one_or_more digit }).text
 emit io.basename("/tmp/report.txt")
 emit system.args[0]
+emit result.is_err(result.err("E8000", "bad"))
 emit dt.year(dt.date(2026, 6, 3))
 emit col.map(numbers.int, ["1", "2"])
 emit decode(r'{"ok":true}').ok
@@ -169,6 +172,21 @@ use conversion pick string
 for i in range(3) {
   emit string(i)
 }"#;
+
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_result_module_calls() {
+    let source = r#"use result
+val ok = result.ok("Ana")
+val bad = result.err("E8000", "missing row")
+emit result.is_ok(ok)
+emit result.is_err(bad)
+emit result.value(ok)
+emit result.error(bad).code
+emit result.raise(ok)
+"#;
 
     assert!(check_source(source).is_ok());
 }

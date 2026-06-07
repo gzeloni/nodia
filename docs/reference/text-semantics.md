@@ -109,7 +109,7 @@ step stays visible at the call site.
 | text readers such as `io.read(...)` / `io.readln(...)` | UTF-8 strict; invalid bytes fail with `E3000` |
 | raw byte readers such as `io.read(..., io.bytes)` | return `bytes`; no decode happens |
 | `system.exec(...)` output | returns raw bytes in `stdout` and `stderr` |
-| invalid `text.decode(..., text.utf8)` input | fatal runtime error today; recoverable decode errors arrive later in `0.8.x` |
+| invalid `text.decode(..., text.utf8)` input | fatal runtime error in `0.8.0`; recoverable integration arrives later in `0.8.x` |
 | lossy decode | only through explicit `text.decode(..., text.utf8, text.lossy)` |
 
 This removes hidden lossy conversions from the runtime. If a script wants
@@ -308,4 +308,4 @@ These areas are intentionally still out of scope in this release:
 | Area | Status |
 | --- | --- |
 | grapheme-aware regex offsets | regex results still report scalar offsets |
-| recoverable decode errors | not in the language yet; fatal/runtime behavior remains the only structured outcome before `0.8.x` |
+| recoverable decode integration in text/IO | the `result` model exists in `0.8.0`, but `text.decode(...)` and `io.read(...)` still fail fatally until later `0.8.x` releases |

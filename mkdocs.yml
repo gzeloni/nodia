@@ -115,6 +115,7 @@ nav:
       - Data: stdlib/data.md
       - Format: stdlib/format.md
       - System: stdlib/system.md
+      - Result: stdlib/result.md
       - Conversion: stdlib/conversion.md
       - Regex: stdlib/regex.md
       - IO: stdlib/io.md

@@ -55,6 +55,23 @@ pub struct SharedBinding {
     pub mutable: bool,
 }
 
+/// Recoverable pipeline result value.
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResultValue {
+    Ok(Box<Value>),
+    Err(RecoverableErrorValue),
+}
+
+/// Canonical recoverable error payload.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RecoverableErrorValue {
+    pub code: String,
+    pub message: String,
+    pub file: Option<String>,
+    pub line: Option<usize>,
+    pub column: Option<usize>,
+}
+
 /// Runtime value representation.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -66,6 +83,7 @@ pub enum Value {
     Bytes(Vec<u8>),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
+    Result(ResultValue),
     Date(DateValue),
     DateTime(DateTimeValue),
     Duration(DurationValue),
@@ -99,6 +117,7 @@ impl Value {
             Value::Bytes(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
+            Value::Result(value) => value.is_ok(),
             Value::Date(_) => true,
             Value::DateTime(_) => true,
             Value::Duration(_) => true,
@@ -121,6 +140,7 @@ impl Value {
             Value::Bytes(_) => "bytes",
             Value::List(_) => "list",
             Value::Map(_) => "map",
+            Value::Result(_) => "result",
             Value::Date(_) => "date",
             Value::DateTime(_) => "datetime",
             Value::Duration(_) => "duration",
@@ -174,6 +194,7 @@ impl Value {
                 }
                 write!(f, "}}")
             }
+            Value::Result(value) => value.write_display(f, nested),
             Value::Date(value) => write!(f, "{}", value.isoformat()),
             Value::DateTime(value) => write!(f, "{}", value.isoformat()),
             Value::Duration(value) => write!(f, "{}", value.isoformat()),
@@ -197,6 +218,7 @@ impl PartialEq for Value {
             (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
+            (Value::Result(a), Value::Result(b)) => a == b,
             (Value::Date(a), Value::Date(b)) => a == b,
             (Value::DateTime(a), Value::DateTime(b)) => a == b,
             (Value::Duration(a), Value::Duration(b)) => a == b,
@@ -209,6 +231,125 @@ impl PartialEq for Value {
             }
             _ => false,
         }
+    }
+}
+
+impl ResultValue {
+    pub fn ok(value: Value) -> Self {
+        Self::Ok(Box::new(value))
+    }
+
+    pub fn err(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::Err(RecoverableErrorValue::new(code, message))
+    }
+
+    pub fn is_ok(&self) -> bool {
+        matches!(self, Self::Ok(_))
+    }
+
+    pub fn is_err(&self) -> bool {
+        matches!(self, Self::Err(_))
+    }
+
+    pub fn value(&self) -> Option<&Value> {
+        match self {
+            Self::Ok(value) => Some(value),
+            Self::Err(_) => None,
+        }
+    }
+
+    pub fn error(&self) -> Option<&RecoverableErrorValue> {
+        match self {
+            Self::Ok(_) => None,
+            Self::Err(error) => Some(error),
+        }
+    }
+
+    fn write_display(&self, f: &mut fmt::Formatter<'_>, nested: bool) -> fmt::Result {
+        match self {
+            Self::Ok(value) => {
+                write!(f, "ok(")?;
+                value.write_display(f, nested)?;
+                write!(f, ")")
+            }
+            Self::Err(error) => {
+                write!(f, "err(")?;
+                error.write_display(f)?;
+                write!(f, ")")
+            }
+        }
+    }
+}
+
+impl RecoverableErrorValue {
+    pub fn new(code: impl Into<String>, message: impl Into<String>) -> Self {
+        Self {
+            code: code.into(),
+            message: message.into(),
+            file: None,
+            line: None,
+            column: None,
+        }
+    }
+
+    pub fn to_map(&self) -> BTreeMap<String, Value> {
+        let mut fields = BTreeMap::new();
+        fields.insert("code".to_string(), Value::String(self.code.clone()));
+        fields.insert("message".to_string(), Value::String(self.message.clone()));
+        fields.insert(
+            "file".to_string(),
+            self.file
+                .as_ref()
+                .map(|value| Value::String(value.clone()))
+                .unwrap_or(Value::Null),
+        );
+        fields.insert(
+            "line".to_string(),
+            self.line
+                .map(|value| Value::Int(value as i64))
+                .unwrap_or(Value::Null),
+        );
+        fields.insert(
+            "column".to_string(),
+            self.column
+                .map(|value| Value::Int(value as i64))
+                .unwrap_or(Value::Null),
+        );
+        fields
+    }
+
+    fn write_display(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{{")?;
+        write_map_key(f, "code")?;
+        write!(f, ": ")?;
+        Value::String(self.code.clone()).write_display(f, true)?;
+        write!(f, ", ")?;
+        write_map_key(f, "message")?;
+        write!(f, ": ")?;
+        Value::String(self.message.clone()).write_display(f, true)?;
+        write!(f, ", ")?;
+        write_map_key(f, "file")?;
+        write!(f, ": ")?;
+        self.file
+            .as_ref()
+            .map(|value| Value::String(value.clone()))
+            .unwrap_or(Value::Null)
+            .write_display(f, true)?;
+        write!(f, ", ")?;
+        write_map_key(f, "line")?;
+        write!(f, ": ")?;
+        self.line
+            .map(|value| Value::Int(value as i64))
+            .unwrap_or(Value::Null)
+            .write_display(f, true)?;
+        write!(f, ", ")?;
+        write_map_key(f, "column")?;
+        write!(f, ": ")?;
+        self.column
+            .map(|value| Value::Int(value as i64))
+            .unwrap_or(Value::Null)
+            .write_display(f, true)?;
+        write!(f, "}}")
     }
 }
 

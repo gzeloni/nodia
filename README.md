@@ -16,13 +16,18 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.7.5`.
+Nodia is experimental. The current release is `v0.8.0`.
 
-The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
+The `0.7.x` text-semantics line is now closed: Nodia text is UTF-8, string
 positions stay scalar-based, byte boundaries are part of the public model, and
 normalization/case-folding, UTF-8 encode/decode, newline cleanup, explicit
 bytes-aware JSON/CSV parsing, and grapheme-safe formatting stay explicit
 rather than implicit magic.
+
+`0.8.0` opens the recoverable-error line with first-class `result` values.
+Most existing stdlib failures still remain fatal in this release; the new model
+exists so scripts can represent and inspect recoverable pipeline failures
+explicitly before broader stdlib adoption lands in later `0.8.x` releases.
 
 ## Install From Source
 
@@ -451,7 +456,7 @@ The current surface is namespace-first:
 - `use numbers` for math and `numbers.range(...)`
 - `use collections` for list/map helpers
 - `use conversion` for explicit `string`, `int`, `float`, `bool`
-- `use format`, `use re`, `use io`, `use system`, `use datetime`, `use json`, `use csv`
+- `use format`, `use re`, `use io`, `use system`, `use result`, `use datetime`, `use json`, `use csv`
 
 Direct selected imports are also supported when they improve clarity:
 
@@ -474,6 +479,13 @@ The text-semantics line is stabilized in `0.7.5` around:
 For the complete module docs, see [docs/stdlib/index.md](docs/stdlib/index.md).
 For upgrade guidance from older `0.7.x` naming, see
 [docs/reference/migration-0.7.5.md](docs/reference/migration-0.7.5.md).
+
+The new recoverable-error surface starts with:
+
+- `result.ok(value)` and `result.err(code, message)`
+- `result.is_ok(...)` / `result.is_err(...)`
+- `result.value(...)` / `result.error(...)`
+- `result.raise(...)` to turn a recoverable error back into a fatal runtime failure
 
 ## Reserved Words
 

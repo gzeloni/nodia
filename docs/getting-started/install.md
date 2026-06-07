@@ -57,7 +57,7 @@ Throughout this site every example uses the release binary:
 ```
 
 ```text
-nodia 0.7.5
+nodia 0.8.0
 ```
 
 JSON metadata:
@@ -67,7 +67,7 @@ JSON metadata:
 ```
 
 ```json
-{"name":"nodia","version":"0.7.5","rust_std_only":false}
+{"name":"nodia","version":"0.8.0","rust_std_only":false}
 ```
 
 `rust_std_only: false` reflects the current runtime shape: Nodia now depends on

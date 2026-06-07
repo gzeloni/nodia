@@ -12,6 +12,7 @@ use format as __fmt
 use re as __re
 use io as __io
 use system as __sys
+use result as __res
 use datetime as __dt
 use json as __json
 use csv as __csv
@@ -1264,6 +1265,7 @@ use format as fmt
 use re
 use io
 use system
+use result
 use datetime as dt
 
 emit text.upper("ana")
@@ -1273,6 +1275,7 @@ emit fmt.fixed(3.14, 1)
 emit re.find("ana 42", regex { one_or_more digit }).text
 emit io.basename("/tmp/report.txt")
 emit system.args[1]
+emit result.is_ok(result.ok("ana"))
 emit dt.year(dt.date(2026, 6, 3))
 emit col.map(numbers.int, ["1", "2"])
 "#,
@@ -1284,7 +1287,45 @@ emit col.map(numbers.int, ["1", "2"])
     )
     .unwrap();
 
-    assert_eq!(output, "ANA\n4\n3\n3.1\n42\nreport.txt\none\n2026\n[1, 2]");
+    assert_eq!(
+        output,
+        "ANA\n4\n3\n3.1\n42\nreport.txt\none\ntrue\n2026\n[1, 2]"
+    );
+}
+
+#[test]
+fn result_values_capture_recoverable_pipeline_state() {
+    let output = run_source(
+        r#"val ok = __res.ok("Ana")
+val bad = __res.err("E8000", "missing row")
+emit ok
+emit bad
+emit __res.is_ok(ok)
+emit __res.is_err(ok)
+emit __res.is_ok(bad)
+emit __res.is_err(bad)
+emit __res.value(ok)
+emit __res.value(bad)
+emit __res.error(ok)
+emit __res.error(bad).code
+emit __res.error(bad).message
+if ok {
+  emit "ok truthy"
+}
+if bad {
+  emit "bad truthy"
+} else {
+  emit "bad falsy"
+}
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "ok(Ana)\nerr({code: \"E8000\", message: \"missing row\", file: null, line: null, column: null})\ntrue\nfalse\nfalse\ntrue\nAna\nnull\nnull\nE8000\nmissing row\nok truthy\nbad falsy"
+    );
 }
 
 #[test]
@@ -1480,6 +1521,18 @@ fn mirrored_output_still_preserves_controlled_exit_output() {
 
     assert_eq!(err.exit_status, Some(7));
     assert_eq!(err.output.as_deref(), Some(""));
+}
+
+#[test]
+fn result_raise_promotes_recoverable_failure_to_fatal_error() {
+    let err = run_source(
+        r#"emit __res.raise(__res.err("E8000", "missing row"))"#,
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E8000");
+    assert_eq!(err.message, "missing row");
 }
 
 #[test]

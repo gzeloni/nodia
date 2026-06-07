@@ -9,6 +9,7 @@ mod datetime;
 mod formatting;
 mod numeric;
 mod pathing;
+mod result;
 mod sequence;
 mod text;
 
@@ -153,6 +154,16 @@ const SYSTEM_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("env", "env", Some(&[1, 2])),
     ("exit", "exit", Some(&[0, 1])),
     ("exec", "exec", Some(&[1, 2])),
+];
+
+const RESULT_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("ok", "result.ok", Some(&[1])),
+    ("err", "result.err", Some(&[2])),
+    ("is_ok", "result.is_ok", Some(&[1])),
+    ("is_err", "result.is_err", Some(&[1])),
+    ("value", "result.value", Some(&[1])),
+    ("error", "result.error", Some(&[1])),
+    ("raise", "result.raise", Some(&[1])),
 ];
 
 const DATETIME_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -386,6 +397,13 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "is_dir" => pathing::is_dir(args)?,
         "list_dir" => pathing::list_dir(args)?,
         "glob" => pathing::glob(args)?,
+        "result.ok" => result::ok(args)?,
+        "result.err" => result::err(args)?,
+        "result.is_ok" => result::is_ok(args)?,
+        "result.is_err" => result::is_err(args)?,
+        "result.value" => result::value(args)?,
+        "result.error" => result::error(args)?,
+        "result.raise" => result::raise(args)?,
         "now" => datetime::now(args)?,
         "today" => datetime::today(args)?,
         "date" => datetime::date(args)?,
@@ -509,6 +527,7 @@ pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
         "re" => Some(REGEX_MODULE_ITEMS),
         "io" => Some(IO_MODULE_ITEMS),
         "system" => Some(SYSTEM_MODULE_ITEMS),
+        "result" => Some(RESULT_MODULE_ITEMS),
         "datetime" => Some(DATETIME_MODULE_ITEMS),
         "json" => Some(JSON_MODULE_ITEMS),
         "csv" => Some(CSV_MODULE_ITEMS),

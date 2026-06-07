@@ -15,6 +15,7 @@ fixed set of kinds.
 | `bytes`    | `b"hello"`, `b"\xff\0"`                              |
 | `list`     | `[1, 2, 3]`                                          |
 | `map`      | `{name: "Ana", role: "dev"}`                         |
+| `result`   | `result.ok("Ana")`, `result.err("E8000", "missing row")` |
 | `date`     | `datetime.date(2026, 5, 27)`                         |
 | `datetime` | `datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime)` |
 | `duration` | `datetime.duration({hours: 2, minutes: 30})`         |
@@ -72,6 +73,23 @@ returns another `bytes` value. Common producers are `text.encode(..., text.utf8)
 
 See [Lists & Maps](collections.md).
 
+### Results
+
+`result` is the recoverable pipeline value introduced in `0.8.0`.
+
+Import `use result` and construct explicit success/failure values:
+
+```nodia
+use result
+
+val ok = result.ok("Ana")
+val bad = result.err("E8000", "missing row")
+```
+
+Use `result.is_ok(...)`, `result.is_err(...)`, `result.value(...)`, and
+`result.error(...)` to inspect them. `result.raise(...)` converts a recoverable
+error back into a fatal runtime failure.
+
 ### Dates, Datetimes, And Durations
 
 These are first-class runtime values created through standard library
@@ -92,6 +110,7 @@ rules are:
 | `bytes`    | false if empty (`b""`) |
 | `list`     | false if empty (`[]`) |
 | `map`      | false if empty (`{}`) |
+| `result`   | true for `ok(...)`, false for `err(...)` |
 | `date`     | always true           |
 | `datetime` | always true           |
 | `duration` | always true           |

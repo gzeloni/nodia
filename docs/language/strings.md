@@ -17,7 +17,7 @@ emit "hello"
 emit 'hello'
 ```
 
-Single- and double-quoted strings are equivalent in v0.7.5 — they accept the
+Single- and double-quoted strings are equivalent in v0.8.0 — they accept the
 same escape sequences and use the same interpolation rules.
 
 ### Byte Literals

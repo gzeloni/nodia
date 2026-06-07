@@ -45,6 +45,7 @@ Available stdlib namespaces:
 * `re`
 * `io`
 * `system`
+* `result`
 * `datetime`
 * `json`
 * `csv`
@@ -63,6 +64,8 @@ Available stdlib namespaces:
 * [Data](data.md) — `use json`, `use csv`.
 * [Format](format.md) — `format.format`, `format.pad`, `format.fixed`.
 * [System](system.md) — `system.args`, `system.env`, `system.exit`.
+* [Result](result.md) — `result.ok`, `result.err`, `result.is_ok`,
+  `result.is_err`, `result.value`, `result.error`, `result.raise`.
 * [Conversion](conversion.md) — `conversion.string`, `conversion.bool`,
   `conversion.int`, `conversion.float`.
 * [Regex](regex.md) — `re.test`, `re.find`, `re.replace`, `re.split`.

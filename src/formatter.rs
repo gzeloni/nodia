@@ -385,6 +385,17 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
+        Value::Result(value) => match value {
+            crate::value::ResultValue::Ok(value) => format!(
+                "result.ok({})",
+                format_literal(value, indent, available_width(indent, 0))
+            ),
+            crate::value::ResultValue::Err(error) => format!(
+                "result.err({}, {})",
+                quote_string(&error.code),
+                quote_string(&error.message)
+            ),
+        },
         Value::Date(value) => format!(
             "datetime.parse({}, datetime.as_date)",
             quote_string(&value.isoformat())
