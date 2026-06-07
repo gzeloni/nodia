@@ -184,7 +184,8 @@ impl<'a> State<'a> {
 
     pub(super) fn check_arity(
         &self,
-        name: &str,
+        display_name: &str,
+        highlight_name: &str,
         got: usize,
         expected: &[usize],
     ) -> NodiaResult<()> {
@@ -198,8 +199,8 @@ impl<'a> State<'a> {
             .join(" or ");
         Err(self.error_name(
             "E4107",
-            format!("{name}() expects {expected} argument(s), got {got}"),
-            name,
+            format!("{display_name}() expects {expected} argument(s), got {got}"),
+            highlight_name,
         ))
     }
 

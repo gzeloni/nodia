@@ -20,6 +20,17 @@ use re
 emit re.find("ana 42", regex { one_or_more digit }).text
 ```
 
+Direct stdlib picks work too:
+
+```nodia
+use numbers pick range
+use conversion pick string
+
+for i in range(3) {
+  emit string(i)
+}
+```
+
 ## Basic Form
 
 ```nodia
@@ -36,8 +47,10 @@ Rules:
 For stdlib modules:
 
 * use a bare identifier such as `json` or `csv`;
-* the module is always bound as a namespace;
-* `pick` and `hide` filter names inside that namespace.
+* bare `use text` / `use json` binds the whole stdlib module as a namespace;
+* `pick` without `as` imports only the selected stdlib names directly;
+* `pick` with `as` filters the namespace bound under that alias;
+* `hide` excludes names from either form.
 
 ```text
 lib/

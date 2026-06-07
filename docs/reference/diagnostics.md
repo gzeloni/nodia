@@ -118,7 +118,7 @@ emit text.upper("a", "b")
 ```
 
 ```text
-error[E4107]: 'upper' expects 1 argument, got 2
+error[E4107]: text.upper() expects 1 argument(s), got 2
 ```
 
 ### Invalid Regex Replacement Placeholder

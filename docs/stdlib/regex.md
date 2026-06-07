@@ -117,7 +117,7 @@ example.com
 they line up with `collections.len(string)` and `collections.slice(...)`. Use
 `text.slice(..., text.scalar, ...)` when you want to slice on the same unit,
 or `text.offset(...)` when you need to cross the byte/scalar boundary. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.4`
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.5`
 model.
 
 ## `find(text, pattern, re.all)`

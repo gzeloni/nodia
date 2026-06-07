@@ -443,7 +443,7 @@ A `re.find(...)` hit is a map:
 `len(string)` and `slice(...)`. Use `text.slice(..., text.scalar, ...)` when
 you want to slice on the same unit, or `text.offset(...)` when you need to
 cross the byte/scalar boundary. See
-[Text Semantics](../reference/text-semantics.md) for the official `0.7.4`
+[Text Semantics](../reference/text-semantics.md) for the official `0.7.5`
 model.
 
 ## Replacement Placeholders

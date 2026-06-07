@@ -1,6 +1,9 @@
 # Text Semantics
 
-This page defines the official `0.7.4` text model in Nodia.
+This page defines the official `0.7.5` text model in Nodia.
+
+For upgrade mapping from older `0.7.x` names and examples, see
+[Migration to 0.7.5](migration-0.7.5.md).
 
 ## Core Model
 
@@ -13,7 +16,7 @@ This page defines the official `0.7.4` text model in Nodia.
 | grapheme cluster | one extended grapheme cluster | `text.len(text, text.grapheme)`, `text.at(text, text.grapheme, ...)`, `text.slice(..., text.grapheme, ...)` |
 | character | informal human term only | use `byte`, `scalar value`, or `grapheme cluster` when precision matters |
 
-Nodia `0.7.4` keeps strings as UTF-8 text, and raw bytes have their own
+Nodia `0.7.5` keeps strings as UTF-8 text, and raw bytes have their own
 first-class value kind instead of piggybacking on list syntax.
 
 ## Indexes And Offsets
@@ -71,7 +74,7 @@ That means:
 
 ## Boundaries
 
-Three kinds of boundaries matter in `0.7.4`:
+Three kinds of boundaries matter in `0.7.5`:
 
 | Boundary kind | Valid range | Meaning |
 | --- | --- | --- |
@@ -99,7 +102,7 @@ step stays visible at the call site.
 
 ## Decoding And Sanitation
 
-`0.7.4` keeps the decode boundary explicit:
+`0.7.5` keeps the decode boundary explicit:
 
 | Situation | Rule |
 | --- | --- |
@@ -298,7 +301,7 @@ emit format.pad("é", 2, format.left, ".")
 .é
 ```
 
-## Not In `0.7.4`
+## Not In `0.7.5`
 
 These areas are intentionally still out of scope in this release:
 

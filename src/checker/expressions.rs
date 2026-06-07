@@ -72,7 +72,7 @@ impl<'a> State<'a> {
         if let Some(name) = direct_identifier(callee) {
             if let Some(symbol) = self.lookup(name).cloned() {
                 if let SymbolKind::Function { arities, .. } = &symbol.kind {
-                    self.check_arity(name, args.len(), arities)?;
+                    self.check_arity(name, name, args.len(), arities)?;
                 }
                 return Ok(());
             }
@@ -83,7 +83,9 @@ impl<'a> State<'a> {
             match self.field_status(object, field) {
                 FieldStatus::Found(symbol) => {
                     if let SymbolKind::Function { arities, .. } = symbol.kind {
-                        self.check_arity(field, args.len(), &arities)?;
+                        let display_name =
+                            display_call_name(callee).unwrap_or_else(|| field.clone());
+                        self.check_arity(&display_name, field, args.len(), &arities)?;
                     }
                     self.check_expr(object)?;
                     return Ok(());

@@ -17,7 +17,7 @@ new syntax is considered incomplete until it has canonical formatting.
 | Line width     | formatter-controlled lines target 60 characters          |
 | Final newline  | always emitted                                           |
 | Comments       | preserved as comment statements                          |
-| Long strings   | may be split with `+`                                    |
+| Long strings   | may be split with `+`; interpolated strings split only at literal boundaries |
 
 ## Before / After
 

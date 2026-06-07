@@ -167,6 +167,17 @@ pub(super) fn direct_identifier(expr: &Expr) -> Option<&str> {
     }
 }
 
+pub(super) fn display_call_name(expr: &Expr) -> Option<String> {
+    match expr {
+        Expr::Identifier(name) => Some(name.clone()),
+        Expr::Get { object, field } => {
+            let prefix = display_call_name(object)?;
+            Some(format!("{prefix}.{field}"))
+        }
+        _ => None,
+    }
+}
+
 pub(super) fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
     match kind {
         TokenKind::Val => Some("val"),

@@ -1,8 +1,8 @@
 site_name: Nodia
 site_description: Nodia is a focused language for textual automation, structured output, and data workflows.
 site_url: https://nodia.dev
-repo_name: gzeloni/orich
-repo_url: https://github.com/gzeloni/orich
+repo_name: gzeloni/nodia
+repo_url: https://github.com/gzeloni/nodia
 edit_uri: ""
 
 docs_dir: docs
@@ -73,7 +73,7 @@ extra:
     default: "0.6"
   social:
     - icon: fontawesome/brands/github
-      link: https://github.com/gzeloni/orich
+      link: https://github.com/gzeloni/nodia
 
 exclude_docs: |
   _archive/
@@ -121,6 +121,7 @@ nav:
   - Reference:
       - Grammar: reference/grammar.md
       - Text Positions: reference/text-semantics.md
+      - Migration to 0.7.5: reference/migration-0.7.5.md
       - Operator Precedence: reference/precedence.md
       - Diagnostics: reference/diagnostics.md
       - Formatter: reference/formatter.md

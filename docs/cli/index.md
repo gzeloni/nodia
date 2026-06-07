@@ -91,7 +91,7 @@ nodia -h
 ```
 
 ```text
-Nodia 0.7.4
+Nodia 0.7.5
 
 Usage:
   nodia run [file.nod] [--var key=value] [--vars key=value ...] [--out output.txt] [--allow-write] [--allow-env] [--allow-process] [-- script-args...]

@@ -16,7 +16,7 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.7.4`.
+Nodia is experimental. The current release is `v0.7.5`.
 
 The v0.7 focus is explicit text semantics: Nodia text is UTF-8, string
 positions stay scalar-based, byte boundaries are part of the public model, and
@@ -186,7 +186,7 @@ val url = regex(case_insensitive) {
 val hit = re.find("go to https://example.com now", url)
 emit hit.named.host
 emit re.test("http://a", url)
-emit re.full_match("https://example.com", url)
+emit re.test("https://example.com", url, re.full)
 emit re.replace("go to https://example.com now", url, "<$(host)>")
 emit re.split("ana   bruno\tcarla", regex {
   one_or_more whitespace
@@ -445,80 +445,35 @@ val line = io.readln(io.stdin)
 There is no implicit stdlib prelude. Outside of reserved words and local/module
 bindings, stdlib access is always explicit through `use`.
 
-Text (`use text`):
+The current surface is namespace-first:
 
-| Function | Description |
-|---|---|
-| `text.upper(value)` | Converts text to uppercase |
-| `text.lower(value)` | Converts text to lowercase |
-| `text.casefold(value)` | Applies Unicode default case folding |
-| `text.capitalize(value)` | Capitalizes text |
-| `text.trim(value)` | Trims surrounding whitespace |
-| `text.nfc(value)` | Canonically normalizes text |
-| `text.nfd(value)` | Canonically decomposes text |
-| `text.nfkc(value)` | Compatibility-normalizes text |
-| `text.nfkd(value)` | Compatibility-decomposes text |
-| `text.replace(value, from, to)` | Replaces text with literal or regex patterns |
-| `text.replace_all(value, from, to)` | Explicit alias of `text.replace(...)` |
-| `text.split(value, delimiter)` | Splits text with a literal or regex delimiter |
-| `text.split_regex(value, pattern)` | Explicit alias of `text.split(...)` |
-| `text.join(list, delimiter)` | Joins a list into text |
-| `text.lines(value)` | Splits text into lines |
-| `text.unlines(list)` | Joins values with newlines |
-| `text.words(value)` | Splits text by whitespace |
-| `text.contains(value, needle)` | Checks strings, lists, or map keys |
-| `text.starts(value, prefix)` | Checks a text prefix |
-| `text.ends(value, suffix)` | Checks a text suffix |
-| `text.indent(text, spaces_or_prefix)` | Prefixes each line |
-| `text.dedent(text)` | Removes common indentation |
-| `text.byte_len(text)` | Returns the UTF-8 byte length |
-| `text.byte_offset(text, scalar_offset)` | Converts scalar offsets to byte offsets |
-| `text.scalar_offset(text, byte_offset)` | Converts byte offsets to scalar offsets |
-| `text.scalar(text, scalar_index)` | Returns one Unicode scalar value |
-| `text.grapheme_len(text)` | Counts grapheme clusters |
-| `text.grapheme(text, grapheme_index)` | Returns one grapheme cluster |
-| `text.byte_slice(text, start, end)` | Slices with explicit byte offsets |
-| `text.scalar_slice(text, start, end)` | Slices with explicit scalar offsets |
-| `text.grapheme_slice(text, start, end)` | Slices with explicit grapheme offsets |
+- `use text` for case, normalization, codecs, bytes, and unit-aware access
+- `use numbers` for math and `numbers.range(...)`
+- `use collections` for list/map helpers
+- `use conversion` for explicit `string`, `int`, `float`, `bool`
+- `use format`, `use re`, `use io`, `use system`, `use datetime`, `use json`, `use csv`
 
-Math (`use numbers`):
+Direct selected imports are also supported when they improve clarity:
 
-| Function | Description |
-|---|---|
-| `numbers.abs(value)` | Absolute value |
-| `numbers.floor(value)` | Rounds down |
-| `numbers.ceil(value)` | Rounds up |
-| `numbers.round(value)` | Rounds to nearest integer |
-| `numbers.sqrt(value)` | Square root |
-| `numbers.pow(base, exponent)` | Power |
-| `numbers.min(a, b)` | Minimum |
-| `numbers.max(a, b)` | Maximum |
-| `numbers.clamp(value, min, max)` | Clamps into a range |
-| `numbers.sum(list)` | Sums numeric values |
-| `numbers.avg(list)` | Averages numeric values |
+```nodia
+use numbers pick range
+use conversion pick string
 
-Data, collections, and conversion (`use collections`, `use conversion`):
+for i in range(3) {
+  emit string(i)
+}
+```
 
-| Function | Description |
-|---|---|
-| `collections.keys(map)` | Returns map keys |
-| `collections.values(map)` | Returns map values |
-| `collections.entries(map)` | Returns `{key, value}` entries |
-| `collections.len(value)` | Returns length of a string, list, or map |
-| `conversion.int(value)` | Converts to integer |
-| `conversion.float(value)` | Converts to float |
-| `conversion.string(value)` | Converts to string |
-| `conversion.bool(value)` | Converts to boolean |
-| `numbers.range(end)` | Produces integers from `0` to `end - 1` |
-| `numbers.range(start, end)` | Produces integers from `start` to `end - 1` |
-| `collections.push(list, value)` | Returns a list with value appended |
-| `collections.pop(list)` | Returns a list without the last value |
-| `collections.first(list)` | Returns first value or `null` |
-| `collections.last(list)` | Returns last value or `null` |
-| `collections.slice(list_or_text, start, end)` | Returns a slice |
-| `collections.reverse(list_or_text)` | Reverses value |
-| `collections.sort(list)` | Sorts values deterministically |
-| `collections.unique(list)` | Removes duplicate values |
+The text-semantics line is stabilized in `0.7.5` around:
+
+- `text.normalize(text, text.nfc | text.nfd | text.nfkc | text.nfkd | text.lf | text.crlf)`
+- `text.encode(text, text.utf8)` and `text.decode(bytes, text.utf8[, text.lossy])`
+- `text.len`, `text.at`, `text.slice`, and `text.offset` with explicit `text.byte`, `text.scalar`, and `text.grapheme`
+- first-class `bytes` values across `io`, `system.exec`, `json.read`, and `csv.read`
+
+For the complete module docs, see [docs/stdlib/index.md](docs/stdlib/index.md).
+For upgrade guidance from older `0.7.x` naming, see
+[docs/reference/migration-0.7.5.md](docs/reference/migration-0.7.5.md).
 
 ## Reserved Words
 
@@ -564,8 +519,8 @@ Developer: Install Extension from Location...
 
 Then select the `vscode/nodia-language` folder.
 
-It provides syntax highlighting plus completions for stdlib namespaces such as
-`json.read()`, `csv.write()`, `text.upper()`, and `use re`.
+It provides syntax highlighting, stdlib-aware completions, format-on-save
+through `nodia fmt`, and checker diagnostics through `nodia check`.
 
 ## Project Layout
 

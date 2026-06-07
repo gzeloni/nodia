@@ -209,3 +209,17 @@ fn checker_rejects_regex_keyword_as_stdlib_module_name() {
 
     assert!(err.message.contains("use re for regex helpers"));
 }
+
+#[test]
+fn checker_arity_errors_use_surface_call_names() {
+    let err = check_source(
+        r#"use text as txt
+emit txt.upper("a", "b")"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E4107");
+    assert!(err
+        .message
+        .contains("txt.upper() expects 1 argument(s), got 2"));
+}

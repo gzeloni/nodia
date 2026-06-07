@@ -29,7 +29,7 @@ vscode/nodia-language
 
 ## Stdlib Notes
 
-The extension follows the current modular stdlib model and the `0.7.4`
+The extension follows the current modular stdlib model and the `0.7.5`
 parameterized API surface:
 
 ```nodia

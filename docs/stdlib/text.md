@@ -570,5 +570,5 @@ emit text.offset("éx", text.grapheme, text.byte, 1)'
 If the source offset points into the middle of one UTF-8 sequence, this is a
 runtime error.
 
-See [Text Semantics](../reference/text-semantics.md) for the full `0.7.4`
+See [Text Semantics](../reference/text-semantics.md) for the full `0.7.5`
 model shared by string indexing, slicing, regex offsets, and chunked reads.

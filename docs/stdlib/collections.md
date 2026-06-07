@@ -29,7 +29,7 @@ emit collections.len({name: "Ana"})
 ```
 
 `collections.len` on a string is the official Unicode scalar value count in
-`0.7.4`. Use `text.len(text, text.byte)` when you need UTF-8 storage length,
+`0.7.5`. Use `text.len(text, text.byte)` when you need UTF-8 storage length,
 and `text.len(text, text.grapheme)` when you need grapheme-cluster count. See
 [Text Semantics](../reference/text-semantics.md) for the contract shared by
 `len`, `slice`, and regex offsets.

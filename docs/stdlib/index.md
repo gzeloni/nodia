@@ -74,5 +74,5 @@ User functions and imported stdlib callables are checked for arity by
 `nodia check`. A mismatch produces `E4107`:
 
 ```text
-error[E4107]: 'upper' expects 1 argument, got 2
+error[E4107]: text.upper() expects 1 argument(s), got 2
 ```
