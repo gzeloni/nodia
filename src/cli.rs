@@ -27,6 +27,7 @@ struct Options {
     allow_write: bool,
     allow_env: bool,
     allow_process: bool,
+    stream_program_output: bool,
 }
 
 enum ColorMode {
@@ -93,7 +94,7 @@ pub fn run(args: Vec<String>) -> i32 {
         Err(err) => {
             if let Some(status) = err.exit_status.or_else(|| exit_status(&err.message)) {
                 if let Some(output) = err.output.filter(|output| !output.is_empty()) {
-                    if !options.quiet {
+                    if !options.quiet && !options.stream_program_output {
                         println!("{output}");
                     }
                 }
@@ -300,15 +301,25 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     }
 
     let input = parse_vars(&vars)?;
+    let mirror_output = !options.quiet && out_path.is_none();
+    options.stream_program_output = mirror_output;
     let output = if path.as_deref() == Some("-") {
         let source = read_stdin()?;
-        run_source_with_options(&source, input, runtime_options(options, script_args))
-            .map_err(CliError::language_runtime)?
+        run_source_with_options(
+            &source,
+            input,
+            runtime_options(options, script_args, mirror_output),
+        )
+        .map_err(CliError::language_runtime)?
     } else {
         let path = resolve_entry(path.as_deref())?;
         ensure_dob(&path)?;
-        let output = run_file_with_options(&path, input, runtime_options(options, script_args))
-            .map_err(CliError::language_runtime)?;
+        let output = run_file_with_options(
+            &path,
+            input,
+            runtime_options(options, script_args, mirror_output),
+        )
+        .map_err(CliError::language_runtime)?;
         if let Some(target) = out_path {
             let target = if target.as_os_str().is_empty() {
                 PathBuf::from(format!("{}.out", path.display()))
@@ -323,7 +334,7 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
         output
     };
 
-    if !options.quiet {
+    if !options.quiet && !options.stream_program_output {
         println!("{output}");
     }
     Ok(())
@@ -436,13 +447,15 @@ fn eval_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliE
         return Err(CliError::usage("eval expects source code"));
     }
     let source = source_args.join(" ");
+    let mirror_output = !options.quiet;
+    options.stream_program_output = mirror_output;
     let output = run_source_with_options(
         &source,
         BTreeMap::new(),
-        runtime_options(options, script_args),
+        runtime_options(options, script_args, mirror_output),
     )
     .map_err(CliError::language_runtime)?;
-    if !options.quiet {
+    if !options.quiet && !options.stream_program_output {
         println!("{output}");
     }
     Ok(())
@@ -522,11 +535,12 @@ fn version_command(mut args: Vec<String>, options: &mut Options) -> Result<(), C
     Ok(())
 }
 
-fn runtime_options(options: &Options, args: Vec<String>) -> RuntimeOptions {
+fn runtime_options(options: &Options, args: Vec<String>, mirror_output: bool) -> RuntimeOptions {
     RuntimeOptions {
         allow_write: options.allow_write,
         allow_env: options.allow_env,
         allow_process: options.allow_process,
+        mirror_output,
         args,
     }
 }
@@ -797,6 +811,7 @@ mod tests {
     fn eval_alias_returns_custom_exit_code() {
         let code = run(vec![
             "nodia".to_string(),
+            "--quiet".to_string(),
             "-e".to_string(),
             "use system\nemit \"before\"\nsystem.exit(7)".to_string(),
         ]);

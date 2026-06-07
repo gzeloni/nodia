@@ -63,6 +63,7 @@ impl Runtime {
             let flow = match self.execute(statement) {
                 Ok(flow) => flow,
                 Err(err) if err.exit_status.is_some() => {
+                    self.flush_output_channel()?;
                     self.io.borrow_mut().flush_all()?;
                     return Err(err.with_output(self.output.trim_end_matches('\n').to_string()));
                 }
@@ -75,8 +76,29 @@ impl Runtime {
                 Flow::Continue => return Err(NodiaError::runtime("continue outside loop")),
             }
         }
+        self.flush_output_channel()?;
         self.io.borrow_mut().flush_all()?;
         Ok(self.output.trim_end_matches('\n').to_string())
+    }
+
+    pub(super) fn write_output_channel(&mut self, text: &str) -> NodiaResult<()> {
+        self.output.push_str(text);
+        if self.options.mirror_output {
+            stdio::stdout()
+                .write_all(text.as_bytes())
+                .map_err(|err| NodiaError::io(format!("cannot write stdout: {err}")))?;
+            self.flush_output_channel()?;
+        }
+        Ok(())
+    }
+
+    pub(super) fn flush_output_channel(&mut self) -> NodiaResult<()> {
+        if self.options.mirror_output {
+            stdio::stdout()
+                .flush()
+                .map_err(|err| NodiaError::io(format!("cannot flush stdout: {err}")))?;
+        }
+        Ok(())
     }
 
     pub(super) fn execute_block(&mut self, statements: &[Stmt]) -> NodiaResult<Flow> {
@@ -128,8 +150,8 @@ impl Runtime {
             })),
             Stmt::Emit(expr) => {
                 let value = self.eval(expr)?;
-                self.output.push_str(&value.to_string());
-                self.output.push('\n');
+                self.write_output_channel(&value.to_string())?;
+                self.write_output_channel("\n")?;
                 Ok(Flow::None)
             }
             Stmt::If {

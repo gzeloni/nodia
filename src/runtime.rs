@@ -37,6 +37,8 @@ pub struct RuntimeOptions {
     pub allow_env: bool,
     /// Enables subprocess execution.
     pub allow_process: bool,
+    /// Mirrors the program output channel to process stdout as it is produced.
+    pub mirror_output: bool,
     /// Positional arguments exposed through the standard library.
     pub args: Vec<String>,
 }

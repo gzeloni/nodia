@@ -349,6 +349,7 @@ impl Runtime {
     pub(super) fn read_stream(&mut self, stream: StreamId) -> NodiaResult<String> {
         match stream {
             StreamId::Stdin => {
+                self.flush_output_channel()?;
                 let mut input = String::new();
                 stdio::stdin()
                     .lock()
@@ -369,6 +370,7 @@ impl Runtime {
     ) -> NodiaResult<String> {
         match stream {
             StreamId::Stdin => {
+                self.flush_output_channel()?;
                 let mut buffer = vec![0; size];
                 let read = stdio::stdin()
                     .lock()
@@ -386,6 +388,7 @@ impl Runtime {
     pub(super) fn read_bytes_stream(&mut self, stream: StreamId) -> NodiaResult<Vec<u8>> {
         match stream {
             StreamId::Stdin => {
+                self.flush_output_channel()?;
                 let mut buffer = Vec::new();
                 stdio::stdin()
                     .lock()
@@ -406,6 +409,7 @@ impl Runtime {
     ) -> NodiaResult<Vec<u8>> {
         match stream {
             StreamId::Stdin => {
+                self.flush_output_channel()?;
                 if size == 0 {
                     return Ok(Vec::new());
                 }
@@ -426,6 +430,7 @@ impl Runtime {
     pub(super) fn read_line_stream(&mut self, stream: StreamId) -> NodiaResult<Option<String>> {
         match stream {
             StreamId::Stdin => {
+                self.flush_output_channel()?;
                 let mut line = String::new();
                 let read = stdio::stdin()
                     .lock()
@@ -451,10 +456,7 @@ impl Runtime {
     pub(super) fn write_stream(&mut self, stream: StreamId, text: &str) -> NodiaResult<()> {
         match stream {
             StreamId::Stdin => Err(NodiaError::runtime("cannot write to stdin")),
-            StreamId::Stdout => {
-                self.output.push_str(text);
-                Ok(())
-            }
+            StreamId::Stdout => self.write_output_channel(text),
             StreamId::Stderr => stdio::stderr()
                 .write_all(text.as_bytes())
                 .map_err(|err| NodiaError::io(format!("cannot write stderr: {err}"))),
@@ -478,7 +480,7 @@ impl Runtime {
     pub(super) fn flush_stream(&mut self, stream: StreamId) -> NodiaResult<()> {
         match stream {
             StreamId::Stdin => Ok(()),
-            StreamId::Stdout => Ok(()),
+            StreamId::Stdout => self.flush_output_channel(),
             StreamId::Stderr => stdio::stderr()
                 .flush()
                 .map_err(|err| NodiaError::io(format!("cannot flush stderr: {err}"))),

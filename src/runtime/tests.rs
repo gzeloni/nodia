@@ -320,6 +320,21 @@ emit __io.read("{}")
 }
 
 #[test]
+fn stdout_stream_writes_share_the_program_output_channel() {
+    let output = run_source(
+        r#"__io.write(__io.stdout, "What")
+__io.write(__io.stdout, " ")
+__io.writeln(__io.stdout, "now?")
+emit "Done"
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "What now?\nDone");
+}
+
+#[test]
 fn readln_handles_final_line_without_trailing_newline() {
     let dir = std::env::temp_dir().join(format!("nodia-io-readln-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
@@ -1449,6 +1464,22 @@ fn exit_builtin_returns_special_exit_error_with_output() {
 
     assert_eq!(err.exit_status, Some(7));
     assert_eq!(err.output.as_deref(), Some("before"));
+}
+
+#[test]
+fn mirrored_output_still_preserves_controlled_exit_output() {
+    let err = run_source_with_options(
+        "__sys.exit(7)\n",
+        BTreeMap::new(),
+        RuntimeOptions {
+            mirror_output: true,
+            ..RuntimeOptions::default()
+        },
+    )
+    .unwrap_err();
+
+    assert_eq!(err.exit_status, Some(7));
+    assert_eq!(err.output.as_deref(), Some(""));
 }
 
 #[test]
