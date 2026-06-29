@@ -9,7 +9,6 @@ use std::fs;
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
 use format as __fmt
-use re as __re
 use io as __io
 use system as __sys
 use result as __res
@@ -288,18 +287,18 @@ fn file_streams_read_and_write_lines() {
     fs::write(&input, "ana\nbruno\n").unwrap();
 
     let source = format!(
-        r#"val src = __io.open("{}", "read")
-val out = __io.open("{}", "write")
+        r#"val src = __res.raise(__io.open("{}", "read"))
+val out = __res.raise(__io.open("{}", "write"))
 
-var line = __io.readln(src)
+var line = __res.raise(__io.readln(src))
 while line != null {{
-  __io.writeln(out, __text.upper(line))
-  line = __io.readln(src)
+  __res.raise(__io.writeln(out, __text.upper(line)))
+  line = __res.raise(__io.readln(src))
 }}
 
-__io.close(src)
-__io.close(out)
-emit __io.read("{}")
+__res.raise(__io.close(src))
+__res.raise(__io.close(out))
+emit __res.raise(__io.read("{}"))
 "#,
         input.display(),
         output.display(),
@@ -343,10 +342,10 @@ fn readln_handles_final_line_without_trailing_newline() {
     fs::write(&input, "ana\r\nbruno").unwrap();
 
     let source = format!(
-        r#"val src = __io.open("{}", "read")
-emit __io.readln(src)
-emit __io.readln(src)
-emit __io.readln(src)
+        r#"val src = __res.raise(__io.open("{}", "read"))
+emit __res.raise(__io.readln(src))
+emit __res.raise(__io.readln(src))
+emit __res.raise(__io.readln(src))
 "#,
         input.display(),
     );
@@ -364,13 +363,13 @@ fn file_reads_support_path_and_chunked_stream_access() {
     fs::write(&input, "abcdef").unwrap();
 
     let source = format!(
-        r#"emit __io.read("{}")
-val src = __io.open("{}", "read")
-emit __io.read(src, 2)
-emit __io.read(src, 2)
-emit __io.read(src, 10)
-emit __io.read(src, 10)
-emit __io.eof(src)
+        r#"emit __res.raise(__io.read("{}"))
+val src = __res.raise(__io.open("{}", "read"))
+emit __res.raise(__io.read(src, 2))
+emit __res.raise(__io.read(src, 2))
+emit __res.raise(__io.read(src, 10))
+emit __res.raise(__io.read(src, 10))
+emit __res.raise(__io.eof(src))
 "#,
         input.display(),
         input.display(),
@@ -389,14 +388,14 @@ fn chunked_reads_keep_utf8_scalar_boundaries_and_zero_size_is_a_no_op() {
     fs::write(&input, "aéb").unwrap();
 
     let source = format!(
-        r#"val src = __io.open("{}", "read")
-emit __io.read(src, 0)
-emit __io.eof(src)
-emit __io.read(src, 1)
-emit __io.read(src, 1)
-emit __io.read(src, 1)
-emit __io.read(src, 1)
-emit __io.eof(src)
+        r#"val src = __res.raise(__io.open("{}", "read"))
+emit __res.raise(__io.read(src, 0))
+emit __res.raise(__io.eof(src))
+emit __res.raise(__io.read(src, 1))
+emit __res.raise(__io.read(src, 1))
+emit __res.raise(__io.read(src, 1))
+emit __res.raise(__io.read(src, 1))
+emit __res.raise(__io.eof(src))
 "#,
         input.display(),
     );
@@ -413,43 +412,43 @@ fn file_reads_reject_invalid_utf8_consistently() {
 
     let bad_path = dir.join("bad-path.bin");
     fs::write(&bad_path, [0xff, b'a']).unwrap();
-    let err = run_source(
-        &format!(r#"emit __io.read("{}")"#, bad_path.display()),
+    let output = run_source(
+        &format!(
+            r#"emit __res.error(__io.read("{}")).code"#,
+            bad_path.display()
+        ),
         BTreeMap::new(),
     )
-    .unwrap_err();
-    assert_eq!(err.code, "E3000");
-    assert!(err.message.contains("invalid utf-8"));
+    .unwrap();
+    assert_eq!(output, "E3000");
 
     let bad_chunk = dir.join("bad-chunk.bin");
     fs::write(&bad_chunk, [0xff, b'a']).unwrap();
-    let err = run_source(
+    let output = run_source(
         &format!(
-            r#"val src = __io.open("{}", "read")
-emit __io.read(src, 1)
+            r#"val src = __res.raise(__io.open("{}", "read"))
+emit __res.error(__io.read(src, 1)).code
 "#,
             bad_chunk.display(),
         ),
         BTreeMap::new(),
     )
-    .unwrap_err();
-    assert_eq!(err.code, "E3000");
-    assert!(err.message.contains("invalid utf-8"));
+    .unwrap();
+    assert_eq!(output, "E3000");
 
     let bad_line = dir.join("bad-line.bin");
     fs::write(&bad_line, [b'a', 0xff, b'\n']).unwrap();
-    let err = run_source(
+    let output = run_source(
         &format!(
-            r#"val src = __io.open("{}", "read")
-emit __io.readln(src)
+            r#"val src = __res.raise(__io.open("{}", "read"))
+emit __res.error(__io.readln(src)).code
 "#,
             bad_line.display(),
         ),
         BTreeMap::new(),
     )
-    .unwrap_err();
-    assert_eq!(err.code, "E3000");
-    assert!(err.message.contains("invalid utf-8"));
+    .unwrap();
+    assert_eq!(output, "E3000");
 
     let _ = fs::remove_dir_all(dir);
 }
@@ -459,12 +458,12 @@ fn explicit_codec_and_sanitation_helpers_are_available_through_text_module() {
     let output = run_source(
         r#"val encoded = __text.encode("aéb", __text.utf8)
 emit encoded
-emit __text.decode(encoded, __text.utf8)
-emit __text.decode(b"a\xffb", __text.utf8, __text.lossy)
+emit __res.raise(__text.decode(encoded, __text.utf8))
+emit __res.raise(__text.decode(b"a\xffb", __text.utf8, __text.lossy))
 emit __text.normalize("a\r\nb\rc\n", __text.lf)
 emit __text.normalize("a\r\nb\rc\n", __text.crlf)
-emit __text.strip_bom(__text.decode(b"\xef\xbb\xbfhi", __text.utf8))
-emit __text.drop_nul(__text.decode(b"a\0b\0", __text.utf8))
+emit __text.strip_bom(__res.raise(__text.decode(b"\xef\xbb\xbfhi", __text.utf8)))
+emit __text.drop_nul(__res.raise(__text.decode(b"a\0b\0", __text.utf8)))
 "#,
         BTreeMap::new(),
     )
@@ -482,11 +481,11 @@ fn byte_io_surfaces_raw_bytes_without_implicit_decoding() {
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("payload.bin");
     let source = format!(
-        r#"__io.write("{}", b"a\0\xffb")
-emit __io.read("{}", __io.bytes)
-emit __text.decode(__io.read("{}", __io.bytes), __text.utf8, __text.lossy)
+        r#"__res.raise(__io.write("{}", b"a\0\xffb"))
+val raw = __res.raise(__io.read("{}", __io.bytes))
+emit raw
+emit __res.raise(__text.decode(raw, __text.utf8, __text.lossy))
 "#,
-        path.display(),
         path.display(),
         path.display(),
     );
@@ -536,21 +535,23 @@ for byte in raw {
 fn file_writes_require_permission() {
     let dir = std::env::temp_dir().join(format!("nodia-io-denied-{}", std::process::id()));
     fs::create_dir_all(&dir).unwrap();
-    let output = dir.join("output.txt");
-    let source = format!("__io.write(\"{}\", \"blocked\")", output.display());
+    let output_path = dir.join("output.txt");
 
-    let err = run_source_with_options(
-        &source,
+    let output = run_source_with_options(
+        &format!(
+            r#"emit __res.error(__io.write("{}", "blocked")).code"#,
+            output_path.display()
+        ),
         BTreeMap::new(),
         RuntimeOptions {
             allow_write: false,
             ..RuntimeOptions::default()
         },
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(err.code, "E3001");
-    assert!(!output.exists());
+    assert_eq!(output, "E3001");
+    assert!(!output_path.exists());
     let _ = fs::remove_dir_all(dir);
 }
 
@@ -664,15 +665,15 @@ fn regex_builtins_execute_against_regex_values() {
   }
 }
 
-val hit = __re.find("go to https://example.com now", pat)
-emit __re.test("go to https://example.com now", pat)
-emit __re.test("https://example.com", pat, __re.full)
+val hit = __res.raise(regex.find("go to https://example.com now", pat))
+emit __res.raise(regex.test("go to https://example.com now", pat))
+emit __res.raise(regex.test("https://example.com", pat, regex.full))
 emit hit.text
 emit hit.named.scheme
 emit hit.named.host
 emit hit.start
 emit hit.end
-emit __col.len(__re.find("http://a https://b", pat, __re.all))
+emit __col.len(__res.raise(regex.find("http://a https://b", pat, regex.all)))
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -684,11 +685,11 @@ emit __col.len(__re.find("http://a https://b", pat, __re.all))
 
 #[test]
 fn regex_find_reports_scalar_offsets() {
-    let source = r#"val hit = __re.find("é ana", regex {
+    let source = r#"val hit = __res.raise(regex.find("é ana", regex {
   named word {
     one_or_more letter
   }
-})
+}))
 
 emit hit.start
 emit hit.end
@@ -701,9 +702,9 @@ emit hit.end
 #[test]
 fn regex_offsets_align_with_slice_on_unicode_scalar_positions() {
     let source = r#"val text = "éx"
-val hit = __re.find(text, regex {
+val hit = __res.raise(regex.find(text, regex {
   "x"
-})
+}))
 
 emit hit.start
 emit hit.end
@@ -871,12 +872,90 @@ fn text_semantics_reject_invalid_offset_boundaries() {
 
 #[test]
 fn regex_builtins_accept_string_patterns() {
-    let source = r#"emit __re.test("abc-42", "^[a-z]+-\\d+$")
-emit __re.test("abc-42", "^[a-z]+-\\d+$", __re.full)
+    let source = r#"emit __res.raise(regex.test("abc-42", "^[a-z]+-\\d+$"))
+emit __res.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
     assert_eq!(output, "true\ntrue");
+}
+
+#[test]
+fn regex_text_items_normalize_and_execute_as_native_regex_values() {
+    let source = r#"val pat = regex {
+  r"(?i)^\d{2}$"
+}
+emit pat
+emit __res.raise(regex.test("42", pat, regex.full))
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "(?i)^\\d{2}$\ntrue");
+}
+
+#[test]
+fn regex_conditionals_execute_and_reverse_from_classic_text() {
+    let source = r#"val dsl = regex {
+  optional group {
+    "a"
+  }
+  "b"
+  if_capture 1 then {
+    "c"
+  } else {
+    "d"
+  }
+}
+val reversed = regex {
+  r"(a)?b(?(1)c|d)"
+}
+val python_named = regex {
+  r"(?P<word>[A-Za-z]+)\s+(?P=word)"
+}
+
+emit __res.raise(regex.test("abc", dsl, regex.full))
+emit __res.raise(regex.test("bd", dsl, regex.full))
+emit __res.raise(regex.test("abd", dsl, regex.full))
+emit __res.raise(regex.test("abc", reversed, regex.full))
+emit __res.raise(regex.test("bd", reversed, regex.full))
+emit __res.raise(regex.test("ana ana", python_named, regex.full))
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(output, "true\ntrue\nfalse\ntrue\ntrue\ntrue");
+}
+
+#[test]
+fn regex_raw_text_reversal_supports_fallback_only_features() {
+    let source = r#"val scoped = regex {
+  r"abc(?i)def"
+}
+val unicode = regex {
+  r"\A\p{Greek}+\x41\Q.+\E\z"
+}
+val subroutine = regex {
+  r"(?<num>\d+) x \g<num>"
+}
+val until = regex {
+  r"(?~END)"
+}
+
+emit scoped
+emit __res.raise(regex.test("abcDEF", scoped, regex.full))
+emit __res.raise(regex.test("ABCdef", scoped, regex.full))
+emit unicode
+emit __res.raise(regex.test("ΩβA.+", unicode, regex.full))
+emit __res.raise(regex.test("ΩβAx", unicode, regex.full))
+emit subroutine
+emit __res.raise(regex.test("12 x 34", subroutine, regex.full))
+emit __res.raise(regex.find("AAENDZZ", until)).text
+"#;
+
+    let output = run_source(source, BTreeMap::new()).unwrap();
+    assert_eq!(
+        output,
+        "abc(?i:def)\ntrue\nfalse\n\\A\\p{Greek}+A\\.\\+\\z\ntrue\nfalse\n(?<num>\\d+) x \\g<num>\ntrue\nAA"
+    );
 }
 
 #[test]
@@ -905,7 +984,7 @@ val digits = regex {
     one_or_more digit
   }
 }
-val hit = __re.find("42", digits)
+val hit = __res.raise(regex.find("42", digits))
 
 emit m.from
 emit m.val
@@ -1027,7 +1106,7 @@ emit {name: "Ana", "full name": "Ana Maria", empty: ""}
 #[test]
 fn json_builtins_parse_and_stringify_structured_values() {
     let output = run_source(
-            r#"val parsed = __json.read("{{\"name\":\"Ana\",\"flags\":[true,false],\"meta\":{{\"count\":2}},\"note\":\"line\\nnext\"}}")
+            r#"val parsed = __res.raise(__json.read("{{\"name\":\"Ana\",\"flags\":[true,false],\"meta\":{{\"count\":2}},\"note\":\"line\\nnext\"}}"))
 emit parsed.name
 emit parsed.flags
 emit __json.write(parsed)
@@ -1045,11 +1124,11 @@ emit __json.write(parsed)
 #[test]
 fn json_and_csv_read_accept_explicit_byte_sequences() {
     let output = run_source(
-        r#"val parsed = __json.read(__text.encode(r'{"name":"Ana","age":30}', __text.utf8))
-val rows = __csv.read(__text.encode("name,age\nAna,30", __text.utf8), {
+        r#"val parsed = __res.raise(__json.read(__text.encode(r'{"name":"Ana","age":30}', __text.utf8)))
+val rows = __res.raise(__csv.read(__text.encode("name,age\nAna,30", __text.utf8), {
   header: true,
   types: true,
-})
+}))
 emit parsed.name
 emit rows[0].age + 5
 "#,
@@ -1062,25 +1141,56 @@ emit rows[0].age + 5
 
 #[test]
 fn json_read_rejects_duplicate_object_keys() {
-    let err = run_source(
-        r#"emit __json.read(r'{"name":"Ana","name":"Bia"}')"#,
+    let output = run_source(
+        r#"emit __res.error(__json.read(r'{"name":"Ana","name":"Bia"}')).code"#,
         BTreeMap::new(),
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("duplicate object key 'name'"));
+    assert_eq!(output, "E2000");
 }
 
 #[test]
 fn json_and_csv_reject_invalid_utf8_byte_inputs() {
-    let err = run_source(r#"emit __json.read(b"\xff")"#, BTreeMap::new()).unwrap_err();
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("cannot decode bytes as UTF-8"));
+    let output = run_source(
+        r#"emit __res.error(__json.read(b"\xff")).code"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(output, "E2000");
 
-    let err = run_source(r#"emit __csv.read(b"\xff")"#, BTreeMap::new()).unwrap_err();
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("cannot decode bytes as UTF-8"));
+    let output = run_source(
+        r#"emit __res.error(__csv.read(b"\xff")).code"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(output, "E2000");
+}
+
+#[test]
+fn recoverable_errors_expose_context_and_nested_spans() {
+    let output = run_source(
+        r#"val json_bad = __res.error(__json.read(r"""{
+true}"""))
+emit json_bad.context
+emit json_bad.span.line
+emit json_bad.span.column
+val csv_bad = __res.error(__csv.read("name\n\"Ana\"x"))
+emit csv_bad.context
+emit csv_bad.span.line
+emit csv_bad.span.column
+val decode_bad = __res.error(__text.decode(b"\xff", __text.utf8))
+emit decode_bad.context
+emit decode_bad.span == null
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "[\"json.read\"]\n2\n1\n[\"csv.read\"]\n2\n6\n[\"text.decode\"]\ntrue"
+    );
 }
 
 #[test]
@@ -1149,7 +1259,7 @@ fn json_stringify_rejects_unknown_option_keys() {
 #[test]
 fn csv_builtins_read_headers_and_write_maps() {
     let output = run_source(
-        r#"val rows = __csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true)
+        r#"val rows = __res.raise(__csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true))
 emit rows[0].name
 emit rows[1].name
 emit __csv.write(rows)
@@ -1164,11 +1274,11 @@ emit __csv.write(rows)
 #[test]
 fn csv_read_supports_header_and_type_options() {
     let output = run_source(
-        r#"val users = __csv.read("name,age,active\nAna,30,true", {
+        r#"val users = __res.raise(__csv.read("name,age,active\nAna,30,true", {
   header: true,
   types: true,
-})
-val rows = __csv.read("1,2\n3,4", {types: true})
+}))
+val rows = __res.raise(__csv.read("1,2\n3,4", {types: true}))
 emit users[0].age + 2
 emit users[0].active and true
 emit rows[1][0] + rows[1][1]
@@ -1190,19 +1300,18 @@ fn csv_read_rejects_unknown_options_and_duplicate_headers() {
     assert_eq!(err.code, "E2000");
     assert!(err.message.contains("does not accept option 'skip_empty'"));
 
-    let err = run_source(
-        r#"emit __csv.read("name,name\nAna,30", true)"#,
+    let output = run_source(
+        r#"emit __res.error(__csv.read("name,name\nAna,30", true)).code"#,
         BTreeMap::new(),
     )
-    .unwrap_err();
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("duplicate header 'name'"));
+    .unwrap();
+    assert_eq!(output, "E2000");
 }
 
 #[test]
 fn csv_handles_embedded_newlines_and_escaped_quotes() {
     let output = run_source(
-        r#"val rows = __csv.read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true)
+        r#"val rows = __res.raise(__csv.read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true))
 emit rows[0].note
 emit rows[1].note
 emit __csv.write(rows)
@@ -1236,10 +1345,11 @@ fn stdlib_data_modules_are_available_via_use() {
     let output = run_source(
         r#"use json
 use csv as table
+use result
 val decode = json.read
 val encode = json.write
-val rows = table.read("name,age\nAna,30", {header: true, types: true})
-emit decode(r'{"ok":true}').ok
+val rows = result.raise(table.read("name,age\nAna,30", {header: true, types: true}))
+emit result.raise(decode(r'{"ok":true}')).ok
 emit rows[0].age + 1
 emit encode(rows[0], 2)
 emit __col.map(encode, [{n: 1}, {n: 2}])
@@ -1262,7 +1372,6 @@ use numbers
 use collections as col
 use conversion as conv
 use format as fmt
-use re
 use io
 use system
 use result
@@ -1272,7 +1381,7 @@ emit text.upper("ana")
 emit numbers.abs(-4)
 emit conv.string(3)
 emit fmt.fixed(3.14, 1)
-emit re.find("ana 42", regex { one_or_more digit }).text
+emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
 emit io.basename("/tmp/report.txt")
 emit system.args[1]
 emit result.is_ok(result.ok("ana"))
@@ -1329,6 +1438,35 @@ if bad {
 }
 
 #[test]
+fn result_helpers_cover_fallback_and_branch_transforms() {
+    let output = run_source(
+        r#"func classify(error) {
+  return "[{error.code}] {error.message}"
+}
+
+func wrapped_upper(text) {
+  return __res.ok(__text.upper(text))
+}
+
+emit __res.value_or(__res.ok("Ana"), "fallback")
+emit __res.value_or(__res.err("E8000", "missing row"), "fallback")
+emit __res.then(__res.ok("ana"), __text.upper)
+emit __res.then(__res.ok("bia"), wrapped_upper)
+emit __res.then(__res.err("E8000", "missing row"), __text.upper)
+emit __res.recover(__res.err("E8000", "missing row"), classify)
+emit __res.recover(__res.ok("Ana"), classify)
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(
+        output,
+        "Ana\nfallback\nok(ANA)\nok(BIA)\nerr({code: \"E8000\", message: \"missing row\", file: null, line: null, column: null})\nok([E8000] missing row)\nok(Ana)"
+    );
+}
+
+#[test]
 fn stdlib_pick_can_import_selected_names_directly() {
     let output = run_source(
         r#"use numbers pick range
@@ -1351,7 +1489,7 @@ fn stdlib_data_modules_work_from_file_execution() {
     let main = dir.join("main.nod");
     fs::write(
         &main,
-        "use json\nuse csv\n\nval decode = json.read\nval encode = json.write\nval rows = csv.read(\"name,age\\nAna,30\", {\n  header: true,\n  types: true,\n})\n\nemit decode(r'{\"ok\":true,\"name\":\"Ana\"}').name\nemit rows[0].age + 1\nemit encode(rows[0], 2)\nemit csv.write(rows)\n",
+        "use json\nuse csv\nuse result\n\nval decode = json.read\nval encode = json.write\nval rows = result.raise(csv.read(\"name,age\\nAna,30\", {\n  header: true,\n  types: true,\n}))\n\nemit result.raise(decode(r'{\"ok\":true,\"name\":\"Ana\"}')).name\nemit rows[0].age + 1\nemit encode(rows[0], 2)\nemit csv.write(rows)\n",
     )
     .unwrap();
 
@@ -1536,14 +1674,25 @@ fn result_raise_promotes_recoverable_failure_to_fatal_error() {
 }
 
 #[test]
+fn fatal_errors_preserve_partial_output() {
+    let err = run_source(
+        "emit \"before\"\nemit __res.raise(__res.err(\"E8000\", \"missing row\"))\n",
+        BTreeMap::new(),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.output.as_deref(), Some("before"));
+}
+
+#[test]
 fn exec_builtin_returns_stdout_stderr_and_status() {
     let output = run_source_with_options(
         r#"val result = __sys.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit __text.decode(result.stdout, __text.utf8)
-emit __text.decode(result.stderr, __text.utf8)
+emit __res.raise(__text.decode(result.stdout, __text.utf8))
+emit __res.raise(__text.decode(result.stderr, __text.utf8))
 emit result.status
 "#,
         BTreeMap::new(),
@@ -1659,7 +1808,7 @@ emit __col.reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
 #[test]
 fn raw_and_triple_strings_preserve_literal_braces() {
     let output = run_source(
-        r#"val doc = __json.read(r'{"a":1,"tpl":"hello {world}"}')
+        r#"val doc = __res.raise(__json.read(r'{"a":1,"tpl":"hello {world}"}'))
 emit doc.a
 emit doc.tpl
 emit """{"nested":true}"""
@@ -1703,10 +1852,10 @@ val dt = __dt.datetime({
 emit __dt.isoformat(d)
 emit __dt.isoformat(dt)
 emit __dt.strftime(dt, "%F %T %:z")
-emit __dt.weekday_name(__dt.parse("2024-02-29", __dt.as_date))
-emit __dt.month_name(__dt.parse("2024-02-29", __dt.as_date))
-emit __dt.ordinal_day(__dt.parse("2024-02-29", __dt.as_date))
-emit __dt.iso_week(__dt.parse("2021-01-01", __dt.as_date)).week
+emit __dt.weekday_name(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
+emit __dt.month_name(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
+emit __dt.ordinal_day(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
+emit __dt.iso_week(__res.raise(__dt.parse("2021-01-01", __dt.as_date))).week
 emit __dt.offset_minutes(dt)
 emit __dt.days_in_month(2024, 2)
 emit __dt.is_leap_year(2024)
@@ -1725,7 +1874,7 @@ emit __dt.is_leap_year(2024)
 fn temporal_builtins_cover_epoch_arithmetic_and_json() {
     let output = run_source(
         r#"val end_of_jan = __dt.date(2024, 1, 31)
-val stamp = __dt.parse("2024-01-31T23:00:00Z", __dt.as_datetime)
+val stamp = __res.raise(__dt.parse("2024-01-31T23:00:00Z", __dt.as_datetime))
 val jump = __dt.duration({hours: 2, minutes: 30})
 
 emit __dt.isoformat(__dt.add(end_of_jan, 1, __dt.months))
@@ -1736,10 +1885,10 @@ emit __dt.isoformat(__dt.from_epoch(0.5, __dt.seconds))
 emit __dt.epoch(__dt.from_epoch(0.5, __dt.seconds), __dt.seconds)
 emit __dt.isoformat(__dt.from_epoch(1500, __dt.milliseconds))
 emit __dt.diff(__dt.date(2024, 3, 5), __dt.date(2024, 3, 1), __dt.days)
-emit __dt.diff(__dt.parse("1970-01-01T00:00:01.5Z", __dt.as_datetime), __dt.parse("1970-01-01T00:00:00Z", __dt.as_datetime), __dt.seconds)
+emit __dt.diff(__res.raise(__dt.parse("1970-01-01T00:00:01.5Z", __dt.as_datetime)), __res.raise(__dt.parse("1970-01-01T00:00:00Z", __dt.as_datetime)), __dt.seconds)
 emit __json.write({
   d: __dt.date(2024, 2, 29),
-  dt: __dt.parse("2024-02-29T12:00:00Z", __dt.as_datetime),
+  dt: __res.raise(__dt.parse("2024-02-29T12:00:00Z", __dt.as_datetime)),
   dur: __dt.duration({minutes: 90}),
 })
 "#,
@@ -1761,9 +1910,9 @@ fn temporal_values_compare_and_sort_consistently() {
   __dt.date(2024, 1, 1),
   __dt.date(2024, 1, 2),
 ])
-emit __dt.parse("2024-01-01T00:00:00+02:00", __dt.as_datetime) == __dt.parse("2023-12-31T22:00:00Z", __dt.as_datetime)
-emit __dt.parse("2024-01-01T00:00:00Z", __dt.as_datetime) < __dt.parse("2024-01-02T00:00:00Z", __dt.as_datetime)
-emit __dt.parse("PT90S", __dt.as_duration) > __dt.parse("PT1M", __dt.as_duration)
+emit __res.raise(__dt.parse("2024-01-01T00:00:00+02:00", __dt.as_datetime)) == __res.raise(__dt.parse("2023-12-31T22:00:00Z", __dt.as_datetime))
+emit __res.raise(__dt.parse("2024-01-01T00:00:00Z", __dt.as_datetime)) < __res.raise(__dt.parse("2024-01-02T00:00:00Z", __dt.as_datetime))
+emit __res.raise(__dt.parse("PT90S", __dt.as_duration)) > __res.raise(__dt.parse("PT1M", __dt.as_duration))
 "#,
         BTreeMap::new(),
     )
