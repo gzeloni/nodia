@@ -16,7 +16,7 @@ explicit text semantics on top of that baseline.
 
 ## Status
 
-Nodia is experimental. The current release is `v0.8.0`.
+Nodia is experimental. The current release is `v0.8.3`.
 
 The `0.7.x` text-semantics line is now closed: Nodia text is UTF-8, string
 positions stay scalar-based, byte boundaries are part of the public model, and
@@ -24,10 +24,12 @@ normalization/case-folding, UTF-8 encode/decode, newline cleanup, explicit
 bytes-aware JSON/CSV parsing, and grapheme-safe formatting stay explicit
 rather than implicit magic.
 
-`0.8.0` opens the recoverable-error line with first-class `result` values.
-Most existing stdlib failures still remain fatal in this release; the new model
-exists so scripts can represent and inspect recoverable pipeline failures
-explicitly before broader stdlib adoption lands in later `0.8.x` releases.
+`0.8.0` opened the recoverable-error line with first-class `result` values.
+`0.8.1` adopts that model across IO, decode, regex matching, JSON, CSV, and
+datetime parsing. `0.8.2` adds the idiomatic pipeline helpers
+`result.value_or(...)`, `result.then(...)`, and `result.recover(...)`.
+`0.8.3` adds structured nested error context/span reporting and preserves
+partial `emit` output when a later fatal error aborts the run.
 
 ## Install From Source
 
@@ -162,7 +164,7 @@ The syntax accepts both compact sugar and explicit forms such as `literal("abc")
 Regex execution uses function style:
 
 ```nodia
-use re
+use result
 
 val url = regex(case_insensitive) {
   named scheme {
@@ -188,12 +190,12 @@ val url = regex(case_insensitive) {
   }
 }
 
-val hit = re.find("go to https://example.com now", url)
+val hit = result.raise(regex.find("go to https://example.com now", url))
 emit hit.named.host
-emit re.test("http://a", url)
-emit re.test("https://example.com", url, re.full)
-emit re.replace("go to https://example.com now", url, "<$(host)>")
-emit re.split("ana   bruno\tcarla", regex {
+emit result.raise(regex.test("http://a", url))
+emit result.raise(regex.test("https://example.com", url, regex.full))
+emit regex.replace("go to https://example.com now", url, "<$(host)>")
+emit regex.split("ana   bruno\tcarla", regex {
   one_or_more whitespace
 })
 ```
@@ -402,18 +404,19 @@ Nodia v0.7 supports real file IO through the `io` namespace.
 ```nodia
 use io
 use text
+use result
 
-val src = io.open("input.txt", "read")
-val out = io.open("output.txt", "write")
+val src = result.raise(io.open("input.txt", "read"))
+val out = result.raise(io.open("output.txt", "write"))
 
-var line = io.readln(src)
+var line = result.raise(io.readln(src))
 while line != null {
-  io.writeln(out, text.upper(line))
-  line = io.readln(src)
+  result.raise(io.writeln(out, text.upper(line)))
+  line = result.raise(io.readln(src))
 }
 
-io.close(src)
-io.close(out)
+result.raise(io.close(src))
+result.raise(io.close(out))
 ```
 
 Short file helpers are built on the same IO model:
@@ -421,10 +424,11 @@ Short file helpers are built on the same IO model:
 ```nodia
 use io
 use text
+use result
 
-val content = io.read("input.txt")
-io.write("output.txt", text.upper(content))
-io.append("output.txt", "\n")
+val content = result.raise(io.read("input.txt"))
+result.raise(io.write("output.txt", text.upper(content)))
+result.raise(io.append("output.txt", "\n"))
 ```
 
 File writes require explicit permission:
@@ -433,16 +437,17 @@ File writes require explicit permission:
 nodia run script.nod --allow-write
 ```
 
-Without it, Nodia returns `error[E3001]: file write requires --allow-write`.
+Without it, IO builtins return `err({code: "E3001", ...})`.
 
 Standard streams are available as values:
 
 ```nodia
 use io
+use result
 
-io.writeln(io.stdout, "ok")
-io.writeln(io.stderr, "error")
-val line = io.readln(io.stdin)
+result.raise(io.writeln(io.stdout, "ok"))
+result.raise(io.writeln(io.stderr, "error"))
+val line = result.raise(io.readln(io.stdin))
 ```
 
 ## Standard Library
@@ -456,7 +461,8 @@ The current surface is namespace-first:
 - `use numbers` for math and `numbers.range(...)`
 - `use collections` for list/map helpers
 - `use conversion` for explicit `string`, `int`, `float`, `bool`
-- `use format`, `use re`, `use io`, `use system`, `use result`, `use datetime`, `use json`, `use csv`
+- `use format`, `use io`, `use system`, `use result`, `use datetime`, `use json`, `use csv`
+- `regex` is built into the language: `regex { ... }`, `regex.test(...)`, `regex.find(...)`, `regex.replace(...)`, `regex.split(...)`
 
 Direct selected imports are also supported when they improve clarity:
 
@@ -480,12 +486,15 @@ For the complete module docs, see [docs/stdlib/index.md](docs/stdlib/index.md).
 For upgrade guidance from older `0.7.x` naming, see
 [docs/reference/migration-0.7.5.md](docs/reference/migration-0.7.5.md).
 
-The new recoverable-error surface starts with:
+The recoverable-error surface now covers:
 
 - `result.ok(value)` and `result.err(code, message)`
 - `result.is_ok(...)` / `result.is_err(...)`
-- `result.value(...)` / `result.error(...)`
+- `result.value(...)` / `result.value_or(...)` / `result.error(...)`
+- `result.then(...)` / `result.recover(...)`
 - `result.raise(...)` to turn a recoverable error back into a fatal runtime failure
+- `text.decode(...)`, `io.*`, `regex.test(...)`, `regex.find(...)`, `json.read(...)`,
+  `csv.read(...)`, and `datetime.parse(...)` now return `result`
 
 ## Reserved Words
 
@@ -495,6 +504,7 @@ if else for in while break continue
 emit use as pick hide
 true false null
 and or not
+regex
 ```
 
 Reserved for future versions:
@@ -515,15 +525,15 @@ type enum struct namespace
 | `3` | IO error |
 | `4` | Internal error |
 
-## VSCode Extension
+## Editor Support
 
-A local VSCode extension is included at:
+A local VS Code extension is included at:
 
 ```text
 vscode/nodia-language
 ```
 
-Install it from VSCode with:
+Install it from VS Code with:
 
 ```text
 Developer: Install Extension from Location...
@@ -533,6 +543,30 @@ Then select the `vscode/nodia-language` folder.
 
 It provides syntax highlighting, stdlib-aware completions, format-on-save
 through `nodia fmt`, and checker diagnostics through `nodia check`.
+
+A local Zed extension is also included at:
+
+```text
+zed/nodia
+```
+
+Install it from Zed with:
+
+```text
+zed: install dev extension
+```
+
+Before installing it, bootstrap the local grammar repository once:
+
+```bash
+./zed/bootstrap-dev-grammar.sh
+```
+
+Then select the `zed/nodia` folder.
+
+It uses the local Tree-sitter grammar at `zed/tree-sitter-nodia` and currently
+provides `.nod` file association, syntax highlighting, bracket matching,
+indentation, and outline support.
 
 ## Project Layout
 

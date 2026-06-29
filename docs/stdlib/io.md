@@ -6,6 +6,10 @@ file IO and streams work in Nodia (including `--allow-write`), see
 
 Import this namespace with `use io`.
 
+Operational IO builtins return `result`. Contract misuse still stays fatal:
+wrong arity, invalid mode names, writing raw bytes to `io.stdout`, reading from
+a writable stream, and similar mistakes are still `E2000`.
+
 ## Standard Streams
 
 | Binding      | Meaning                          |
@@ -18,10 +22,10 @@ Import this namespace with `use io`.
 
 | Builtin                | Behavior                                                  |
 | ---------------------- | --------------------------------------------------------- |
-| `open(path, mode)`     | open a stream; modes `"read"`, `"write"`, `"append"`      |
-| `close(stream)`        | close a stream; flushes writes                            |
-| `flush(stream)`        | flush a writable stream                                   |
-| `eof(stream)`          | returns whether a readable file stream is at EOF          |
+| `open(path, mode)`     | open a stream and return `result`                         |
+| `close(stream)`        | close a stream, flush writes, and return `result`         |
+| `flush(stream)`        | flush a writable stream and return `result`               |
+| `eof(stream)`          | report EOF state through `result`                         |
 
 ## Path Helpers
 
@@ -50,17 +54,17 @@ Import this namespace with `use io`.
 
 | Builtin                | Behavior                                                |
 | ---------------------- | ------------------------------------------------------- |
-| `read(path)`           | read a whole file into a string                         |
-| `read(stream)`         | read the rest of a readable stream                      |
-| `read(stream, size)`   | read a UTF-8-safe chunk using `size` as a byte budget   |
-| `read(path, io.bytes)` | read a whole file into `bytes`                          |
-| `read(stream, io.bytes)` | read the rest of a readable stream into bytes         |
-| `read(stream, io.bytes, size)` | read up to `size` raw bytes without UTF-8 decoding |
-| `readln(stream)`       | read one line; `null` at EOF                            |
+| `read(path)`           | read a whole file into a string through `result`        |
+| `read(stream)`         | read the rest of a readable stream through `result`     |
+| `read(stream, size)`   | read a UTF-8-safe chunk through `result`                |
+| `read(path, io.bytes)` | read a whole file into `bytes` through `result`         |
+| `read(stream, io.bytes)` | read the rest of a readable stream into bytes through `result` |
+| `read(stream, io.bytes, size)` | read up to `size` raw bytes through `result` |
+| `readln(stream)`       | read one line through `result`; `ok(null)` at EOF       |
 
 `readln(stream)` strips a trailing `\n` or `\r\n` and still returns the final
 line when the file does not end with a newline.
-All text readers are UTF-8 strict: invalid bytes fail with `E3000`.
+All text readers are UTF-8 strict: invalid bytes produce `err({code: "E3000", ...})`.
 When you need undecoded input, use `read(..., io.bytes)` and choose
 `text.decode(..., text.utf8)` or `text.decode(..., text.utf8, text.lossy)`
 explicitly.
@@ -74,10 +78,10 @@ All file writes (where `path` or `mode = "write"/"append"` is involved) require
 
 | Builtin                      | Behavior                                            |
 | ---------------------------- | --------------------------------------------------- |
-| `write(path, value)`         | write text or raw bytes, replacing existing content |
-| `write(stream, value)`       | write text or raw bytes to a stream                 |
-| `writeln(stream, text)`      | write text and a newline to a stream                |
-| `append(path, value)`        | append text or raw bytes to a file                  |
+| `write(path, value)`         | write text or raw bytes through `result`            |
+| `write(stream, value)`       | write text or raw bytes through `result`            |
+| `writeln(stream, text)`      | write text and a newline through `result`           |
+| `append(path, value)`        | append text or raw bytes through `result`           |
 
 `write(io.stdout, b"...")` is rejected on purpose. `io.stdout` is still the
 program text-output channel used by `emit`, so raw bytes must go to files or
@@ -85,9 +89,10 @@ program text-output channel used by `emit`, so raw bytes must go to files or
 
 ```nodia
 use io
+use result
 
-io.write("payload.bin", b"\0\x01\x02\xff")
-io.append("payload.bin", b"\n")
+result.raise(io.write("payload.bin", b"\0\x01\x02\xff"))
+result.raise(io.append("payload.bin", b"\n"))
 ```
 
 ## Examples
@@ -97,8 +102,9 @@ io.append("payload.bin", b"\n")
 ```nodia
 use io
 use text
+use result
 
-val content = io.read("input.txt")
+val content = result.raise(io.read("input.txt"))
 emit text.upper(content)
 ```
 
@@ -121,18 +127,19 @@ match the pattern.
 ```nodia
 use io
 use text
+use result
 
-val src = io.open("input.txt", "read")
-val out = io.open("output.txt", "write")
+val src = result.raise(io.open("input.txt", "read"))
+val out = result.raise(io.open("output.txt", "write"))
 
-var line = io.readln(src)
+var line = result.raise(io.readln(src))
 while line != null {
-  io.writeln(out, text.upper(line))
-  line = io.readln(src)
+  result.raise(io.writeln(out, text.upper(line)))
+  line = result.raise(io.readln(src))
 }
 
-io.close(src)
-io.close(out)
+result.raise(io.close(src))
+result.raise(io.close(out))
 ```
 
 ```bash
@@ -143,15 +150,16 @@ io.close(out)
 
 ```nodia
 use io
+use result
 
-val src = io.open("input.txt", "read")
-while not io.eof(src) {
-  val chunk = io.read(src, 16)
+val src = result.raise(io.open("input.txt", "read"))
+while not result.raise(io.eof(src)) {
+  val chunk = result.raise(io.read(src, 16))
   if chunk != "" {
     emit chunk
   }
 }
-io.close(src)
+result.raise(io.close(src))
 ```
 
 `read(stream, size)` never returns half of a UTF-8 scalar value. If the chunk
@@ -164,11 +172,12 @@ storage length. `read(stream, 0)` is a no-op that returns `""`.
 ```nodia
 use io
 use text
+use result
 
-val raw = io.read("payload.bin", io.bytes)
+val raw = result.raise(io.read("payload.bin", io.bytes))
 val cleaned = text.drop_nul(
   text.strip_bom(
-    text.decode(raw, text.utf8, text.lossy),
+    result.raise(text.decode(raw, text.utf8, text.lossy)),
   ),
 )
 emit text.normalize(cleaned, text.lf)
@@ -179,8 +188,9 @@ emit text.normalize(cleaned, text.lf)
 ```bash
 ./target/release/nodia eval '
 use io
-io.write(io.stdout, "hello")
-io.write(io.stdout, " world\n")
+use result
+result.raise(io.write(io.stdout, "hello"))
+result.raise(io.write(io.stdout, " world\n"))
 '
 ```
 
@@ -192,7 +202,8 @@ hello world
 
 ```bash
 ./target/release/nodia eval 'use io
-io.writeln(io.stderr, "warning")'
+use result
+result.raise(io.writeln(io.stderr, "warning"))'
 ```
 
 Writes `warning\n` to stderr, leaving the program output channel untouched.

@@ -149,6 +149,12 @@ the suffix `.out`:
 `--out` does **not** require `--allow-write`. It is a CLI feature, not a
 language-level write.
 
+If the program emits output and then later fails, the already-emitted output is
+still preserved in the chosen output channel, including `--out`.
+
+When reading source from stdin (`nodia run -`), `--out` requires an explicit
+path because there is no source file path to derive `*.out` from.
+
 ## Writing Files From Code
 
 Functions like `io.write(path, text)`, `io.append(path, text)`, and

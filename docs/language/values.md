@@ -17,9 +17,9 @@ fixed set of kinds.
 | `map`      | `{name: "Ana", role: "dev"}`                         |
 | `result`   | `result.ok("Ana")`, `result.err("E8000", "missing row")` |
 | `date`     | `datetime.date(2026, 5, 27)`                         |
-| `datetime` | `datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime)` |
+| `datetime` | `result.raise(datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime))` |
 | `duration` | `datetime.duration({hours: 2, minutes: 30})`         |
-| `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `io.open("f.txt", "read")` |
+| `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `result.raise(io.open("f.txt", "read"))` |
 | `function` | `func greet(name) { ... }`                           |
 | `regex`    | `regex { one_or_more digit }`                        |
 | `use`      | result of a `use` declaration                        |
@@ -86,9 +86,11 @@ val ok = result.ok("Ana")
 val bad = result.err("E8000", "missing row")
 ```
 
-Use `result.is_ok(...)`, `result.is_err(...)`, `result.value(...)`, and
-`result.error(...)` to inspect them. `result.raise(...)` converts a recoverable
-error back into a fatal runtime failure.
+Use `result.is_ok(...)`, `result.is_err(...)`, `result.value(...)`,
+`result.value_or(...)`, and `result.error(...)` to inspect them.
+`result.then(...)` and `result.recover(...)` transform success/error branches.
+`result.raise(...)` converts a recoverable error back into a fatal runtime
+failure.
 
 ### Dates, Datetimes, And Durations
 

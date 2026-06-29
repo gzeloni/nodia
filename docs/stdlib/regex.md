@@ -1,10 +1,25 @@
 # Regex Builtins
 
-Import this namespace with `use re`.
+`regex` is built into the language. Do not import it with `use`.
 
 `test` and `find` accept a **pattern** that can be
 either a regex value (produced by `regex { ... }`) or a plain string. A plain
 string there is compiled as raw regex text.
+
+If you want to normalize classic regex text into a first-class regex value,
+use a bare raw string inside `regex { ... }`:
+
+```nodia
+val pat = regex {
+  r"(?i)^\d{2}$"
+}
+```
+
+That keeps `"..."` as literal text in the DSL, while `r"..."` becomes the
+clean inverse path from classic regex syntax back into native regex nodes.
+That inverse path now covers the broad engine surface directly, including
+properties, hard anchors, quoted literals, mid-pattern flag toggles,
+subroutines, absent operators, and backtracking verbs.
 
 `replace` and `split` share the text-builtin surface: pass a regex value for
 regex behavior, or a plain string for literal text behavior.
@@ -20,15 +35,16 @@ For DSL syntax, see [Regex DSL](../language/regex.md).
 
 ## `test(text, pattern)`
 
-Returns `true` if the pattern matches **anywhere** in the text:
+Returns a `result`. On success, the wrapped value is `true` if the pattern
+matches **anywhere** in the text:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.test("go to https://example.com now", regex {
+use result
+emit result.raise(regex.test("go to https://example.com now", regex {
   "https://"
   one_or_more letter
-})
+}))
 '
 ```
 
@@ -36,20 +52,20 @@ emit re.test("go to https://example.com now", regex {
 true
 ```
 
-## `test(text, pattern, re.full)`
+## `test(text, pattern, regex.full)`
 
-Returns `true` only when the **entire** text matches:
+Returns `ok(true)` only when the **entire** text matches:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.test("abc-42", regex {
+use result
+emit result.raise(regex.test("abc-42", regex {
   start
   one_or_more letter
   "-"
   one_or_more digit
   end
-}, re.full)
+}, regex.full))
 '
 ```
 
@@ -57,17 +73,18 @@ emit re.test("abc-42", regex {
 true
 ```
 
-A pattern that already contains `start` / `end` and a `re.full` match mode are
+A pattern that already contains `start` / `end` and a `regex.full` match mode are
 redundant; pick one and stick with it for clarity.
 
 ## `find(text, pattern)`
 
-Returns a structured match map for the first occurrence, or `null`.
+Returns a `result` whose success value is a structured match map for the first
+occurrence, or `null`.
 
 ```bash
 ./target/release/nodia eval '
-use re
-val hit = re.find("go to https://example.com now", regex {
+use result
+val hit = result.raise(regex.find("go to https://example.com now", regex {
   named scheme {
     either {
       branch { "http" }
@@ -80,7 +97,7 @@ val hit = re.find("go to https://example.com now", regex {
       char_set { letter digit "." "-" }
     }
   }
-})
+}))
 
 emit hit.text
 emit hit.start
@@ -120,22 +137,22 @@ or `text.offset(...)` when you need to cross the byte/scalar boundary. See
 [Text Semantics](../reference/text-semantics.md) for the official `0.7.5`
 model.
 
-## `find(text, pattern, re.all)`
+## `find(text, pattern, regex.all)`
 
 Returns a list of all non-overlapping match maps:
 
 ```bash
 ./target/release/nodia eval '
-use re
 use collections as col
-emit col.len(re.find("http://a https://b", regex {
+use result
+emit col.len(result.raise(regex.find("http://a https://b", regex {
   either {
     branch { "http" }
     branch { "https" }
   }
   "://"
   one_or_more letter
-}, re.all))
+}, regex.all)))
 '
 ```
 
@@ -160,8 +177,7 @@ string supports placeholders:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.replace("ana 42 bruno 77", regex { one_or_more digit }, "#")
+emit regex.replace("ana 42 bruno 77", regex { one_or_more digit }, "#")
 '
 ```
 
@@ -171,8 +187,7 @@ ana # bruno #
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.replace("https://example.com", regex {
+emit regex.replace("https://example.com", regex {
   named scheme {
     either {
       branch { "http" }
@@ -207,9 +222,8 @@ can insert text without consuming characters:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.replace("abc", regex { start }, "<")
-emit re.replace("abc", regex { end }, ">")
+emit regex.replace("abc", regex { start }, "<")
+emit regex.replace("abc", regex { end }, ">")
 '
 ```
 
@@ -224,8 +238,7 @@ Splits on every match. The pattern can be a literal string or a regex:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.split("ana   bruno\tcarla", regex { one_or_more whitespace })
+emit regex.split("ana   bruno\tcarla", regex { one_or_more whitespace })
 '
 ```
 
@@ -237,9 +250,8 @@ If the pattern can match empty text, `split` keeps the empty edge segments:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.split("abc", "")
-emit re.split("xay", regex { zero_or_more "a" })
+emit regex.split("abc", "")
+emit regex.split("xay", regex { zero_or_more "a" })
 '
 ```
 
@@ -255,8 +267,8 @@ which are treated as raw regex text:
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.test("abc-42", "^[a-z]+-\\d+$", re.full)
+use result
+emit result.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
 '
 ```
 

@@ -116,14 +116,16 @@ b"aéb"
 
 ### `decode(bytes, codec)` / `decode(bytes, codec, mode)`
 
-Decodes bytes into text. Today the supported codec is `text.utf8`.
+Decodes bytes into text and returns a `result`. Today the supported codec is
+`text.utf8`.
 The optional third argument can be `text.strict` or `text.lossy`. Omitting it
 defaults to strict decoding.
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.decode(b"a\xc3\xa9b", text.utf8)
-emit text.decode(b"a\xffb", text.utf8, text.lossy)'
+use result
+emit result.raise(text.decode(b"a\xc3\xa9b", text.utf8))
+emit result.raise(text.decode(b"a\xffb", text.utf8, text.lossy))'
 ```
 
 ```text
@@ -140,7 +142,8 @@ Removes one leading Unicode BOM when present:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.strip_bom(text.decode(b"\xef\xbb\xbfhi", text.utf8))'
+use result
+emit text.strip_bom(result.raise(text.decode(b"\xef\xbb\xbfhi", text.utf8)))'
 ```
 
 ```text
@@ -153,7 +156,8 @@ Removes every `U+0000` code point:
 
 ```bash
 ./target/release/nodia eval 'use text
-emit text.drop_nul(text.decode(b"a\0b\0", text.utf8))'
+use result
+emit text.drop_nul(result.raise(text.decode(b"a\0b\0", text.utf8)))'
 ```
 
 ```text

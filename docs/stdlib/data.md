@@ -14,8 +14,8 @@ use json
 
 ### `json.read(text_or_bytes)`
 
-Parses either a JSON string or a UTF-8 byte sequence (`bytes`) into Nodia
-values:
+Parses either a JSON string or a UTF-8 byte sequence (`bytes`) and returns a
+`result` whose success value is normal Nodia data:
 
 * objects become maps;
 * arrays become lists;
@@ -27,11 +27,12 @@ values:
 ```bash
 ./target/release/nodia eval '
 use json
+use result
 use text
 
-val doc = json.read(text.encode("""
+val doc = result.raise(json.read(text.encode("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-""", text.utf8))
+""", text.utf8)))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -49,8 +50,11 @@ strings. `r"..."` usually is not a good JSON delimiter because the first `"`
 inside the JSON closes the raw string.
 Duplicate object keys are rejected instead of silently overwriting earlier
 entries. When the first argument is bytes, `json.read(...)` decodes them with
-`text.decode(..., text.utf8)` before parsing. Invalid UTF-8 is a runtime
-error. If your source can be dirty, sanitize it first with `text.strip_bom(...)`,
+`text.decode(..., text.utf8)` before parsing. Invalid UTF-8 or malformed JSON
+produce `err(...)`. Recoverable JSON failures also expose `context` and, when
+applicable, a nested `span` through `result.error(...)`. If your source can be
+dirty, sanitize it first with
+`text.strip_bom(...)`,
 `text.normalize(..., text.lf)`, `text.drop_nul(...)`, or decode lossily with
 `text.decode(..., text.utf8, text.lossy)` before handing the resulting text to
 `json.read`.
@@ -138,14 +142,15 @@ use csv
 ### `csv.read(text_or_bytes)`
 
 Parses either CSV text or UTF-8 bytes into a list of rows, where each row is a
-list of strings:
+list of strings. The call returns a `result`.
 
 ```bash
 ./target/release/nodia eval '
 use csv
+use result
 use text
 
-emit csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8))
+emit result.raise(csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8)))
 '
 ```
 
@@ -164,9 +169,10 @@ result becomes a list of maps:
 ```bash
 ./target/release/nodia eval '
 use csv
+use result
 use text
 
-val rows = csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true)
+val rows = result.raise(csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true))
 emit rows[0].name
 emit rows[1]
 '
@@ -179,7 +185,9 @@ Ana
 
 Duplicate header names are rejected instead of silently collapsing fields.
 When the first argument is bytes, `csv.read(...)` decodes them with
-`text.decode(..., text.utf8)` before parsing.
+`text.decode(..., text.utf8)` before parsing. Bad UTF-8 or malformed CSV
+produce `err(...)`. Recoverable CSV failures also expose `context` and nested
+`span` details through `result.error(...)`.
 
 ### `csv.read(text_or_bytes, {header: true, types: true})`
 
@@ -188,11 +196,12 @@ Use an options map when you want header rows and scalar type coercion:
 ```bash
 ./target/release/nodia eval '
 use csv
+use result
 
-val rows = csv.read("name,age,active\nAna,30,true", {
+val rows = result.raise(csv.read("name,age,active\nAna,30,true", {
   header: true,
   types: true,
-})
+}))
 emit rows[0].age + 2
 emit rows[0].active
 '

@@ -72,9 +72,9 @@ P2DT3H0.5S
 
 | Builtin | Behavior |
 | ------- | -------- |
-| `datetime.parse(text, datetime.as_date)` | parses `YYYY-MM-DD` |
-| `datetime.parse(text, datetime.as_datetime)` | parses ISO/RFC3339-style datetime text |
-| `datetime.parse(text, datetime.as_duration)` | parses ISO 8601 duration text |
+| `datetime.parse(text, datetime.as_date)` | parses `YYYY-MM-DD` and returns `result` |
+| `datetime.parse(text, datetime.as_datetime)` | parses ISO/RFC3339-style datetime text and returns `result` |
+| `datetime.parse(text, datetime.as_duration)` | parses ISO 8601 duration text and returns `result` |
 | `datetime.isoformat(value)` | emits canonical ISO text for `date`, `datetime`, `duration` |
 | `datetime.strftime(value, pattern)` | formats `date` or `datetime` with a standard directive subset |
 
@@ -116,8 +116,9 @@ Supported `datetime.strftime(...)` directives:
 ```bash
 ./target/release/nodia eval '
 use datetime
+use result
 
-val dt = datetime.parse("2026-05-27T14:30:05.12+05:30", datetime.as_datetime)
+val dt = result.raise(datetime.parse("2026-05-27T14:30:05.12+05:30", datetime.as_datetime))
 emit datetime.isoformat(dt)
 emit datetime.strftime(dt, "%F %T %:z")
 '
@@ -195,8 +196,9 @@ Ordering works with `<`, `<=`, `>`, `>=` for matching temporal kinds:
 ```bash
 ./target/release/nodia eval '
 use datetime
+use result
 
-emit datetime.parse("2024-01-01T00:00:00+02:00", datetime.as_datetime) == datetime.parse("2023-12-31T22:00:00Z", datetime.as_datetime)
+emit result.raise(datetime.parse("2024-01-01T00:00:00+02:00", datetime.as_datetime)) == result.raise(datetime.parse("2023-12-31T22:00:00Z", datetime.as_datetime))
 '
 ```
 
@@ -216,9 +218,10 @@ true
 ./target/release/nodia eval '
 use json
 use datetime
+use result
 
 emit json.write({
-  when: datetime.parse("2024-02-29T12:00:00Z", datetime.as_datetime),
+  when: result.raise(datetime.parse("2024-02-29T12:00:00Z", datetime.as_datetime)),
   due: datetime.date(2024, 3, 5),
   retry_in: datetime.duration({minutes: 15}),
 })

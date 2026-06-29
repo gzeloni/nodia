@@ -1,330 +1,204 @@
 # IO & Streams
 
-Nodia v0.7 has real file IO and stream values. Import `use io` to access
-standard streams and file operations.
+Import `use io` for streams and file operations.
 
-## Standard Streams
-
-| Binding      | Meaning                          |
-| ------------ | -------------------------------- |
-| `io.stdin`   | process standard input           |
-| `io.stdout`  | program output (same as `emit`)  |
-| `io.stderr`  | process standard error           |
+In `0.8.1+`, operational IO builtins return `result`. The normal success-path
+pattern is:
 
 ```nodia
 use io
+use result
 
-io.writeln(io.stdout, "What is your name?")
-val name = io.readln(io.stdin)
-io.writeln(io.stdout, "Hello, {name}")
+val src = result.raise(io.open("input.txt", "read"))
+val text = result.raise(io.read(src))
+result.raise(io.close(src))
+emit text
+```
+
+Contract misuse still stays fatal: wrong arity, invalid mode names, reading
+from a writable stream, writing raw bytes to `io.stdout`, and similar mistakes
+remain `E2000`.
+
+## Standard Streams
+
+| Binding | Meaning |
+| --- | --- |
+| `io.stdin` | process standard input |
+| `io.stdout` | program output channel |
+| `io.stderr` | process standard error |
+
+```nodia
+use io
+use result
+
+result.raise(io.writeln(io.stdout, "What is your name?"))
+val name = result.raise(io.readln(io.stdin))
+result.raise(io.writeln(io.stdout, "Hello, {name}"))
 ```
 
 ## File Streams
 
 ### `open(path, mode)`
 
-Opens a file stream. Modes:
+Opens a file stream and returns `result`.
 
-| Mode      | Meaning                                       |
-| --------- | --------------------------------------------- |
-| `"read"`  | open existing file for reading                |
-| `"write"` | create/truncate file for writing              |
-| `"append"`| create/open file and append writes            |
-
-Reading:
+| Mode | Meaning |
+| --- | --- |
+| `"read"` | open an existing file for reading |
+| `"write"` | create or truncate a file for writing |
+| `"append"` | create or open a file and append writes |
 
 ```nodia
 use io
+use result
 
-val src = io.open("input.txt", "read")
-val text = io.read(src)
-io.close(src)
-emit text
+val out = result.raise(io.open("output.txt", "write"))
+result.raise(io.writeln(out, "first"))
+result.raise(io.writeln(out, "second"))
+result.raise(io.close(out))
 ```
 
-Writing (requires `--allow-write`):
+### `close(stream)` / `flush(stream)` / `eof(stream)`
+
+These builtins also return `result`.
+
+* `close(...)` flushes writable streams before closing.
+* `flush(...)` forces buffered output without closing.
+* `eof(...)` reports whether a readable file stream has reached end-of-file.
 
 ```nodia
 use io
+use result
 
-val out = io.open("output.txt", "write")
-io.writeln(out, "first")
-io.writeln(out, "second")
-io.close(out)
-```
-
-```bash
-./target/release/nodia run write.nod --allow-write
-```
-
-Appending:
-
-```nodia
-use io
-
-val log = io.open("app.log", "append")
-io.writeln(log, "started")
-io.close(log)
-```
-
-### `close(stream)`
-
-Closes a stream. Closing a writable stream also flushes pending writes.
-
-Closing one of `io.stdin` / `io.stdout` / `io.stderr` is accepted as a no-op or
-flush-equivalent operation; you do not need to close standard streams in
-normal scripts.
-
-### `flush(stream)`
-
-Flushes a writable stream without closing it:
-
-```nodia
-use io
-
-val out = io.open("out.txt", "write")
-io.write(out, "partial")
-io.flush(out)
-io.close(out)
-```
-
-### `eof(stream)`
-
-Returns whether a readable file stream has reached EOF. EOF becomes true
-after a read operation reaches the end:
-
-```nodia
-use io
-
-val src = io.open("input.txt", "read")
-while not io.eof(src) {
-  val chunk = io.read(src, 16)
+val src = result.raise(io.open("input.txt", "read"))
+while not result.raise(io.eof(src)) {
+  val chunk = result.raise(io.read(src, 16))
   if chunk != "" {
     emit chunk
   }
 }
-io.close(src)
+result.raise(io.close(src))
 ```
-
-For line-oriented reads, prefer the simpler `readln(stream) != null` style.
 
 ## Reading
 
-### `read(path)`
+| Builtin | Success value |
+| --- | --- |
+| `io.read(path)` | full text |
+| `io.read(stream)` | remaining text |
+| `io.read(stream, size)` | one UTF-8-safe text chunk |
+| `io.read(path, io.bytes)` | full `bytes` |
+| `io.read(stream, io.bytes)` | remaining `bytes` |
+| `io.read(stream, io.bytes, size)` | up to `size` raw bytes |
+| `io.readln(stream)` | one line, or `null` at EOF |
 
-Read an entire file into a string. Does **not** require `--allow-write`:
+Text readers are UTF-8 strict. Invalid bytes produce `err({code: "E3000", ...})`.
+When you need undecoded input, use `io.read(..., io.bytes)` and decode
+explicitly with `text.decode(...)`.
 
 ```nodia
 use io
 use text
+use result
 
-val content = io.read("input.txt")
+val content = result.raise(io.read("input.txt"))
 emit text.upper(content)
 ```
 
-All `read(...)` forms in Nodia are **UTF-8 strict**. Invalid UTF-8 is an
-`E3000` IO error; it is never silently replaced with lossy text.
-If a pipeline must keep the raw bytes first, use `read(..., io.bytes)` and decode
-later with `text.decode(..., text.utf8)` or
-`text.decode(..., text.utf8, text.lossy)`.
-
-### `read(stream)`
-
-Read the rest of a readable stream:
+`io.read(stream, size)` uses `size` as a byte budget, but it never returns half
+of one UTF-8 scalar value. The runtime may read slightly past the budget to
+finish the current scalar cleanly.
 
 ```nodia
 use io
+use result
 
-val src = io.open("input.txt", "read")
-val text = io.read(src)
-io.close(src)
+val src = result.raise(io.open("input.txt", "read"))
+emit result.raise(io.read(src, 8))
+emit result.raise(io.read(src, 8))
+result.raise(io.close(src))
 ```
 
-### `read(stream, size)`
-
-Read a chunk from a readable stream. `size` is a non-negative integer byte
-budget:
+Line reads strip trailing `\n` or `\r\n`:
 
 ```nodia
 use io
+use result
 
-val src = io.open("input.txt", "read")
-emit io.read(src, 8)
-emit io.read(src, 8)
-io.close(src)
-```
+val src = result.raise(io.open("input.txt", "read"))
 
-The returned text is always valid UTF-8. If the requested byte budget lands in
-the middle of a multi-byte scalar value, the runtime reads a little further to
-finish that scalar instead of splitting it. Use `text.len(text, text.byte)` when you need
-to compare chunk sizes with UTF-8 storage length. `read(stream, 0)` returns
-`""` without advancing the stream or forcing EOF.
-
-### `readln(stream)`
-
-Read one line and strip the line ending. Returns `null` at EOF:
-
-```nodia
-use io
-
-val src = io.open("input.txt", "read")
-
-var line = io.readln(src)
+var line = result.raise(io.readln(src))
 while line != null {
   emit line
-  line = io.readln(src)
+  line = result.raise(io.readln(src))
 }
 
-io.close(src)
+result.raise(io.close(src))
 ```
 
-Like the other text-reading forms, `readln(stream)` rejects invalid UTF-8 with
-`E3000` instead of decoding lossily.
-
-### `read(path, io.bytes)` / `read(stream, io.bytes)` / `read(stream, io.bytes, size)`
-
-Raw byte readers return `bytes`:
+Raw-byte reads keep decode choices explicit:
 
 ```nodia
 use io
 use text
+use result
 
-val raw = io.read("input.bin", io.bytes)
-emit text.decode(raw, text.utf8, text.lossy)
+val raw = result.raise(io.read("input.bin", io.bytes))
+emit result.raise(text.decode(raw, text.utf8, text.lossy))
 ```
-
-These APIs do not decode, normalize, or sanitize anything on their own.
-They exist so the decode choice stays explicit in the script. `raw[index]`
-returns one `int` byte, and `collections.slice(raw, start, end)` returns
-another `bytes` value.
 
 ## Writing
 
-All file writes require `--allow-write`. Writes to `io.stdout` / `io.stderr`
-do not.
+All file-writing operations require `--allow-write`.
 
-### `write(path, text)`
+| Builtin | Behavior |
+| --- | --- |
+| `io.write(path, value)` | replace a file with text or bytes |
+| `io.write(stream, value)` | write text or bytes to a stream |
+| `io.writeln(stream, text)` | write text plus newline |
+| `io.append(path, value)` | append text or bytes to a file |
 
-Write a whole file, replacing any previous content:
-
-```nodia
-use io
-
-io.write("out.txt", "hello\n")
-```
-
-### `write(stream, text)`
-
-Write to a stream without adding a newline:
+Each returns `result`.
 
 ```nodia
 use io
+use result
 
-val out = io.open("out.txt", "write")
-io.write(out, "hello")
-io.write(out, " world")
-io.close(out)
+result.raise(io.write("payload.bin", b"\0\x01\x02\xff"))
+result.raise(io.append("payload.bin", b"\n"))
 ```
 
-Stream-style stdout:
+`io.stdout` remains a text-output channel, so `io.write(io.stdout, b"...")` is
+rejected deliberately.
 
-```bash
-./target/release/nodia eval '
-use io
-io.write(io.stdout, "hello")
-io.write(io.stdout, " world\n")
-'
-```
+Without `--allow-write`, the call returns:
 
 ```text
-hello world
+err({code: "E3001", message: "file write requires --allow-write", file: null, line: null, column: null})
 ```
-
-### `writeln(stream, text)`
-
-Write text and a newline:
-
-```nodia
-use io
-
-val out = io.open("out.txt", "write")
-io.writeln(out, "hello")
-io.writeln(out, "world")
-io.close(out)
-```
-
-### `append(path, text)`
-
-Append text to a file:
-
-```nodia
-use io
-
-io.append("app.log", "started\n")
-```
-
-Requires `--allow-write`.
-
-### `write(path, bytes)` / `write(stream, bytes)` / `append(path, bytes)`
-
-These variants write raw bytes from a `bytes` value:
-
-```nodia
-use io
-
-io.write("payload.bin", b"\0\x01\x02\xff")
-io.append("payload.bin", b"\n")
-```
-
-`write(io.stdout, b"...")` is intentionally rejected because `stdout`
-remains the structured text-output channel for `emit` and `io.write(...)`.
-
-## Write Permission
-
-File-writing builtins (`write(path, ...)`, `append(path, ...)`,
-`open(path, "write" | "append")`) require the CLI flag:
-
-```bash
-nodia run script.nod --allow-write
-```
-
-Without permission, the runtime fails with:
-
-```text
-error[E3001]: file write requires --allow-write
-```
-
-This is by design — Nodia treats file writes as a privileged effect.
 
 ## Paths
 
-CLI commands resolve file IO paths from the current working directory of the
-`nodia` process. This is the same convention as shell tools. Module `use`
-paths are different — they resolve from the file that contains the `use`
-(see [Modules](modules.md)).
+IO paths resolve from the current working directory of the `nodia` process.
+This is different from module `use` paths, which resolve from the file that
+declares the `use`.
 
 ## End-To-End Example
 
 ```nodia
 use io
 use text
+use result
 
-val src = io.open("input.txt", "read")
-val out = io.open("output.txt", "write")
+val src = result.raise(io.open("input.txt", "read"))
+val out = result.raise(io.open("output.txt", "write"))
 
-var line = io.readln(src)
+var line = result.raise(io.readln(src))
 while line != null {
-  io.writeln(out, text.upper(line))
-  line = io.readln(src)
+  result.raise(io.writeln(out, text.upper(line)))
+  line = result.raise(io.readln(src))
 }
 
-io.close(src)
-io.close(out)
+result.raise(io.close(src))
+result.raise(io.close(out))
 ```
-
-```bash
-./target/release/nodia run upper_file.nod --allow-write
-```
-
-The script reads `input.txt` line by line and writes an uppercase copy to
-`output.txt`.

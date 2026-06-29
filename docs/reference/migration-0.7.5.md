@@ -17,11 +17,17 @@ The stable surface for text pipelines is now:
 
 There is no compatibility prelude and no legacy alias layer for removed names.
 
+If you are already on `0.8.1+`, remember that `text.decode(...)`,
+`json.read(...)`, `csv.read(...)`, `datetime.parse(...)`, `io.*`, `regex.test(...)`,
+and `regex.find(...)` now return `result`. Use `result.raise(...)`,
+`result.then(...)`, `result.recover(...)`, or `result.value_or(...)` at the
+call site instead of accessing the returned value directly.
+
 ## Old To New Names
 
 | Older shape | `0.7.5` shape |
 | --- | --- |
-| `re.full_match(text, pattern)` | `re.test(text, pattern, re.full)` |
+| `regex.full_match(text, pattern)` | `regex.test(text, pattern, regex.full)` |
 | `text.replace_all(text, from, to)` | `text.replace(text, from, to)` |
 | `text.split_regex(text, pattern)` | `text.split(text, pattern)` |
 | `text.nfc(text)` | `text.normalize(text, text.nfc)` |
@@ -74,9 +80,10 @@ Prefer namespace imports for larger modules:
 ```nodia
 use text
 use json
+use result
 
 emit text.normalize("é", text.nfc)
-emit json.read(r'{"name":"Ana"}').name
+emit result.raise(json.read(r'{"name":"Ana"}')).name
 ```
 
 Use `pick` only when it actually improves the local code:

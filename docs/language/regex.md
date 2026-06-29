@@ -5,6 +5,8 @@ evaluates to a first-class **regex value**. When emitted, interpolated, or
 converted with `conversion.string(...)`, it renders to classic regex text. When used
 with the regex builtins (`test`, `find`, `replace`,
 `split`), it executes against text.
+The `regex` keyword also owns the runtime surface directly, so
+`regex.find(...)` and friends need no `use`.
 
 ## A First Pattern
 
@@ -46,6 +48,7 @@ Available flags:
 | -------------------- | ------------------ | ------------------------------------------------------------ |
 | `case_insensitive`   | `(?i)`             | case-insensitive matching                                    |
 | `multiline`          | `(?m)`             | `start` / `end` match line boundaries, not just text boundaries |
+| `crlf`               | `(?R)`             | treat CRLF as a newline pair for line anchors and dot rules  |
 | `dot_all`            | `(?s)`             | `any_codepoint` matches newline                              |
 | `unicode`            | `(?u)`             | unicode-aware character classes                              |
 | `ignore_whitespace`  | `(?x)`             | ignore whitespace in the rendered pattern                    |
@@ -57,8 +60,17 @@ Available flags:
 | ------------------ | ---------- | ---------------------------------------- |
 | `start`            | `^`        | start of input (or line with multiline)  |
 | `end`              | `$`        | end of input (or line with multiline)    |
+| `start_text`       | `\A`       | hard start of input                      |
+| `end_text`         | `\z`       | hard end of input                        |
+| `end_text_before_newlines` | `\Z` | end of input, ignoring trailing newlines |
+| `left_word_boundary` | `\b{start}` | start-side word boundary               |
+| `left_word_half_boundary` | `\b{start-half}` | start-side half boundary     |
+| `right_word_boundary` | `\b{end}` | end-side word boundary                  |
+| `right_word_half_boundary` | `\b{end-half}` | end-side half boundary       |
 | `word_boundary`    | `\b`       | word boundary                            |
 | `not_word_boundary`| `\B`       | non-word boundary                        |
+| `previous_match_end` | `\G`     | resume from the previous match end       |
+| `keep_out`         | `\K`       | drop everything matched so far from group 0 |
 
 ```bash
 ./target/release/nodia eval '
@@ -87,14 +99,22 @@ Built-in classes (use them as bare tokens):
 | `not_whitespace` | `\S`              | non-whitespace                   |
 | `word_char`      | `\w`              | word character                   |
 | `not_word_char`  | `\W`              | non-word character               |
+| `not_hex_digit`  | `\H`              | non-hex digit                    |
+| `not_newline`    | `\N`              | any character except newline     |
+| `general_newline`| `\R`              | newline sequence (`\r\n`, `\n`, `\r`, ...) |
 | `letter`         | `[A-Za-z]`        | ASCII letter                     |
 | `lowercase`      | `[a-z]`           | ASCII lowercase letter           |
 | `uppercase`      | `[A-Z]`           | ASCII uppercase letter           |
 | `hex_digit`      | `[0-9A-Fa-f]`     | hex digit                        |
 | `alnum`          | `[A-Za-z0-9]`     | ASCII alphanumeric               |
+| `bell`           | `\a`              | bell control character           |
+| `escape`         | `\e`              | escape control character         |
+| `form_feed`      | `\f`              | form feed                        |
 | `space`          | ` ` (literal space) | a literal space character      |
 | `tab`            | `\t`              | tab                              |
 | `newline`        | `\n`              | newline                          |
+| `carriage_return`| `\r`              | carriage return                  |
+| `vertical_tab`   | `\v`              | vertical tab                     |
 | `any_char`       | `.`               | any character except newline     |
 | `any_codepoint`  | `[\s\S]`          | any character including newline  |
 
@@ -114,6 +134,7 @@ emit d
 | Form               | Meaning                                              |
 | ------------------ | ---------------------------------------------------- |
 | `"text"` (bare)    | literal string (escaped as needed)                   |
+| `r"..."` (bare)    | parse classic regex text back into native DSL nodes  |
 | `literal("text")`  | explicit literal helper                              |
 | `char("x")`        | explicit single character                            |
 | `raw_regex "..."`  | raw escape hatch — embedded directly into output     |
@@ -132,8 +153,32 @@ emit p
 a\.b\d+
 ```
 
-`literal("a.b")` escapes the `.`; `raw_regex` is inserted verbatim and is the
-right tool when you really need a snippet of upstream regex.
+`literal("a.b")` escapes the `.`. A bare raw string inside `regex { ... }`
+parses classic regex text back into the native AST, so this:
+
+```nodia
+val pat = regex {
+  r"(?i)^\d{2}$"
+}
+```
+
+formats canonically as:
+
+```nodia
+val pat = regex(case_insensitive) {
+  start
+  exactly 2 digit
+  end
+}
+```
+
+`raw_regex` stays as the opaque escape hatch when you really need a snippet to
+pass through unchanged instead of normalizing it into the DSL.
+
+The inverse raw-regex path now understands more of the engine surface directly:
+properties (`\p{...}` / `\P{...}`), hard anchors (`\A`, `\z`, `\Z`), quoted
+literals (`\Q...\E`), mid-pattern flag toggles, subroutine calls, absent
+operators, and backtracking verbs.
 
 ## Quantifiers
 
@@ -152,7 +197,7 @@ Quantifiers can wrap either a single node or a `{ ... }` block.
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val phone = regex {
   start
   "("
@@ -164,7 +209,7 @@ val phone = regex {
   end
 }
 emit phone
-emit re.test("(415) 555-1234", phone)
+emit result.raise(regex.test("(415) 555-1234", phone))
 '
 ```
 
@@ -204,7 +249,6 @@ are allowed as group names.
 
 ```bash
 ./target/release/nodia eval '
-use re
 val p = regex {
   named scheme {
     either {
@@ -234,6 +278,7 @@ only valid inside `either`:
 
 ```bash
 ./target/release/nodia eval '
+use result
 val p = regex {
   either {
     branch { "yes" }
@@ -242,7 +287,7 @@ val p = regex {
   }
 }
 emit p
-emit re.find("yes/maybe/no", p, re.all)
+emit result.raise(regex.find("yes/maybe/no", p, regex.all))
 '
 ```
 
@@ -281,14 +326,14 @@ Negation:
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val p = regex {
   one_or_more {
     not_char_set { whitespace "," }
   }
 }
 emit p
-emit re.find("a, b , c", p, re.all)
+emit result.raise(regex.find("a, b , c", p, regex.all))
 '
 ```
 
@@ -301,14 +346,14 @@ Character ranges use `range "a" to "z"` (not `range "a" "z"`):
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val p = regex {
   one_or_more {
     char_set { range "0" to "9" }
   }
 }
 emit p
-emit re.find("ab12cd34", p, re.all)
+emit result.raise(regex.find("ab12cd34", p, regex.all))
 '
 ```
 
@@ -330,13 +375,13 @@ Lookarounds always take a block:
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val p = regex {
   one_or_more digit
   followed_by { "px" }
 }
 emit p
-emit re.find("12px 7em 3px 99", p, re.all)
+emit result.raise(regex.find("12px 7em 3px 99", p, regex.all))
 '
 ```
 
@@ -350,19 +395,21 @@ emit re.find("12px 7em 3px 99", p, re.all)
 | Form                 | Classic     | Meaning                                  |
 | -------------------- | ----------- | ---------------------------------------- |
 | `same_as NAME`       | `\k<NAME>`  | refer to a named capture                 |
-| `same_as_group N`    | `\N`        | refer to an indexed capture (1-based)    |
+| `same_as_group N`    | `\1`        | refer to an indexed capture (1-based)    |
+| `call NAME`          | `\g<NAME>`  | call a named capture as a subroutine     |
+| `call_group N`       | `\g<N>`     | call an indexed capture as a subroutine  |
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val dup = regex {
   named word { one_or_more letter }
   whitespace
   same_as word
 }
 emit dup
-emit re.test("the the cat", dup)
-emit re.test("the cat", dup)
+emit result.raise(regex.test("the the cat", dup))
+emit result.raise(regex.test("the cat", dup))
 '
 ```
 
@@ -370,6 +417,101 @@ emit re.test("the cat", dup)
 (?<word>[A-Za-z]+)\s\k<word>
 true
 false
+```
+
+## Conditionals
+
+Conditional branches can depend on whether a capture participated, or on a
+lookaround assertion:
+
+| Form | Meaning |
+| --- | --- |
+| `if_capture NAME then { ... } else { ... }` | branch on a named capture participating |
+| `if_capture N then { ... } else { ... }` | branch on an indexed capture participating |
+| `if_followed_by { ... } then { ... } else { ... }` | branch on a lookahead succeeding |
+| `if_not_followed_by { ... } then { ... } else { ... }` | branch on a negative lookahead succeeding |
+| `if_preceded_by { ... } then { ... } else { ... }` | branch on a lookbehind succeeding |
+| `if_not_preceded_by { ... } then { ... } else { ... }` | branch on a negative lookbehind succeeding |
+
+```bash
+./target/release/nodia eval '
+use result
+val p = regex {
+  optional group {
+    "a"
+  }
+  "b"
+  if_capture 1 then {
+    "c"
+  } else {
+    "d"
+  }
+}
+emit p
+emit result.raise(regex.test("abc", p, regex.full))
+emit result.raise(regex.test("bd", p, regex.full))
+emit result.raise(regex.test("abd", p, regex.full))
+'
+```
+
+```text
+(a)?b(?(1)c|d)
+true
+true
+false
+```
+
+Classic regex conditionals also normalize through the inverse raw-regex path:
+
+```nodia
+val p = regex {
+  r"(a)?b(?(1)c|d)"
+}
+```
+
+`if_*` also works without `then` / `else` when you want a zero-width condition
+only, and `if_matches { ... }` covers general assertion-style conditions that
+are not just capture checks or lookarounds.
+
+## Properties, Until, And Control
+
+| Form | Classic | Meaning |
+| --- | --- | --- |
+| `property "Greek"` | `\p{Greek}` | Unicode property |
+| `not_property "Greek"` | `\P{Greek}` | negated Unicode property |
+| `until { ... }` | `(?~...)` | match until the inner pattern would match |
+| `until { ... } then { ... }` | `(?~|...|...)` | match a body within an until-limited range |
+| `until_stop { ... }` | `(?~|...)` | limit the active haystack range |
+| `until_clear` | `(?~|)` | clear an active until-stop range |
+| `define { ... }` | `(?(DEFINE)...)` | define subroutine groups without matching |
+| `fail` / `accept` / `commit` / `skip` / `prune` | `(*FAIL)` etc. | backtracking control verbs |
+
+```bash
+./target/release/nodia eval '
+use result
+val greek = regex {
+  start_text
+  one_or_more property "Greek"
+  "A.+"
+  end_text
+}
+val repeated = regex {
+  named num { one_or_more digit }
+  " x "
+  call num
+}
+emit greek
+emit result.raise(regex.test("ΩβA.+", greek, regex.full))
+emit repeated
+emit result.raise(regex.test("12 x 34", repeated, regex.full))
+'
+```
+
+```text
+\A\p{Greek}+A\.\+\z
+true
+(?<num>\d+) x \g<num>
+true
 ```
 
 ## Scoped Flags
@@ -383,7 +525,7 @@ Toggle flags inside a region only:
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 val p = regex {
   with_flags(case_insensitive) {
     "abc"
@@ -391,8 +533,8 @@ val p = regex {
   "def"
 }
 emit p
-emit re.test("ABCdef", p)
-emit re.test("ABCDEF", p)
+emit result.raise(regex.test("ABCdef", p))
+emit result.raise(regex.test("ABCDEF", p))
 '
 ```
 
@@ -407,14 +549,14 @@ false
 The full set of regex builtins is documented in
 [Standard Library / Regex](../stdlib/regex.md). The most common ones are:
 
-* `re.test(text, pattern)` — does the pattern match anywhere?
-* `re.test(text, pattern, re.full)` — does the whole text match?
-* `re.find(text, pattern)` — first match as a structured map, or `null`.
-* `re.find(text, pattern, re.all)` — list of all non-overlapping matches.
-* `re.replace(text, pattern, replacement)` — replace literal text, or regex
+* `regex.test(text, pattern)` — returns `result`; success means the pattern matched somewhere.
+* `regex.test(text, pattern, regex.full)` — returns `result`; success means the whole text matched.
+* `regex.find(text, pattern)` — returns `result`; success contains the first match map or `null`.
+* `regex.find(text, pattern, regex.all)` — returns `result`; success contains all non-overlapping matches.
+* `regex.replace(text, pattern, replacement)` — replace literal text, or regex
   matches when `pattern` is a regex value; supports `$(0)`, `$(1)`, `$(name)`,
   `$$` placeholders in regex mode.
-* `re.split(text, pattern)` — split on a literal separator, or on regex matches
+* `regex.split(text, pattern)` — split on a literal separator, or on regex matches
   when `pattern` is a regex value.
 
 `test` and `find` accept regex values **or** plain strings. A plain string
@@ -424,7 +566,7 @@ enables regex mode.
 
 ## Match Shape
 
-A `re.find(...)` hit is a map:
+A `result.raise(regex.find(...))` hit is a map:
 
 ```nodia
 {
@@ -448,7 +590,7 @@ model.
 
 ## Replacement Placeholders
 
-When `re.replace(...)` receives a regex value as the pattern, the replacement
+When `regex.replace(...)` receives a regex value as the pattern, the replacement
 string supports
 Nodia-style placeholders:
 
@@ -465,8 +607,7 @@ not exist in the pattern is an error.
 
 ```bash
 ./target/release/nodia eval '
-use re
-emit re.replace("https://example.com", regex {
+emit regex.replace("https://example.com", regex {
   named scheme {
     either {
       branch { "http" }

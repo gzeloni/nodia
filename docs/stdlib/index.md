@@ -11,15 +11,18 @@ use text
 use numbers
 use json
 use csv
+use result
 
 emit text.upper("ana")
 emit numbers.abs(-4)
-val doc = json.read(r'{"name":"Ana"}')
+val doc = result.raise(json.read(r'{"name":"Ana"}'))
 val text = csv.write([{name: "Ana"}])
 ```
 
 These are namespace calls, not methods on arbitrary values.
 There is no implicit stdlib prelude.
+`regex` is a language builtin, not a stdlib namespace, so it is used directly
+as `regex { ... }` and `regex.find(...)`.
 
 When you want only a few names in local scope, use `pick`:
 
@@ -42,7 +45,6 @@ Available stdlib namespaces:
 * `conversion`
 * `collections`
 * `format`
-* `re`
 * `io`
 * `system`
 * `result`
@@ -65,10 +67,12 @@ Available stdlib namespaces:
 * [Format](format.md) — `format.format`, `format.pad`, `format.fixed`.
 * [System](system.md) — `system.args`, `system.env`, `system.exit`.
 * [Result](result.md) — `result.ok`, `result.err`, `result.is_ok`,
-  `result.is_err`, `result.value`, `result.error`, `result.raise`.
+  `result.is_err`, `result.value`, `result.value_or`, `result.error`,
+  `result.then`, `result.recover`, `result.raise`.
 * [Conversion](conversion.md) — `conversion.string`, `conversion.bool`,
   `conversion.int`, `conversion.float`.
-* [Regex](regex.md) — `re.test`, `re.find`, `re.replace`, `re.split`.
+* [Regex](regex.md) — builtin `regex { ... }`, `regex.test`, `regex.find`,
+  `regex.replace`, `regex.split`.
 * [IO](io.md) — file, path, directory, glob, and stream builtins.
 
 ## Arity Checking

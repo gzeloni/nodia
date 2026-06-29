@@ -1,4 +1,4 @@
-# Nodia 0.8.0 end-to-end example.
+# Nodia 0.8.3 end-to-end example.
 #
 # Basic run:
 # ./target/debug/nodia run EXAMPLE.nod -- one two
@@ -19,7 +19,6 @@ use numbers
 use conversion as conv
 use collections as col
 use format as fmt
-use re
 use io
 use system
 use result
@@ -129,35 +128,35 @@ val url = regex(case_insensitive) {
   }
 }
 val sample = "go to https://example.com/docs now"
-val hit = re.find(sample, url)
-emit re.test(sample, url)
+val hit = result.raise(regex.find(sample, url))
+emit result.raise(regex.test(sample, url))
 emit hit.text
 emit hit.named.scheme
 emit hit.named.host
 emit col.slice(sample, 0, hit.start)
 section("JSON And CSV")
-val doc = json.read(
+val doc = result.raise(json.read(
   text.encode(
     r'{"name":"Ana","active":true,"scores":[7,8,9]}',
     text.utf8,
   ),
-)
-val rows = csv.read(
+))
+val rows = result.raise(csv.read(
   text.encode("name,age\nAna,30\nBia,25", text.utf8),
   {
     header: true,
     types: true,
   },
-)
+))
 emit doc.name
 emit json.write(doc, 2)
 emit rows[1].age + 5
 emit csv.write(rows)
 section("Date And Time")
-val base = datetime.parse(
+val base = result.raise(datetime.parse(
   "2024-01-31T23:00:00Z",
   datetime.as_datetime,
-)
+))
 val next = datetime.add(
   base,
   datetime.duration(

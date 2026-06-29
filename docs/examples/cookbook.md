@@ -121,7 +121,7 @@ and pair iteration.
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 
 val pat = regex(case_insensitive) {
   named scheme {
@@ -140,7 +140,7 @@ val pat = regex(case_insensitive) {
 
 val text = "see http://a.example or https://b.example for details"
 
-for hit in re.find(text, pat, re.all) {
+for hit in result.raise(regex.find(text, pat, regex.all)) {
   emit "{hit.named.scheme} -> {hit.named.host}"
 }
 '
@@ -182,11 +182,12 @@ emit text.split("/usr/local/bin", "/")'
 ```bash
 ./target/release/nodia eval '
 use json
+use result
 use text
 
-val doc = json.read(text.encode("""
+val doc = result.raise(json.read(text.encode("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-""", text.utf8))
+""", text.utf8)))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -204,9 +205,10 @@ Ana
 ```bash
 ./target/release/nodia eval '
 use csv
+use result
 use text
 
-val rows = csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true)
+val rows = result.raise(csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true))
 emit rows[0].name
 emit rows[1]
 '
@@ -223,19 +225,20 @@ Ana
 
 ```nodia
 use io
+use result
 use text
 
-val src = io.open("input.txt", "read")
-val out = io.open("output.txt", "write")
+val src = result.raise(io.open("input.txt", "read"))
+val out = result.raise(io.open("output.txt", "write"))
 
-var line = io.readln(src)
+var line = result.raise(io.readln(src))
 while line != null {
-  io.writeln(out, text.upper(line))
-  line = io.readln(src)
+  result.raise(io.writeln(out, text.upper(line)))
+  line = result.raise(io.readln(src))
 }
 
-io.close(src)
-io.close(out)
+result.raise(io.close(src))
+result.raise(io.close(out))
 ```
 
 ```bash
@@ -290,8 +293,9 @@ for section in meta.sections {
 ```bash
 ./target/release/nodia eval '
 use datetime
+use result
 
-val base = datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime)
+val base = result.raise(datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime))
 val next = datetime.add(base, datetime.duration({hours: 2, minutes: 30}))
 
 emit datetime.isoformat(datetime.add(datetime.date(2024, 1, 31), 1, datetime.months))
@@ -310,7 +314,7 @@ emit datetime.strftime(next, "%F %T %:z")
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 
 val date = regex {
   start
@@ -322,8 +326,8 @@ val date = regex {
   end
 }
 
-emit re.test("2026-05-26", date, re.full)
-emit re.test("2026/05/26", date, re.full)
+emit result.raise(regex.test("2026-05-26", date, regex.full))
+emit result.raise(regex.test("2026/05/26", date, regex.full))
 '
 ```
 
@@ -386,7 +390,7 @@ info: started
 
 ```bash
 ./target/release/nodia eval '
-use re
+use result
 
 val dup = regex {
   word_boundary
@@ -396,8 +400,8 @@ val dup = regex {
   word_boundary
 }
 
-emit re.test("the the cat sat", dup)
-emit re.test("the cat sat", dup)
+emit result.raise(regex.test("the the cat sat", dup))
+emit result.raise(regex.test("the cat sat", dup))
 '
 ```
 
@@ -463,14 +467,15 @@ emit system.env("HOME")
 ./target/release/nodia eval '
 use system
 use text
+use result
 
-val result = system.exec("/bin/sh", [
+val exec_result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit text.decode(result.stdout, text.utf8)
-emit text.decode(result.stderr, text.utf8)
-emit result.status
+emit result.raise(text.decode(exec_result.stdout, text.utf8))
+emit result.raise(text.decode(exec_result.stderr, text.utf8))
+emit exec_result.status
 ' --allow-process
 ```
 
@@ -552,8 +557,8 @@ carla pending
 ```bash
 ./target/release/nodia eval '
 use text
-use re
 use collections
+use result
 
 val entry = regex {
   named level {
@@ -579,7 +584,7 @@ INFO carla sync
 
 var counts = {}
 for line in text.lines(raw) {
-  val hit = re.find(text.trim(line), entry)
+  val hit = result.raise(regex.find(text.trim(line), entry))
   if hit != null {
     val key = "{hit.named.user}:{hit.named.action}"
     counts[key] = collections.get(counts, key, 0) + 1
@@ -657,9 +662,10 @@ é
 ```bash
 ./target/release/nodia eval '
 use text
+use result
 
 val raw = b"\xef\xbb\xbfa\r\nb\0\xff"
-val decoded = text.decode(raw, text.utf8, text.lossy)
+val decoded = result.raise(text.decode(raw, text.utf8, text.lossy))
 emit text.normalize(text.drop_nul(text.strip_bom(decoded)), text.lf)
 '
 ```
@@ -686,3 +692,23 @@ emit format.pad("é", 2, format.right, ".")
 .é
 é.
 ```
+
+## 29. Run The Regex Showcase
+
+The repository ships a larger regex-focused example under
+`examples/regex_showcase/`:
+
+```bash
+./target/release/nodia run examples/regex_showcase/main.nod
+```
+
+It covers:
+
+* named groups and extraction
+* conditional branches
+* `until`
+* raw-regex reversal back into the DSL
+* `define` / `call`
+* recursive subroutines
+* backtracking verbs
+* extended word boundaries

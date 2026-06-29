@@ -57,7 +57,7 @@ Throughout this site every example uses the release binary:
 ```
 
 ```text
-nodia 0.8.0
+nodia 0.8.3
 ```
 
 JSON metadata:
@@ -67,7 +67,7 @@ JSON metadata:
 ```
 
 ```json
-{"name":"nodia","version":"0.8.0","rust_std_only":false}
+{"name":"nodia","version":"0.8.3","rust_std_only":false}
 ```
 
 `rust_std_only: false` reflects the current runtime shape: Nodia now depends on
@@ -90,13 +90,29 @@ runtime, and stdlib `text.upper`.
 
 ## Editor Support
 
-A VSCode extension is included in the repo under:
+Two local editor integrations are included in the repository:
 
 ```text
 vscode/nodia-language
+zed/nodia
 ```
+
+### VS Code
 
 Install it with **Developer: Install Extension from Location...** and pick the
 `vscode/nodia-language` folder. It registers the `.nod` association, highlights
-the language surface, and adds completions for stdlib namespaces, `use`
-declarations, and the regex DSL.
+the language surface, adds completions for stdlib namespaces, `use`
+declarations, and the regex DSL, and integrates `nodia fmt` plus `nodia check`.
+
+### Zed
+
+Before installing the Zed extension, bootstrap the local grammar repository:
+
+```bash
+./zed/bootstrap-dev-grammar.sh
+```
+
+Install it with `zed: install dev extension` and pick the `zed/nodia` folder.
+It uses the local Tree-sitter grammar in `zed/tree-sitter-nodia` and provides
+language association, syntax highlighting, bracket matching, indentation, and
+outline support for `.nod` files.
