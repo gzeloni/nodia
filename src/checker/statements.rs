@@ -3,6 +3,7 @@
 
 //! Statement-level semantic checks and scope management.
 
+use super::helpers::regex_namespace_symbol;
 use super::*;
 
 impl<'a> State<'a> {
@@ -13,6 +14,7 @@ impl<'a> State<'a> {
     ) -> Self {
         let mut root = HashMap::new();
         root.insert("input".to_string(), Symbol::unknown(false));
+        root.insert("regex".to_string(), regex_namespace_symbol());
         Self {
             checker,
             scopes: vec![root],

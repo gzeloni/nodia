@@ -145,7 +145,9 @@ impl<'a> State<'a> {
                 .cloned()
                 .map(FieldStatus::Found)
                 .unwrap_or(FieldStatus::Missing),
-            SymbolKind::Unknown | SymbolKind::Function { .. } => FieldStatus::Unknown,
+            SymbolKind::Unknown | SymbolKind::Result | SymbolKind::Function { .. } => {
+                FieldStatus::Unknown
+            }
         }
     }
 
@@ -166,6 +168,11 @@ impl<'a> State<'a> {
                 arities: vec![params.len()],
                 builtin_target: None,
             },
+            Expr::Call { callee, .. } => self
+                .builtin_call_target(callee)
+                .as_deref()
+                .and_then(builtin_call_symbol)
+                .unwrap_or(SymbolKind::Unknown),
             Expr::Map(pairs) => {
                 let mut fields = HashMap::new();
                 for (key, value) in pairs {
@@ -210,7 +217,10 @@ impl<'a> State<'a> {
         message: impl Into<String>,
         name: &str,
     ) -> NodiaError {
-        semantic(code, message, self.positions.identifier(name))
+        let position = self.positions.identifier(name).or_else(|| {
+            keyword_from_name(name).and_then(|keyword| self.positions.keyword(keyword))
+        });
+        semantic(code, message, position)
     }
 
     pub(super) fn error_keyword(

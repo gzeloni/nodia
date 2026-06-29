@@ -29,6 +29,7 @@ struct Symbol {
 #[derive(Debug, Clone)]
 enum SymbolKind {
     Unknown,
+    Result,
     Function {
         arities: Vec<usize>,
         builtin_target: Option<String>,

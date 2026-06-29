@@ -7,7 +7,6 @@ use crate::check_source;
 
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
-use re as __re
 use result as __res
 "#;
 
@@ -21,10 +20,10 @@ fn checker_accepts_text_builtins() {
 b"))
 emit __text.unlines(["up", "down"])
 emit __col.len(__text.words("one  two   three"))
-emit __re.test("abc", regex { one_or_more letter })
-emit __re.test("abc", regex { one_or_more letter }, __re.full)
-emit __re.find("abc", regex { one_or_more letter })
-emit __re.find("abc", regex { one_or_more letter }, __re.all)
+emit regex.test("abc", regex { one_or_more letter })
+emit regex.test("abc", regex { one_or_more letter }, regex.full)
+emit regex.find("abc", regex { one_or_more letter })
+emit regex.find("abc", regex { one_or_more letter }, regex.all)
 emit __text.replace("abc123", regex { one_or_more digit }, '#')
 emit __text.split("ana   bruno", regex { one_or_more whitespace })
 emit __text.len("é", __text.byte)
@@ -135,7 +134,6 @@ use numbers
 use collections as col
 use conversion as conv
 use format as fmt
-use re
 use io
 use system
 use result
@@ -150,18 +148,42 @@ emit text.upper("ana")
 emit to_int("42")
 emit conv.string(3)
 emit fmt.fixed(3.14, 1)
-emit re.find("ana 42", regex { one_or_more digit }).text
+emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
 emit io.basename("/tmp/report.txt")
 emit system.args[0]
 emit result.is_err(result.err("E8000", "bad"))
 emit dt.year(dt.date(2026, 6, 3))
 emit col.map(numbers.int, ["1", "2"])
-emit decode(r'{"ok":true}').ok
-emit table.read("name,age\nAna,30", {header: true, types: true})[0].age + 1
+emit result.raise(decode(r'{"ok":true}')).ok
+emit result.raise(table.read("name,age\nAna,30", {header: true, types: true}))[0].age + 1
 emit encode({ok: true}, 2)
 "#;
 
     assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_rejects_direct_result_field_access() {
+    let err = check_source(
+        r#"use json
+emit json.read(r'{"name":"Ana"}').name"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E4108");
+    assert!(err.message.contains("cannot access field on result"));
+}
+
+#[test]
+fn checker_rejects_direct_result_index_access() {
+    let err = check_source(
+        r#"use csv
+emit csv.read("name,age\nAna,30", true)[0]"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E4108");
+    assert!(err.message.contains("cannot index result"));
 }
 
 #[test]
@@ -179,12 +201,21 @@ for i in range(3) {
 #[test]
 fn checker_accepts_result_module_calls() {
     let source = r#"use result
+use text
+func fallback(error) {
+  return error.message
+}
 val ok = result.ok("Ana")
 val bad = result.err("E8000", "missing row")
 emit result.is_ok(ok)
 emit result.is_err(bad)
 emit result.value(ok)
+emit result.value_or(bad, "fallback")
 emit result.error(bad).code
+emit result.error(bad).context
+emit result.error(bad).span.line
+emit result.then(ok, text.upper)
+emit result.recover(bad, fallback)
 emit result.raise(ok)
 "#;
 
@@ -203,6 +234,10 @@ emit text.replace("ana", regex { named word { one_or_more letter } }, "$(missing
     assert!(err
         .message
         .contains("regex replacement refers to missing named capture 'missing'"));
+    assert_eq!(
+        err.span.as_ref().map(|span| (span.line, span.column)),
+        Some((1, 1))
+    );
 }
 
 #[test]
@@ -215,7 +250,7 @@ emit text.replace("ana", "a", "$name")"#;
 
 #[test]
 fn checker_rejects_invalid_literal_regex_text_for_regex_builtins() {
-    let err = check_stdlib_source(r#"emit __re.test("ana", "[A-Z")"#).unwrap_err();
+    let err = check_stdlib_source(r#"emit regex.test("ana", "[A-Z")"#).unwrap_err();
 
     assert_eq!(err.code, "E4200");
     assert!(err.message.contains("cannot compile regex"));
@@ -225,7 +260,9 @@ fn checker_rejects_invalid_literal_regex_text_for_regex_builtins() {
 fn checker_rejects_regex_keyword_as_stdlib_module_name() {
     let err = check_source("use regex\n").unwrap_err();
 
-    assert!(err.message.contains("use re for regex helpers"));
+    assert!(err
+        .message
+        .contains("'regex' is built into the language and must not be imported"));
 }
 
 #[test]

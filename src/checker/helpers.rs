@@ -128,6 +128,53 @@ pub(super) fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     Symbol { mutable, kind }
 }
 
+pub(super) fn builtin_call_symbol(target: &str) -> Option<SymbolKind> {
+    match target {
+        "result.ok" | "result.err" | "result.then" | "result.recover" | "text.decode"
+        | "regex.test" | "regex.find" | "datetime.parse" | "json.read" | "csv.read" | "open"
+        | "close" | "flush" | "eof" | "read" | "readln" | "write" | "writeln" | "append" => {
+            Some(SymbolKind::Result)
+        }
+        "result.error" => {
+            let mut fields = HashMap::new();
+            fields.insert("code".to_string(), Symbol::unknown(false));
+            fields.insert("message".to_string(), Symbol::unknown(false));
+            fields.insert("file".to_string(), Symbol::unknown(false));
+            fields.insert("line".to_string(), Symbol::unknown(false));
+            fields.insert("column".to_string(), Symbol::unknown(false));
+            fields.insert("context".to_string(), Symbol::unknown(false));
+            let mut span_fields = HashMap::new();
+            span_fields.insert("line".to_string(), Symbol::unknown(false));
+            span_fields.insert("column".to_string(), Symbol::unknown(false));
+            fields.insert("span".to_string(), Symbol::namespace(span_fields));
+            Some(SymbolKind::Map(fields))
+        }
+        _ => None,
+    }
+}
+
+pub(super) fn regex_namespace_symbol() -> Symbol {
+    let fields = stdlib::regex_surface_items()
+        .iter()
+        .map(|(field, target, arities)| {
+            (
+                (*field).to_string(),
+                match arities {
+                    Some(arities) => Symbol::builtin_function(target, arities),
+                    None => Symbol::unknown(false),
+                },
+            )
+        })
+        .collect::<HashMap<_, _>>();
+    Symbol::namespace(fields)
+}
+
+pub(super) fn result_access_message(action: &str) -> String {
+    format!(
+        "cannot {action} result; use result.value(...) / result.then(...) for success, or result.error(...) / result.recover(...) for failures"
+    )
+}
+
 pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> NodiaResult<PathBuf> {
     let raw = Path::new(path);
     let joined = if raw.is_absolute() {
@@ -203,6 +250,35 @@ pub(super) fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::Pick => Some("pick"),
         TokenKind::LegacyShow => Some("show"),
         TokenKind::Hide => Some("hide"),
+        _ => None,
+    }
+}
+
+pub(super) fn keyword_from_name(name: &str) -> Option<&'static str> {
+    match name {
+        "val" => Some("val"),
+        "var" => Some("var"),
+        "func" => Some("func"),
+        "let" => Some("let"),
+        "const" => Some("const"),
+        "fn" => Some("fn"),
+        "return" => Some("return"),
+        "emit" => Some("emit"),
+        "if" => Some("if"),
+        "else" => Some("else"),
+        "for" => Some("for"),
+        "in" => Some("in"),
+        "while" => Some("while"),
+        "break" => Some("break"),
+        "continue" => Some("continue"),
+        "import" => Some("import"),
+        "use" => Some("use"),
+        "lambda" => Some("lambda"),
+        "regex" => Some("regex"),
+        "as" => Some("as"),
+        "pick" => Some("pick"),
+        "show" => Some("show"),
+        "hide" => Some("hide"),
         _ => None,
     }
 }
