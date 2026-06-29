@@ -3,7 +3,7 @@
 
 //! JSON and CSV standard-library functions.
 
-use super::{expect_arity, expect_list};
+use super::{expect_arity, expect_list, result};
 use crate::error::{NodiaError, NodiaResult};
 use crate::textcodec;
 use crate::value::Value;
@@ -27,8 +27,9 @@ pub fn csv_write(args: &[Value]) -> NodiaResult<Value> {
 
 fn json_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
-    let text = expect_text_input(&args[0], name, "first")?;
-    JsonParser::new(&text).parse()
+    let input = expect_text_input(&args[0], name, "first")?;
+    let outcome = parse_json_input(input, name);
+    Ok(result::capture_outcome_in_context(name, outcome))
 }
 
 fn json_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {
@@ -56,50 +57,15 @@ fn csv_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
         )));
     }
 
-    let text = expect_text_input(&args[0], name, "first")?;
+    let input = expect_text_input(&args[0], name, "first")?;
     let options = if args.len() == 2 {
         csv_read_options(&args[1], name)?
     } else {
         CsvReadOptions::default()
     };
 
-    let rows = parse_csv_rows(&text, name)?;
-    if !options.header {
-        return Ok(Value::List(
-            rows.into_iter()
-                .map(|row| {
-                    Value::List(
-                        row.into_iter()
-                            .map(|value| csv_field_value(value, options.types))
-                            .collect(),
-                    )
-                })
-                .collect(),
-        ));
-    }
-
-    if rows.is_empty() {
-        return Ok(Value::List(Vec::new()));
-    }
-
-    let headers = rows[0].clone();
-    reject_duplicate_csv_headers(&headers, name)?;
-    let mut mapped = Vec::new();
-    for row in rows.into_iter().skip(1) {
-        if row.len() != headers.len() {
-            return Err(NodiaError::runtime(format!(
-                "{name}() row has {} field(s), expected {} from header",
-                row.len(),
-                headers.len()
-            )));
-        }
-        let mut map = BTreeMap::new();
-        for (header, value) in headers.iter().zip(row) {
-            map.insert(header.clone(), csv_field_value(value, options.types));
-        }
-        mapped.push(Value::Map(map));
-    }
-    Ok(Value::List(mapped))
+    let outcome = parse_csv_input(input, options, name);
+    Ok(result::capture_outcome_in_context(name, outcome))
 }
 
 fn csv_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {
@@ -188,7 +154,7 @@ fn write_csv_record(fields: &[String], out: &mut String) {
     }
 }
 
-fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
+fn parse_csv_rows(text: &str, _name: &str) -> NodiaResult<Vec<Vec<String>>> {
     if text.is_empty() {
         return Ok(Vec::new());
     }
@@ -245,9 +211,11 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
                     }
                 }
                 _ => {
-                    return Err(NodiaError::runtime(format!(
-                        "{name}() found characters after closing quote"
-                    )))
+                    return Err(csv_error(
+                        text,
+                        index,
+                        "found characters after closing quote",
+                    ))
                 }
             }
             continue;
@@ -258,11 +226,7 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
                 in_quotes = true;
                 index += 1;
             }
-            '"' => {
-                return Err(NodiaError::runtime(format!(
-                    "{name}() found quote inside unquoted field"
-                )))
-            }
+            '"' => return Err(csv_error(text, index, "found quote inside unquoted field")),
             ',' => {
                 row.push(std::mem::take(&mut field));
                 index += 1;
@@ -288,9 +252,11 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
     }
 
     if in_quotes {
-        return Err(NodiaError::runtime(format!(
-            "{name}() found unterminated quoted field"
-        )));
+        return Err(csv_error(
+            text,
+            index.saturating_sub(1),
+            "found unterminated quoted field",
+        ));
     }
 
     if just_closed_quote || !field.is_empty() || !row.is_empty() || text.ends_with(',') {
@@ -301,12 +267,62 @@ fn parse_csv_rows(text: &str, name: &str) -> NodiaResult<Vec<Vec<String>>> {
     Ok(rows)
 }
 
-fn expect_text_input(value: &Value, name: &str, position: &str) -> NodiaResult<String> {
-    match value {
-        Value::String(value) => Ok(value.clone()),
-        Value::Bytes(_) => {
-            textcodec::decode_utf8_runtime(textcodec::expect_bytes(value, name, position)?, name)
+fn parse_json_input(input: TextInput, name: &str) -> NodiaResult<Value> {
+    let text = input.decode(name)?;
+    JsonParser::new(&text).parse()
+}
+
+fn parse_csv_input(input: TextInput, options: CsvReadOptions, name: &str) -> NodiaResult<Value> {
+    let text = input.decode(name)?;
+    let rows = parse_csv_rows(&text, name)?;
+    if !options.header {
+        return Ok(Value::List(
+            rows.into_iter()
+                .map(|row| {
+                    Value::List(
+                        row.into_iter()
+                            .map(|value| csv_field_value(value, options.types))
+                            .collect(),
+                    )
+                })
+                .collect(),
+        ));
+    }
+
+    if rows.is_empty() {
+        return Ok(Value::List(Vec::new()));
+    }
+
+    let headers = rows[0].clone();
+    reject_duplicate_csv_headers(&headers, name)?;
+    let mut mapped = Vec::new();
+    for (row_number, row) in rows.into_iter().enumerate().skip(1) {
+        if row.len() != headers.len() {
+            return Err(csv_error_owned(
+                &text,
+                row_start_index(&text, row_number),
+                format!(
+                    "{name}() row has {} field(s), expected {} from header",
+                    row.len(),
+                    headers.len()
+                ),
+            ));
         }
+        let mut map = BTreeMap::new();
+        for (header, value) in headers.iter().zip(row) {
+            map.insert(header.clone(), csv_field_value(value, options.types));
+        }
+        mapped.push(Value::Map(map));
+    }
+    Ok(Value::List(mapped))
+}
+
+fn expect_text_input(value: &Value, name: &str, position: &str) -> NodiaResult<TextInput> {
+    match value {
+        Value::String(value) => Ok(TextInput::Text(value.clone())),
+        Value::Bytes(_) => Ok(TextInput::Bytes(textcodec::expect_bytes(
+            value, name, position,
+        )?)),
         other => Err(NodiaError::runtime(format!(
             "{name}() expects string or bytes as {position} argument, got {}",
             other.type_name()
@@ -333,6 +349,20 @@ struct CsvReadOptions {
 #[derive(Clone, Copy, Default)]
 struct JsonStringifyOptions {
     indent: Option<usize>,
+}
+
+enum TextInput {
+    Text(String),
+    Bytes(Vec<u8>),
+}
+
+impl TextInput {
+    fn decode(self, _name: &str) -> NodiaResult<String> {
+        match self {
+            Self::Text(text) => Ok(text),
+            Self::Bytes(bytes) => textcodec::decode_utf8_runtime(bytes),
+        }
+    }
 }
 
 fn csv_read_options(value: &Value, name: &str) -> NodiaResult<CsvReadOptions> {
@@ -854,14 +884,82 @@ impl<'a> JsonParser<'a> {
     }
 
     fn error_owned(&self, message: String) -> NodiaError {
-        let column = self.source[..self.byte_index()].chars().count() + 1;
-        NodiaError::runtime(format!("invalid JSON: {message} at column {column}"))
+        let (line, column) = line_column_at(self.source, self.index);
+        NodiaError::runtime(format!("invalid JSON: {message}")).with_span(line, column)
+    }
+}
+
+fn csv_error(text: &str, char_index: usize, message: &str) -> NodiaError {
+    csv_error_owned(text, char_index, format!("invalid CSV: {message}"))
+}
+
+fn csv_error_owned(text: &str, char_index: usize, message: String) -> NodiaError {
+    let (line, column) = line_column_at(text, char_index);
+    NodiaError::runtime(message).with_span(line, column)
+}
+
+fn line_column_at(text: &str, char_index: usize) -> (usize, usize) {
+    let mut line = 1usize;
+    let mut column = 1usize;
+    for ch in text.chars().take(char_index) {
+        if ch == '\n' {
+            line += 1;
+            column = 1;
+        } else {
+            column += 1;
+        }
+    }
+    (line, column)
+}
+
+fn row_start_index(text: &str, row_index: usize) -> usize {
+    if row_index == 0 {
+        return 0;
     }
 
-    fn byte_index(&self) -> usize {
-        self.chars[..self.index]
-            .iter()
-            .map(|ch| ch.len_utf8())
-            .sum()
+    let chars = text.chars().collect::<Vec<_>>();
+    let mut row = 0usize;
+    let mut index = 0usize;
+    let mut in_quotes = false;
+
+    while index < chars.len() {
+        if in_quotes {
+            match chars[index] {
+                '"' if chars.get(index + 1) == Some(&'"') => index += 2,
+                '"' => {
+                    in_quotes = false;
+                    index += 1;
+                }
+                _ => index += 1,
+            }
+            continue;
+        }
+
+        match chars[index] {
+            '"' => {
+                in_quotes = true;
+                index += 1;
+            }
+            '\n' => {
+                row += 1;
+                index += 1;
+                if row == row_index {
+                    return index;
+                }
+            }
+            '\r' => {
+                row += 1;
+                index += 1;
+                if chars.get(index) == Some(&'\n') {
+                    index += 1;
+                }
+                if row == row_index {
+                    return index;
+                }
+            }
+            _ => index += 1,
+        }
     }
+
+    text.chars().count()
 }

@@ -45,6 +45,10 @@ impl Runtime {
             "input".to_string(),
             binding_ref(Value::Map(input.clone()), false),
         );
+        root.insert(
+            "regex".to_string(),
+            binding_ref(Self::regex_surface_value(), false),
+        );
         Self {
             scopes: vec![root],
             output: String::new(),
@@ -57,17 +61,34 @@ impl Runtime {
         }
     }
 
+    fn regex_surface_value() -> Value {
+        let mut exports = BTreeMap::new();
+        for (field, target, arities) in stdlib::regex_surface_items() {
+            let value = match arities {
+                Some(_) => Value::BuiltinFunction((*target).to_string()),
+                None => match *target {
+                    "regex.any" => Value::String("any".to_string()),
+                    "regex.full" => Value::String("full".to_string()),
+                    "regex.first" => Value::String("first".to_string()),
+                    "regex.all" => Value::String("all".to_string()),
+                    other => panic!("unsupported regex surface binding '{other}'"),
+                },
+            };
+            exports.insert((*field).to_string(), value);
+        }
+        Value::Map(exports)
+    }
+
     /// Executes a parsed program and returns emitted output without the trailing newline.
     pub fn run(&mut self, program: &Program) -> NodiaResult<String> {
         for statement in &program.statements {
             let flow = match self.execute(statement) {
                 Ok(flow) => flow,
-                Err(err) if err.exit_status.is_some() => {
+                Err(err) => {
                     self.flush_output_channel()?;
                     self.io.borrow_mut().flush_all()?;
                     return Err(err.with_output(self.output.trim_end_matches('\n').to_string()));
                 }
-                Err(err) => return Err(err),
             };
             match flow {
                 Flow::None => self.publish_statement(statement)?,

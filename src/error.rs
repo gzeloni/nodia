@@ -8,6 +8,13 @@ use std::fmt;
 /// Result type used throughout the crate.
 pub type NodiaResult<T> = Result<T, NodiaError>;
 
+/// Span inside an input or transformation payload, not the source `.nod` file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ErrorSpan {
+    pub line: usize,
+    pub column: usize,
+}
+
 /// Primary error type returned by the library and runtime layers.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NodiaError {
@@ -21,6 +28,10 @@ pub struct NodiaError {
     pub column: usize,
     /// Optional file name attached during file-based operations.
     pub file: Option<String>,
+    /// Optional nested transform context for recoverable/text-pipeline failures.
+    pub context: Vec<String>,
+    /// Optional span inside nested text data such as JSON, CSV, or replacement text.
+    pub span: Option<ErrorSpan>,
     /// Optional process exit status used by runtime `exit(...)`.
     pub exit_status: Option<i32>,
     /// Optional output captured before a controlled runtime exit.
@@ -36,6 +47,8 @@ impl NodiaError {
             line,
             column,
             file: None,
+            context: Vec::new(),
+            span: None,
             exit_status: None,
             output: None,
         }
@@ -49,6 +62,8 @@ impl NodiaError {
             line: 0,
             column: 0,
             file: None,
+            context: Vec::new(),
+            span: None,
             exit_status: None,
             output: None,
         }
@@ -62,6 +77,8 @@ impl NodiaError {
             line: 0,
             column: 0,
             file: None,
+            context: Vec::new(),
+            span: None,
             exit_status: None,
             output: None,
         }
@@ -80,6 +97,8 @@ impl NodiaError {
             line,
             column,
             file: None,
+            context: Vec::new(),
+            span: None,
             exit_status: None,
             output: None,
         }
@@ -93,6 +112,8 @@ impl NodiaError {
             line: 0,
             column: 0,
             file: None,
+            context: Vec::new(),
+            span: None,
             exit_status: Some(status),
             output: None,
         }
@@ -118,6 +139,18 @@ impl NodiaError {
         self
     }
 
+    /// Adds an outer context label for nested text/data operations.
+    pub fn with_context(mut self, context: impl Into<String>) -> Self {
+        self.context.insert(0, context.into());
+        self
+    }
+
+    /// Attaches a nested input span without claiming the error is at a `.nod` source location.
+    pub fn with_span(mut self, line: usize, column: usize) -> Self {
+        self.span = Some(ErrorSpan { line, column });
+        self
+    }
+
     /// Stores output that should be preserved on controlled exits.
     pub fn with_output(mut self, output: impl Into<String>) -> Self {
         self.output = Some(output.into());
@@ -135,13 +168,26 @@ impl NodiaError {
             (Some(file), _, _) => format!("\n  at {file}"),
             _ => String::new(),
         };
-        format!("error[{}]: {}{}", self.code, self.message, location)
+        let context = if self.context.is_empty() {
+            String::new()
+        } else {
+            format!("\n  context: {}", self.context.join(" -> "))
+        };
+        let span = self
+            .span
+            .as_ref()
+            .map(|span| format!("\n  span: {}:{}", span.line, span.column))
+            .unwrap_or_default();
+        format!(
+            "error[{}]: {}{}{}{}",
+            self.code, self.message, context, span, location
+        )
     }
 
     /// Serializes the error into a compact JSON object.
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"code\":\"{}\",\"message\":\"{}\",\"file\":{},\"line\":{},\"column\":{}}}",
+            "{{\"code\":\"{}\",\"message\":\"{}\",\"file\":{},\"line\":{},\"column\":{},\"context\":{},\"span\":{}}}",
             json_escape(&self.code),
             json_escape(&self.message),
             self.file
@@ -149,7 +195,12 @@ impl NodiaError {
                 .map(|file| format!("\"{}\"", json_escape(file)))
                 .unwrap_or_else(|| "null".to_string()),
             self.line,
-            self.column
+            self.column,
+            format_json_array(&self.context),
+            self.span
+                .as_ref()
+                .map(|span| format!("{{\"line\":{},\"column\":{}}}", span.line, span.column))
+                .unwrap_or_else(|| "null".to_string())
         )
     }
 }
@@ -176,4 +227,12 @@ fn json_escape(value: &str) -> String {
         }
     }
     out
+}
+
+fn format_json_array(values: &[String]) -> String {
+    let items = values
+        .iter()
+        .map(|value| format!("\"{}\"", json_escape(value)))
+        .collect::<Vec<_>>();
+    format!("[{}]", items.join(","))
 }

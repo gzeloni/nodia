@@ -136,5 +136,11 @@ fn to_number(value: &Value) -> NodiaResult<f64> {
     }
 }
 
+fn result_access_error(action: &str) -> NodiaError {
+    NodiaError::runtime(format!(
+        "cannot {action} result; use result.value(...) / result.then(...) for success, or result.error(...) / result.recover(...) for failures"
+    ))
+}
+
 #[cfg(test)]
 mod tests;

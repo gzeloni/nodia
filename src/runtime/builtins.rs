@@ -5,6 +5,7 @@
 
 use super::*;
 use crate::textcodec;
+use crate::value::{RecoverableErrorValue, ResultValue};
 
 impl Runtime {
     pub(super) fn call_io_builtin(
@@ -17,52 +18,67 @@ impl Runtime {
                 self.expect_arity(args, 2, "open")?;
                 let path = self.expect_string(&args[0], "open", "first")?;
                 let mode = self.expect_string(&args[1], "open", "second")?;
-                Value::Stream(
+                Self::io_pipeline_value(
+                    "io.open",
                     self.io
                         .borrow_mut()
-                        .open(&path, &mode, self.options.allow_write)?,
-                )
+                        .open(&path, &mode, self.options.allow_write)
+                        .map(Value::Stream),
+                )?
             }
             "close" => {
                 self.expect_arity(args, 1, "close")?;
-                self.close_stream(self.expect_stream(&args[0], "close", "first")?)?;
-                Value::Null
+                let stream = self.expect_stream(&args[0], "close", "first")?;
+                Self::io_pipeline_value("io.close", self.close_stream(stream).map(|_| Value::Null))?
             }
             "flush" => {
                 self.expect_arity(args, 1, "flush")?;
-                self.flush_stream(self.expect_stream(&args[0], "flush", "first")?)?;
-                Value::Null
+                let stream = self.expect_stream(&args[0], "flush", "first")?;
+                Self::io_pipeline_value("io.flush", self.flush_stream(stream).map(|_| Value::Null))?
             }
             "eof" => {
                 self.expect_arity(args, 1, "eof")?;
-                Value::Bool(self.eof_stream(self.expect_stream(&args[0], "eof", "first")?)?)
+                let stream = self.expect_stream(&args[0], "eof", "first")?;
+                Self::io_pipeline_value("io.eof", self.eof_stream(stream).map(Value::Bool))?
             }
-            "read" => self.read_builtin(args)?,
+            "read" => Self::io_pipeline_value("io.read", self.read_builtin(args))?,
             "readln" => {
                 self.expect_arity(args, 1, "readln")?;
-                match self.read_line_stream(self.expect_stream(&args[0], "readln", "first")?)? {
-                    Some(line) => Value::String(line),
-                    None => Value::Null,
-                }
+                let stream = self.expect_stream(&args[0], "readln", "first")?;
+                Self::io_pipeline_value(
+                    "io.readln",
+                    self.read_line_stream(stream).map(|line| match line {
+                        Some(line) => Value::String(line),
+                        None => Value::Null,
+                    }),
+                )?
             }
-            "write" => self.write_builtin(args, false)?,
-            "writeln" => self.write_builtin(args, true)?,
+            "write" => Self::io_pipeline_value("io.write", self.write_builtin(args, false))?,
+            "writeln" => Self::io_pipeline_value("io.writeln", self.write_builtin(args, true))?,
             "append" => {
                 self.expect_arity(args, 2, "append")?;
                 let path = self.expect_string(&args[0], "append", "first")?;
-                match &args[1] {
+                let outcome = match &args[1] {
                     Value::Bytes(bytes) => {
-                        fsio::append_path_bytes(&path, bytes, self.options.allow_write)?;
+                        fsio::append_path_bytes(&path, bytes, self.options.allow_write)
                     }
-                    value => {
-                        fsio::append_path(&path, &value.to_string(), self.options.allow_write)?;
-                    }
-                }
-                Value::Null
+                    value => fsio::append_path(&path, &value.to_string(), self.options.allow_write),
+                };
+                Self::io_pipeline_value("io.append", outcome.map(|_| Value::Null))?
             }
             _ => return Ok(None),
         };
         Ok(Some(result))
+    }
+
+    fn io_pipeline_value(context: &str, outcome: NodiaResult<Value>) -> NodiaResult<Value> {
+        match outcome {
+            Ok(value) => Ok(Value::Result(ResultValue::ok(value))),
+            Err(error) if error.code.starts_with("E2") => Err(error),
+            Err(error) => Ok(Value::Result(ResultValue::Err(
+                RecoverableErrorValue::from_error(error.with_context(context)),
+            ))),
+        }
     }
 
     pub(super) fn call_runtime_builtin(
@@ -79,9 +95,55 @@ impl Runtime {
             "reduce" => self.reduce_builtin(args)?,
             "group_by" => self.group_by_builtin(args)?,
             "sort_by" => self.sort_by_builtin(args)?,
+            "result.then" => self.result_then_builtin(args)?,
+            "result.recover" => self.result_recover_builtin(args)?,
             _ => return Ok(None),
         };
         Ok(Some(result))
+    }
+
+    fn expect_result<'a>(
+        &self,
+        value: &'a Value,
+        name: &str,
+        position: &str,
+    ) -> NodiaResult<&'a ResultValue> {
+        match value {
+            Value::Result(result) => Ok(result),
+            other => Err(NodiaError::runtime(format!(
+                "{name}() expects result as {position} argument, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    fn lift_result_callback(&mut self, function: Value, arg: Value) -> NodiaResult<Value> {
+        match self.invoke_callable1(function, arg)? {
+            value @ Value::Result(_) => Ok(value),
+            value => Ok(Value::Result(ResultValue::ok(value))),
+        }
+    }
+
+    pub(super) fn result_then_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 2, "then")?;
+        let result = self.expect_result(&args[0], "then", "first")?.clone();
+        let function = self.expect_callable(&args[1], "then", "second")?;
+        match result {
+            ResultValue::Ok(value) => self.lift_result_callback(function, (*value).clone()),
+            ResultValue::Err(error) => Ok(Value::Result(ResultValue::Err(error))),
+        }
+    }
+
+    pub(super) fn result_recover_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 2, "recover")?;
+        let result = self.expect_result(&args[0], "recover", "first")?.clone();
+        let function = self.expect_callable(&args[1], "recover", "second")?;
+        match result {
+            ResultValue::Ok(value) => Ok(Value::Result(ResultValue::ok((*value).clone()))),
+            ResultValue::Err(error) => {
+                self.lift_result_callback(function, Value::Map(error.to_map()))
+            }
+        }
     }
 
     pub(super) fn env_builtin(&self, args: &[Value]) -> NodiaResult<Value> {

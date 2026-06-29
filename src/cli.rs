@@ -92,12 +92,12 @@ pub fn run(args: Vec<String>) -> i32 {
     match run_inner(args, &mut options) {
         Ok(()) => 0,
         Err(err) => {
-            if let Some(status) = err.exit_status.or_else(|| exit_status(&err.message)) {
-                if let Some(output) = err.output.filter(|output| !output.is_empty()) {
-                    if !options.quiet && !options.stream_program_output {
-                        println!("{output}");
-                    }
+            if let Some(output) = err.output.filter(|output| !output.is_empty()) {
+                if !options.quiet && !options.stream_program_output {
+                    println!("{output}");
                 }
+            }
+            if let Some(status) = err.exit_status.or_else(|| exit_status(&err.message)) {
                 return status;
             }
             if options.json {
@@ -305,30 +305,46 @@ fn run_command(mut args: Vec<String>, options: &mut Options) -> Result<(), CliEr
     options.stream_program_output = mirror_output;
     let output = if path.as_deref() == Some("-") {
         let source = read_stdin()?;
-        run_source_with_options(
+        let output = match run_source_with_options(
             &source,
             input,
             runtime_options(options, script_args, mirror_output),
-        )
-        .map_err(CliError::language_runtime)?
+        ) {
+            Ok(output) => output,
+            Err(err) => {
+                if let Some(target) = out_path.as_ref() {
+                    let target = explicit_output_target(target)?;
+                    write_output_target(target, err.output.as_deref().unwrap_or(""))?;
+                }
+                return Err(CliError::language_runtime(err));
+            }
+        };
+        if let Some(target) = out_path {
+            write_output_target(explicit_output_target(&target)?, &output)?;
+            return Ok(());
+        }
+        output
     } else {
         let path = resolve_entry(path.as_deref())?;
         ensure_dob(&path)?;
-        let output = run_file_with_options(
+        let output = match run_file_with_options(
             &path,
             input,
             runtime_options(options, script_args, mirror_output),
-        )
-        .map_err(CliError::language_runtime)?;
+        ) {
+            Ok(output) => output,
+            Err(err) => {
+                if let Some(target) = out_path.as_ref() {
+                    write_output_target(
+                        path_for_output(&path, target),
+                        err.output.as_deref().unwrap_or(""),
+                    )?;
+                }
+                return Err(CliError::language_runtime(err));
+            }
+        };
         if let Some(target) = out_path {
-            let target = if target.as_os_str().is_empty() {
-                PathBuf::from(format!("{}.out", path.display()))
-            } else {
-                target
-            };
-            fs::write(&target, &output).map_err(|err| {
-                CliError::io(format!("cannot write '{}': {err}", target.display()))
-            })?;
+            write_output_target(path_for_output(&path, &target), &output)?;
             return Ok(());
         }
         output
@@ -761,6 +777,29 @@ fn read_stdin() -> Result<String, CliError> {
     Ok(source)
 }
 
+fn path_for_output(source: &Path, target: &Path) -> PathBuf {
+    if target.as_os_str().is_empty() {
+        PathBuf::from(format!("{}.out", source.display()))
+    } else {
+        target.to_path_buf()
+    }
+}
+
+fn write_output_target(target: PathBuf, output: &str) -> Result<(), CliError> {
+    fs::write(&target, output)
+        .map_err(|err| CliError::io(format!("cannot write '{}': {err}", target.display())))
+}
+
+fn explicit_output_target(target: &Path) -> Result<PathBuf, CliError> {
+    if target.as_os_str().is_empty() {
+        Err(CliError::usage(
+            "--out without a path requires a real source file, not stdin",
+        ))
+    } else {
+        Ok(target.to_path_buf())
+    }
+}
+
 fn json_escape(value: &str) -> String {
     let mut out = String::new();
     for ch in value.chars() {
@@ -817,5 +856,35 @@ mod tests {
         ]);
 
         assert_eq!(code, 7);
+    }
+
+    #[test]
+    fn run_command_writes_partial_output_file_on_runtime_error() {
+        let dir = std::env::temp_dir().join(format!("nodia-cli-out-{}", std::process::id()));
+        fs::create_dir_all(&dir).unwrap();
+        let source = dir.join("main.nod");
+        let output = dir.join("main.out");
+        fs::write(
+            &source,
+            "use result\nemit \"before\"\nemit result.raise(result.err(\"E8000\", \"boom\"))\n",
+        )
+        .unwrap();
+
+        let mut options = Options::default();
+        let err = run_inner(
+            vec![
+                "nodia".to_string(),
+                "run".to_string(),
+                source.display().to_string(),
+                "--out".to_string(),
+                output.display().to_string(),
+            ],
+            &mut options,
+        )
+        .unwrap_err();
+
+        assert_eq!(fs::read_to_string(&output).unwrap(), "before");
+        assert!(err.message.contains("error[E8000]: boom"));
+        let _ = fs::remove_dir_all(dir);
     }
 }

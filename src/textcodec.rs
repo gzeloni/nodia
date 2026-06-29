@@ -32,9 +32,9 @@ pub(crate) fn decode_utf8_io(bytes: Vec<u8>, context: &str) -> NodiaResult<Strin
     decode_utf8(bytes).map_err(|err| NodiaError::io(format!("{context}: {err}")))
 }
 
-pub(crate) fn decode_utf8_runtime(bytes: Vec<u8>, name: &str) -> NodiaResult<String> {
+pub(crate) fn decode_utf8_runtime(bytes: Vec<u8>) -> NodiaResult<String> {
     decode_utf8(bytes)
-        .map_err(|err| NodiaError::runtime(format!("{name}() cannot decode bytes as UTF-8: {err}")))
+        .map_err(|err| NodiaError::runtime(format!("cannot decode bytes as UTF-8: {err}")))
 }
 
 pub(crate) fn decode_utf8_lossy(bytes: &[u8]) -> String {

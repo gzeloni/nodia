@@ -252,6 +252,7 @@ impl Runtime {
                     .ok_or_else(|| NodiaError::runtime(format!("key '{key}' not found")))?;
                 self.resolve_value(value)
             }
+            Value::Result(_) => Err(result_access_error("index")),
             other => Err(NodiaError::runtime(format!(
                 "cannot index {}",
                 other.type_name()

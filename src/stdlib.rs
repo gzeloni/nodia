@@ -115,15 +115,19 @@ const FORMAT_MODULE_ITEMS: &[ModuleItemSpec] = &[
 ];
 
 const REGEX_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("any", "re.any", None),
-    ("full", "re.full", None),
-    ("first", "re.first", None),
-    ("all", "re.all", None),
-    ("test", "test", Some(&[2, 3])),
-    ("find", "find", Some(&[2, 3])),
+    ("any", "regex.any", None),
+    ("full", "regex.full", None),
+    ("first", "regex.first", None),
+    ("all", "regex.all", None),
+    ("test", "regex.test", Some(&[2, 3])),
+    ("find", "regex.find", Some(&[2, 3])),
     ("replace", "replace", Some(&[3])),
     ("split", "split", Some(&[2])),
 ];
+
+pub fn regex_surface_items() -> &'static [ModuleItemSpec] {
+    REGEX_MODULE_ITEMS
+}
 
 const IO_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("stdin", "stdin", None),
@@ -162,7 +166,10 @@ const RESULT_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("is_ok", "result.is_ok", Some(&[1])),
     ("is_err", "result.is_err", Some(&[1])),
     ("value", "result.value", Some(&[1])),
+    ("value_or", "result.value_or", Some(&[2])),
     ("error", "result.error", Some(&[1])),
+    ("then", "result.then", Some(&[2])),
+    ("recover", "result.recover", Some(&[2])),
     ("raise", "result.raise", Some(&[1])),
 ];
 
@@ -280,8 +287,8 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
                     .collect(),
             )
         }
-        "test" => text::regex_test(args)?,
-        "find" => text::regex_find(args)?,
+        "regex.test" => text::regex_test(args, "regex.test")?,
+        "regex.find" => text::regex_find(args, "regex.find")?,
         "contains" => {
             expect_arity(&args, 2, "contains")?;
             Value::Bool(match &args[0] {
@@ -402,6 +409,7 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "result.is_ok" => result::is_ok(args)?,
         "result.is_err" => result::is_err(args)?,
         "result.value" => result::value(args)?,
+        "result.value_or" => result::value_or(args)?,
         "result.error" => result::error(args)?,
         "result.raise" => result::raise(args)?,
         "now" => datetime::now(args)?,
@@ -524,7 +532,6 @@ pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
         "conversion" => Some(CONVERSION_MODULE_ITEMS),
         "collections" => Some(COLLECTIONS_MODULE_ITEMS),
         "format" => Some(FORMAT_MODULE_ITEMS),
-        "re" => Some(REGEX_MODULE_ITEMS),
         "io" => Some(IO_MODULE_ITEMS),
         "system" => Some(SYSTEM_MODULE_ITEMS),
         "result" => Some(RESULT_MODULE_ITEMS),

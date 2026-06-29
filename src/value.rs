@@ -4,6 +4,7 @@
 //! Runtime value model shared by the checker, interpreter, and standard library.
 
 use crate::ast::Stmt;
+use crate::error::{ErrorSpan, NodiaError};
 use crate::regex::RuntimeRegex;
 use crate::temporal::{DateTimeValue, DateValue, DurationValue};
 use crate::textcodec;
@@ -70,6 +71,8 @@ pub struct RecoverableErrorValue {
     pub file: Option<String>,
     pub line: Option<usize>,
     pub column: Option<usize>,
+    pub context: Vec<String>,
+    pub span: Option<ErrorSpan>,
 }
 
 /// Runtime value representation.
@@ -289,6 +292,42 @@ impl RecoverableErrorValue {
             file: None,
             line: None,
             column: None,
+            context: Vec::new(),
+            span: None,
+        }
+    }
+
+    pub fn from_error(error: NodiaError) -> Self {
+        Self {
+            code: error.code,
+            message: error.message,
+            file: error.file,
+            line: if error.line > 0 {
+                Some(error.line)
+            } else {
+                None
+            },
+            column: if error.column > 0 {
+                Some(error.column)
+            } else {
+                None
+            },
+            context: error.context,
+            span: error.span,
+        }
+    }
+
+    pub fn to_error(&self) -> NodiaError {
+        NodiaError {
+            code: self.code.clone(),
+            message: self.message.clone(),
+            line: self.line.unwrap_or(0),
+            column: self.column.unwrap_or(0),
+            file: self.file.clone(),
+            context: self.context.clone(),
+            span: self.span.clone(),
+            exit_status: None,
+            output: None,
         }
     }
 
@@ -313,6 +352,28 @@ impl RecoverableErrorValue {
             "column".to_string(),
             self.column
                 .map(|value| Value::Int(value as i64))
+                .unwrap_or(Value::Null),
+        );
+        fields.insert(
+            "context".to_string(),
+            Value::List(
+                self.context
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        fields.insert(
+            "span".to_string(),
+            self.span
+                .as_ref()
+                .map(|span| {
+                    let mut span_fields = BTreeMap::new();
+                    span_fields.insert("line".to_string(), Value::Int(span.line as i64));
+                    span_fields.insert("column".to_string(), Value::Int(span.column as i64));
+                    Value::Map(span_fields)
+                })
                 .unwrap_or(Value::Null),
         );
         fields
@@ -349,6 +410,28 @@ impl RecoverableErrorValue {
             .map(|value| Value::Int(value as i64))
             .unwrap_or(Value::Null)
             .write_display(f, true)?;
+        if !self.context.is_empty() {
+            write!(f, ", ")?;
+            write_map_key(f, "context")?;
+            write!(f, ": ")?;
+            Value::List(
+                self.context
+                    .iter()
+                    .cloned()
+                    .map(Value::String)
+                    .collect::<Vec<_>>(),
+            )
+            .write_display(f, true)?;
+        }
+        if let Some(span) = &self.span {
+            let mut span_fields = BTreeMap::new();
+            span_fields.insert("line".to_string(), Value::Int(span.line as i64));
+            span_fields.insert("column".to_string(), Value::Int(span.column as i64));
+            write!(f, ", ")?;
+            write_map_key(f, "span")?;
+            write!(f, ": ")?;
+            Value::Map(span_fields).write_display(f, true)?;
+        }
         write!(f, "}}")
     }
 }

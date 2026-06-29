@@ -4,7 +4,8 @@
 //! Text and regex-backed standard-library helpers.
 
 use super::expect_arity;
-use crate::regex::{self, RegexMatch, RuntimeRegex};
+use super::result;
+use crate::regex::{self, RegexMatch};
 use crate::textcodec;
 use crate::value::Value;
 use crate::{NodiaError, NodiaResult};
@@ -67,7 +68,9 @@ pub(super) fn replace_text(args: &[Value], name: &str) -> NodiaResult<Value> {
     let text = args[0].to_string();
     let replacement = args[2].to_string();
     let replaced = match &args[1] {
-        Value::Regex(pattern) => pattern.replace_all(&text, &replacement)?,
+        Value::Regex(pattern) => pattern
+            .replace_all(&text, &replacement)
+            .map_err(|error| error.with_context(format!("text.{name}")))?,
         other => text.replace(&other.to_string(), &replacement),
     };
     Ok(Value::String(replaced))
@@ -77,7 +80,9 @@ pub(super) fn split_text(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 2, name)?;
     let text = args[0].to_string();
     let parts = match &args[1] {
-        Value::Regex(pattern) => pattern.split(&text)?,
+        Value::Regex(pattern) => pattern
+            .split(&text)
+            .map_err(|error| error.with_context(format!("text.{name}")))?,
         other => text
             .split(&other.to_string())
             .map(|part| part.to_string())
@@ -86,27 +91,42 @@ pub(super) fn split_text(args: &[Value], name: &str) -> NodiaResult<Value> {
     Ok(Value::List(parts.into_iter().map(Value::String).collect()))
 }
 
-pub(super) fn regex_test(args: &[Value]) -> NodiaResult<Value> {
+pub(super) fn regex_test(args: &[Value], context: &str) -> NodiaResult<Value> {
     if !matches!(args.len(), 2 | 3) {
         return Err(NodiaError::runtime(format!(
             "test() expects 2 or 3 argument(s), got {}",
             args.len()
         )));
     }
-    let pattern = expect_regex(&args[1], "test", "second")?;
     let text = args[0].to_string();
     let mode = if args.len() == 3 {
         expect_regex_test_mode(&args[2], "test", "third")?
     } else {
         RegexTestMode::Any
     };
-    Ok(Value::Bool(match mode {
-        RegexTestMode::Any => pattern.is_match(&text)?,
-        RegexTestMode::Full => pattern.is_full_match(&text)?,
-    }))
+    let outcome = match &args[1] {
+        Value::Regex(pattern) => match mode {
+            RegexTestMode::Any => pattern.is_match(&text).map(Value::Bool),
+            RegexTestMode::Full => pattern.is_full_match(&text).map(Value::Bool),
+        },
+        Value::String(pattern) => {
+            let pattern = regex::compile_text(pattern)?;
+            match mode {
+                RegexTestMode::Any => pattern.is_match(&text).map(Value::Bool),
+                RegexTestMode::Full => pattern.is_full_match(&text).map(Value::Bool),
+            }
+        }
+        other => {
+            return Err(NodiaError::runtime(format!(
+                "test() expects regex or string as second argument, got {}",
+                other.type_name()
+            )))
+        }
+    };
+    Ok(result::capture_outcome_in_context(context, outcome))
 }
 
-pub(super) fn regex_find(args: &[Value]) -> NodiaResult<Value> {
+pub(super) fn regex_find(args: &[Value], context: &str) -> NodiaResult<Value> {
     if !matches!(args.len(), 2 | 3) {
         return Err(NodiaError::runtime(format!(
             "find() expects 2 or 3 argument(s), got {}",
@@ -114,30 +134,56 @@ pub(super) fn regex_find(args: &[Value]) -> NodiaResult<Value> {
         )));
     }
     let text = args[0].to_string();
-    let pattern = expect_regex(&args[1], "find", "second")?;
     let mode = if args.len() == 3 {
         expect_regex_find_mode(&args[2], "find", "third")?
     } else {
         RegexFindMode::First
     };
-    Ok(match mode {
-        RegexFindMode::First => pattern
-            .find(&text)?
-            .map(regex_match_value)
-            .unwrap_or(Value::Null),
-        RegexFindMode::All => Value::List(
-            pattern
-                .find_all(&text)?
-                .into_iter()
+    let outcome = match &args[1] {
+        Value::Regex(pattern) => match mode {
+            RegexFindMode::First => Ok(pattern
+                .find(&text)?
                 .map(regex_match_value)
-                .collect(),
-        ),
-    })
+                .unwrap_or(Value::Null)),
+            RegexFindMode::All => Ok(Value::List(
+                pattern
+                    .find_all(&text)?
+                    .into_iter()
+                    .map(regex_match_value)
+                    .collect(),
+            )),
+        },
+        Value::String(pattern) => {
+            let pattern = regex::compile_text(pattern)?;
+            match mode {
+                RegexFindMode::First => Ok(pattern
+                    .find(&text)?
+                    .map(regex_match_value)
+                    .unwrap_or(Value::Null)),
+                RegexFindMode::All => Ok(Value::List(
+                    pattern
+                        .find_all(&text)?
+                        .into_iter()
+                        .map(regex_match_value)
+                        .collect(),
+                )),
+            }
+        }
+        other => {
+            return Err(NodiaError::runtime(format!(
+                "find() expects regex or string as second argument, got {}",
+                other.type_name()
+            )))
+        }
+    };
+    Ok(result::capture_outcome_in_context(context, outcome))
 }
 
 pub(super) fn contains_text(text: &str, needle: &Value) -> NodiaResult<bool> {
     match needle {
-        Value::Regex(pattern) => pattern.is_match(text),
+        Value::Regex(pattern) => pattern
+            .is_match(text)
+            .map_err(|error| error.with_context("text.contains")),
         other => Ok(text.contains(&other.to_string())),
     }
 }
@@ -145,7 +191,8 @@ pub(super) fn contains_text(text: &str, needle: &Value) -> NodiaResult<bool> {
 pub(super) fn text_starts_with(text: &str, prefix: &Value) -> NodiaResult<bool> {
     match prefix {
         Value::Regex(pattern) => Ok(pattern
-            .find(text)?
+            .find(text)
+            .map_err(|error| error.with_context("text.starts"))?
             .is_some_and(|matched| matched.start == 0)),
         other => Ok(text.starts_with(&other.to_string())),
     }
@@ -156,22 +203,12 @@ pub(super) fn text_ends_with(text: &str, suffix: &Value) -> NodiaResult<bool> {
         Value::Regex(pattern) => {
             let end = text.chars().count();
             Ok(pattern
-                .find_all(text)?
+                .find_all(text)
+                .map_err(|error| error.with_context("text.ends"))?
                 .into_iter()
                 .any(|matched| matched.end == end))
         }
         other => Ok(text.ends_with(&other.to_string())),
-    }
-}
-
-fn expect_regex(value: &Value, name: &str, position: &str) -> NodiaResult<RuntimeRegex> {
-    match value {
-        Value::Regex(pattern) => Ok(pattern.clone()),
-        Value::String(pattern) => regex::compile_text(pattern),
-        other => Err(NodiaError::runtime(format!(
-            "{name}() expects regex or string as {position} argument, got {}",
-            other.type_name()
-        ))),
     }
 }
 
@@ -310,14 +347,15 @@ pub(super) fn decode(args: &[Value]) -> NodiaResult<Value> {
         DecodeMode::Strict
     };
 
-    match (codec, mode) {
-        (TextCodec::Utf8, DecodeMode::Strict) => Ok(Value::String(textcodec::decode_utf8_runtime(
-            bytes, "decode",
-        )?)),
+    let outcome = match (codec, mode) {
+        (TextCodec::Utf8, DecodeMode::Strict) => {
+            textcodec::decode_utf8_runtime(bytes).map(Value::String)
+        }
         (TextCodec::Utf8, DecodeMode::Lossy) => {
             Ok(Value::String(textcodec::decode_utf8_lossy(&bytes)))
         }
-    }
+    };
+    Ok(result::capture_outcome_in_context("text.decode", outcome))
 }
 
 pub(super) fn offset(args: &[Value]) -> NodiaResult<Value> {

@@ -49,6 +49,7 @@ impl Runtime {
                         })?;
                         self.resolve_value(value)
                     }
+                    Value::Result(_) => Err(result_access_error("access field on")),
                     other => Err(NodiaError::runtime(format!(
                         "cannot access field on {}",
                         other.type_name()
