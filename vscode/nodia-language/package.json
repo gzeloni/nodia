@@ -2,7 +2,7 @@
   "name": "nodia-language",
   "displayName": "Nodia Language",
   "description": "Editor support for Nodia with syntax highlighting and stdlib-aware completions.",
-  "version": "0.8.0",
+  "version": "0.8.3",
   "publisher": "nodia",
   "license": "GPL-3.0-or-later",
   "main": "./extension.js",

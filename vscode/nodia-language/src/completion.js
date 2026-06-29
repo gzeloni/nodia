@@ -5,6 +5,7 @@ const {
   KEYWORD_SNIPPETS,
   REGEX_DSL_ITEMS,
   REGEX_FLAGS,
+  REGEX_SURFACE,
   STDLIB_MODULES,
   moduleNames
 } = require("./catalog");
@@ -237,6 +238,7 @@ module.exports = {
   KEYWORD_SNIPPETS,
   REGEX_DSL_ITEMS,
   REGEX_FLAGS,
+  REGEX_SURFACE,
   STDLIB_MODULES,
   detectContext,
   parseStdlibUses,

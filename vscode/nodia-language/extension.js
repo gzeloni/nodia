@@ -7,6 +7,7 @@ const {
   KEYWORD_SNIPPETS,
   REGEX_DSL_ITEMS,
   REGEX_FLAGS,
+  REGEX_SURFACE,
   STDLIB_MODULES,
   detectContext,
   parseStdlibUses
@@ -316,6 +317,12 @@ function useMemberItems(moduleName, enteredNames) {
 }
 
 function memberItems(alias, imports) {
+  if (alias === "regex") {
+    return Object.entries(REGEX_SURFACE.members).map(([name, arities]) =>
+      callableItem(name, "regex", arities, "005")
+    );
+  }
+
   const imported = imports.get(alias);
   if (!imported) {
     return [];

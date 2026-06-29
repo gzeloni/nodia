@@ -1,6 +1,6 @@
 "use strict";
 
-// Keep this catalog aligned with src/stdlib.rs.
+// Keep this catalog aligned with src/stdlib.rs and the builtin regex surface.
 const STDLIB_MODULES = {
   text: {
     summary: "Text helpers",
@@ -106,19 +106,6 @@ const STDLIB_MODULES = {
       fixed: [2]
     }
   },
-  re: {
-    summary: "Regex helpers",
-    members: {
-      any: null,
-      full: null,
-      first: null,
-      all: null,
-      test: [2, 3],
-      find: [2, 3],
-      replace: [3],
-      split: [2]
-    }
-  },
   io: {
     summary: "File, path, directory, and stream helpers",
     members: {
@@ -152,6 +139,21 @@ const STDLIB_MODULES = {
       env: [1, 2],
       exit: [0, 1],
       exec: [1, 2]
+    }
+  },
+  result: {
+    summary: "Recoverable pipeline helpers",
+    members: {
+      ok: [1],
+      err: [2],
+      is_ok: [1],
+      is_err: [1],
+      value: [1],
+      value_or: [2],
+      error: [1],
+      then: [2],
+      recover: [2],
+      raise: [1]
     }
   },
   datetime: {
@@ -216,6 +218,20 @@ const STDLIB_MODULES = {
   }
 };
 
+const REGEX_SURFACE = {
+  summary: "Builtin regex surface",
+  members: {
+    any: null,
+    full: null,
+    first: null,
+    all: null,
+    test: [2, 3],
+    find: [2, 3],
+    replace: [3],
+    split: [2]
+  }
+};
+
 const KEYWORD_SNIPPETS = [
   { label: "use", insertText: "use ${1:text}", detail: "Import a stdlib namespace or .nod module" },
   { label: "val", insertText: "val ${1:name} = ${0:value}", detail: "Immutable binding" },
@@ -259,6 +275,7 @@ const KEYWORDS = [
 const REGEX_FLAGS = [
   "case_insensitive",
   "multiline",
+  "crlf",
   "dot_all",
   "unicode",
   "ignore_whitespace",
@@ -268,26 +285,45 @@ const REGEX_FLAGS = [
 const REGEX_DSL_ITEMS = [
   { label: "start", detail: "Regex anchor" },
   { label: "end", detail: "Regex anchor" },
+  { label: "start_text", detail: "Regex anchor" },
+  { label: "end_text", detail: "Regex anchor" },
+  { label: "end_text_before_newlines", detail: "Regex anchor" },
+  { label: "left_word_boundary", detail: "Regex anchor" },
+  { label: "left_word_half_boundary", detail: "Regex anchor" },
+  { label: "right_word_boundary", detail: "Regex anchor" },
+  { label: "right_word_half_boundary", detail: "Regex anchor" },
   { label: "word_boundary", detail: "Regex anchor" },
   { label: "not_word_boundary", detail: "Regex anchor" },
+  { label: "previous_match_end", detail: "Regex anchor" },
+  { label: "keep_out", detail: "Regex anchor" },
   { label: "digit", detail: "Regex class" },
   { label: "not_digit", detail: "Regex class" },
   { label: "whitespace", detail: "Regex class" },
   { label: "not_whitespace", detail: "Regex class" },
   { label: "word_char", detail: "Regex class" },
   { label: "not_word_char", detail: "Regex class" },
+  { label: "not_hex_digit", detail: "Regex class" },
+  { label: "not_newline", detail: "Regex class" },
+  { label: "general_newline", detail: "Regex class" },
   { label: "letter", detail: "Regex class" },
   { label: "lowercase", detail: "Regex class" },
   { label: "uppercase", detail: "Regex class" },
   { label: "hex_digit", detail: "Regex class" },
   { label: "alnum", detail: "Regex class" },
+  { label: "bell", detail: "Regex class" },
+  { label: "escape", detail: "Regex class" },
+  { label: "form_feed", detail: "Regex class" },
   { label: "space", detail: "Regex class" },
   { label: "tab", detail: "Regex class" },
   { label: "newline", detail: "Regex class" },
+  { label: "carriage_return", detail: "Regex class" },
+  { label: "vertical_tab", detail: "Regex class" },
   { label: "any_char", detail: "Regex item" },
   { label: "any_codepoint", detail: "Regex item" },
   { label: "literal", insertText: "literal(${1:\"text\"})", detail: "Escaped literal text" },
   { label: "raw_regex", insertText: "raw_regex ${1:\"\\\\d+\"}", detail: "Raw regex insert" },
+  { label: "property", insertText: "property ${1:\"Greek\"}", detail: "Unicode property" },
+  { label: "not_property", insertText: "not_property ${1:\"Greek\"}", detail: "Negated unicode property" },
   { label: "optional", insertText: "optional ${1:digit}", detail: "Quantifier" },
   { label: "zero_or_more", insertText: "zero_or_more ${1:digit}", detail: "Quantifier" },
   { label: "one_or_more", insertText: "one_or_more ${1:digit}", detail: "Quantifier" },
@@ -309,8 +345,49 @@ const REGEX_DSL_ITEMS = [
   { label: "not_followed_by", insertText: "not_followed_by {\n  $0\n}", detail: "Negative lookahead" },
   { label: "preceded_by", insertText: "preceded_by {\n  $0\n}", detail: "Lookbehind" },
   { label: "not_preceded_by", insertText: "not_preceded_by {\n  $0\n}", detail: "Negative lookbehind" },
+  {
+    label: "if_capture",
+    insertText: "if_capture ${1:1} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by capture participation"
+  },
+  {
+    label: "if_matches",
+    insertText: "if_matches {\n  $1\n} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by expression match"
+  },
+  {
+    label: "if_followed_by",
+    insertText: "if_followed_by {\n  $1\n} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by lookahead"
+  },
+  {
+    label: "if_not_followed_by",
+    insertText: "if_not_followed_by {\n  $1\n} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by negative lookahead"
+  },
+  {
+    label: "if_preceded_by",
+    insertText: "if_preceded_by {\n  $1\n} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by lookbehind"
+  },
+  {
+    label: "if_not_preceded_by",
+    insertText: "if_not_preceded_by {\n  $1\n} then {\n  $2\n} else {\n  $0\n}",
+    detail: "Conditional branch by negative lookbehind"
+  },
   { label: "same_as", insertText: "same_as ${1:name}", detail: "Named backreference" },
   { label: "same_as_group", insertText: "same_as_group ${1:1}", detail: "Indexed backreference" },
+  { label: "call", insertText: "call ${1:name}", detail: "Named subroutine call" },
+  { label: "call_group", insertText: "call_group ${1:1}", detail: "Indexed subroutine call" },
+  { label: "until", insertText: "until {\n  $1\n}", detail: "Match until pattern" },
+  { label: "until_stop", insertText: "until_stop {\n  $0\n}", detail: "Limit range until pattern" },
+  { label: "until_clear", detail: "Clear active until_stop range" },
+  { label: "define", insertText: "define {\n  $0\n}", detail: "Define subroutine groups" },
+  { label: "fail", detail: "Backtracking verb" },
+  { label: "accept", detail: "Backtracking verb" },
+  { label: "commit", detail: "Backtracking verb" },
+  { label: "skip", detail: "Backtracking verb" },
+  { label: "prune", detail: "Backtracking verb" },
   { label: "with_flags", insertText: "with_flags(${1:case_insensitive}) {\n  $0\n}", detail: "Scoped flags" },
   { label: "without_flags", insertText: "without_flags(${1:multiline}) {\n  $0\n}", detail: "Scoped flags" },
   { label: "lazy", detail: "Quantifier mode" },
@@ -326,6 +403,7 @@ module.exports = {
   KEYWORD_SNIPPETS,
   REGEX_DSL_ITEMS,
   REGEX_FLAGS,
+  REGEX_SURFACE,
   STDLIB_MODULES,
   moduleNames
 };

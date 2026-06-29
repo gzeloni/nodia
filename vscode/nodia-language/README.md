@@ -17,15 +17,29 @@ vscode/nodia-language
 - `.nod` file association
 - Current language keywords
 - Raw strings and triple-quoted strings
+- Byte strings
 - `{expr}` interpolation inside strings
 - Numbers, operators, punctuation
 - Stdlib-aware completions for `use`
-- Member completions for imported stdlib namespaces such as `json.read()` and `csv.write()`
-- Regex DSL suggestions inside `regex { ... }`
+- Member completions for imported stdlib namespaces such as `result.raise()`, `json.read()`, and `csv.write()`
+- Builtin regex completions such as `regex.find()`, `regex.test()`, `regex.replace()`, and `regex.split()` without any import
+- Regex DSL suggestions inside `regex { ... }`, including `property`, `define`, `call`, `until`, and backtracking verbs
 - `nodia fmt` on save for `.nod` files
 - `nodia check` diagnostics while editing and after save
 - `input` global
 - `#` and `//` line comments
+
+## Editor Matrix
+
+This repository also ships a local Zed integration under:
+
+```text
+zed/nodia
+```
+
+VS Code remains the richer editor integration today because it already shells
+out to `nodia fmt` and `nodia check`. The Zed side currently focuses on
+Tree-sitter parsing, highlighting, brackets, indentation, and outline support.
 
 ## Stdlib Notes
 
@@ -36,18 +50,18 @@ parameterized API surface:
 use text
 use io
 use format
+use result
 use datetime
 use json
 use csv
-use re
 
 emit text.upper("ana")
-emit text.decode(io.read("payload.bin", io.bytes), text.utf8, text.lossy)
+emit result.raise(text.decode(result.raise(io.read("payload.bin", io.bytes)), text.utf8, text.lossy))
 emit format.pad("42", 5, format.left, "0")
-emit datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime)
-emit json.read(r'{"name":"Ana"}').name
-emit re.test("abc-42", "^[a-z]+-\\d+$", re.full)
-emit re.find("ana 42", regex { one_or_more digit }, re.all)
+emit result.raise(datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime))
+emit result.raise(json.read(r'{"name":"Ana"}')).name
+emit result.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
+emit result.raise(regex.find("ana 42", regex { one_or_more digit }, regex.all))
 ```
 
 Global helpers such as `json_parse`, `csv_read`, `upper`, `read`, `stdin`, and

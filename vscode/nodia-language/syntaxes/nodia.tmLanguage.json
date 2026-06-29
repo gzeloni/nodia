@@ -83,6 +83,38 @@
           "patterns": []
         },
         {
+          "name": "string.quoted.bytes.double.nodia",
+          "begin": "b\"",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.bytes.double.delimiter.nodia"
+            }
+          },
+          "end": "\"",
+          "patterns": [
+            {
+              "name": "constant.character.escape.nodia",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
+          "name": "string.quoted.bytes.single.nodia",
+          "begin": "b'",
+          "beginCaptures": {
+            "0": {
+              "name": "string.quoted.bytes.single.delimiter.nodia"
+            }
+          },
+          "end": "'",
+          "patterns": [
+            {
+              "name": "constant.character.escape.nodia",
+              "match": "\\\\."
+            }
+          ]
+        },
+        {
           "name": "string.quoted.double.nodia",
           "begin": "\"",
           "end": "\"",
@@ -292,7 +324,7 @@
             },
             {
               "name": "support.module.stdlib.nodia",
-              "match": "\\b(?:text|numbers|conversion|collections|format|re|io|system|datetime|json|csv)\\b"
+              "match": "\\b(?:text|numbers|conversion|collections|format|io|system|result|datetime|json|csv)\\b"
             },
             {
               "name": "meta.use.alias.nodia",
