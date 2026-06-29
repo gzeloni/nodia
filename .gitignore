@@ -10,3 +10,7 @@ build/
 .pytest_cache/
 target/
 site/
+
+# Zed local grammar repos (bootstrapped by zed/bootstrap-dev-grammar.sh)
+zed/nodia/grammars/nodia/
+zed/tree-sitter-nodia/

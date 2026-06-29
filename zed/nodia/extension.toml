@@ -1,0 +1,25 @@
+id = "nodia"
+name = "Nodia"
+version = "0.8.3"
+schema_version = 1
+authors = ["Gustavo Zeloni <gustavo@gzeloni.dev>"]
+description = "Syntax highlighting and language metadata for Nodia in Zed."
+repository = "https://github.com/gzeloni/nodia"
+themes = []
+icon_themes = []
+languages = ["languages/nodia"]
+capabilities = []
+
+[lib]
+
+[grammars.nodia]
+repository = "/Users/gzeloni/dev/personal/nodia/zed/tree-sitter-nodia"
+rev = "HEAD"
+
+[language_servers]
+
+[context_servers]
+
+[agent_servers]
+
+[slash_commands]
