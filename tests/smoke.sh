@@ -16,19 +16,19 @@ use numbers
 use collections as col
 use conversion as conv
 use format as fmt
-use re
 use io
 use system
+use result
 use datetime as dt
 use json
 use csv
 
 val decode = json.read
 val encode = json.write
-val rows = csv.read("name,age\nAna,30", {
+val rows = result.raise(csv.read("name,age\nAna,30", {
   header: true,
   types: true,
-})
+}))
 
 emit text.upper("ana")
 emit text.normalize("é", text.nfc)
@@ -39,12 +39,12 @@ emit text.slice("aéb", text.byte, 1, 3)
 emit numbers.abs(-4)
 emit conv.string(3)
 emit fmt.fixed(3.14, 1)
-emit re.find("ana 42", regex { one_or_more digit }).text
+emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
 emit io.basename("/tmp/report.txt")
 emit system.args[1]
 emit dt.year(dt.date(2026, 6, 3))
 emit col.map(numbers.int, ["1", "2"])
-emit decode(r'{"ok":true,"name":"Ana"}').name
+emit result.raise(decode(r'{"ok":true,"name":"Ana"}')).name
 emit rows[0].age + 1
 emit encode(rows[0], 2)
 emit csv.write(rows)
