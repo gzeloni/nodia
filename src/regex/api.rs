@@ -3,10 +3,18 @@
 
 //! Public regex validation, rendering, and compilation helpers.
 
+use fancy_regex::RegexBuilder;
+
+use super::parsing::parse_text_pattern;
 use super::rendering::*;
 use super::support::*;
 use super::validation::*;
 use super::*;
+
+/// Parses classic regex text back into the native regex DSL AST.
+pub fn parse_text(rendered: &str) -> NodiaResult<RegexPattern> {
+    parse_text_pattern(rendered)
+}
 
 /// Validates a regex AST for semantic correctness.
 pub fn validate(pattern: &RegexPattern) -> NodiaResult<()> {
@@ -60,7 +68,9 @@ pub fn compile(pattern: &RegexPattern) -> NodiaResult<RuntimeRegex> {
 
 /// Compiles raw regex text into a runtime regex value.
 pub fn compile_text(rendered: &str) -> NodiaResult<RuntimeRegex> {
-    let engine = Regex::new(rendered)
+    let engine = RegexBuilder::new(rendered)
+        .oniguruma_mode(true)
+        .build()
         .map_err(|err| NodiaError::runtime(format!("cannot compile regex '{rendered}': {err}")))?;
     Ok(RuntimeRegex {
         rendered: rendered.to_string(),
@@ -70,7 +80,9 @@ pub fn compile_text(rendered: &str) -> NodiaResult<RuntimeRegex> {
 
 /// Validates raw regex text using semantic regex diagnostics.
 pub fn validate_text(rendered: &str) -> NodiaResult<()> {
-    Regex::new(rendered)
+    RegexBuilder::new(rendered)
+        .oniguruma_mode(true)
+        .build()
         .map(|_| ())
         .map_err(|err| regex_error(format!("cannot compile regex '{rendered}': {err}")))
 }
@@ -79,13 +91,14 @@ pub fn validate_text(rendered: &str) -> NodiaResult<()> {
 pub fn validate_replacement_syntax(replacement: &str) -> NodiaResult<()> {
     parse_replacement_chunks(replacement)
         .map(|_| ())
-        .map_err(regex_error)
+        .map_err(|err| regex_error(err.message).with_span(err.line, err.column))
 }
 
 /// Validates replacement placeholders against a regex pattern's capture contract.
 pub fn validate_replacement(pattern: &RegexPattern, replacement: &str) -> NodiaResult<()> {
     validate(pattern)?;
-    let chunks = parse_replacement_chunks(replacement).map_err(regex_error)?;
+    let chunks = parse_replacement_chunks(replacement)
+        .map_err(|err| regex_error(err.message).with_span(err.line, err.column))?;
     let mut names = HashSet::new();
     let mut capture_len = 1usize;
     collect_capture_contract(&pattern.body, &mut capture_len, &mut names);
@@ -99,15 +112,22 @@ fn validate_chunks_against_capture_contract(
 ) -> NodiaResult<()> {
     for chunk in chunks {
         match chunk {
-            ReplacementChunk::CaptureIndex { index, .. } if index >= capture_len => {
+            ReplacementChunk::CaptureIndex {
+                index,
+                line,
+                column,
+                ..
+            } if index >= capture_len => {
                 return Err(regex_error(format!(
                     "regex replacement refers to missing capture group {index}"
-                )));
+                ))
+                .with_span(line, column));
             }
-            ReplacementChunk::CaptureName(name) if !names.contains(&name) => {
+            ReplacementChunk::CaptureName { name, line, column } if !names.contains(&name) => {
                 return Err(regex_error(format!(
                     "regex replacement refers to missing named capture '{name}'"
-                )));
+                ))
+                .with_span(line, column));
             }
             _ => {}
         }
@@ -143,17 +163,55 @@ fn collect_capture_contract(
                     collect_capture_contract(branch, capture_len, names);
                 }
             }
-            RegexNode::Lookaround { body, .. } | RegexNode::ScopedFlags { body, .. } => {
+            RegexNode::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            } => {
+                collect_condition_contract(condition, capture_len, names);
+                collect_capture_contract(then_branch, capture_len, names);
+                collect_capture_contract(else_branch, capture_len, names);
+            }
+            RegexNode::Condition(condition) => {
+                collect_condition_contract(condition, capture_len, names);
+            }
+            RegexNode::Lookaround { body, .. }
+            | RegexNode::ScopedFlags { body, .. }
+            | RegexNode::UntilStop(body)
+            | RegexNode::DefineGroup { body } => {
                 collect_capture_contract(body, capture_len, names);
+            }
+            RegexNode::Until { limit, body } => {
+                collect_capture_contract(limit, capture_len, names);
+                if let Some(body) = body {
+                    collect_capture_contract(body, capture_len, names);
+                }
             }
             RegexNode::Literal(_)
             | RegexNode::Raw(_)
+            | RegexNode::Property { .. }
             | RegexNode::Anchor(_)
             | RegexNode::Class(_)
             | RegexNode::AnyChar
             | RegexNode::AnyCodepoint
             | RegexNode::CharSet(_)
             | RegexNode::Reference(_) => {}
+            RegexNode::SubroutineCall(_)
+            | RegexNode::BacktrackingVerb(_)
+            | RegexNode::UntilClear => {}
+        }
+    }
+}
+
+fn collect_condition_contract(
+    condition: &RegexCondition,
+    capture_len: &mut usize,
+    names: &mut HashSet<String>,
+) {
+    match condition {
+        RegexCondition::Capture(_) => {}
+        RegexCondition::Lookaround { body, .. } | RegexCondition::Expression(body) => {
+            collect_capture_contract(body, capture_len, names);
         }
     }
 }

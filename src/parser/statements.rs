@@ -61,10 +61,17 @@ impl Parser {
         let token = self.advance().clone();
         let target = match token.kind {
             TokenKind::String(path) | TokenKind::RawString(path) => UseTarget::Path(path),
+            TokenKind::Identifier(name) if name == "re" => {
+                return Err(NodiaError::new(
+                    "'re' was removed; regex is built into the language",
+                    token.line,
+                    token.column,
+                ))
+            }
             TokenKind::Identifier(name) => UseTarget::Stdlib(name),
             TokenKind::Regex => {
                 return Err(NodiaError::new(
-                    "use re for regex helpers; 'regex' is the DSL keyword",
+                    "'regex' is built into the language and must not be imported",
                     token.line,
                     token.column,
                 ))

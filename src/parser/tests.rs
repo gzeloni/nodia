@@ -131,12 +131,71 @@ fn parses_stdlib_use_modules() {
     let source = r#"
 use json
 use csv as table pick read hide write
-use re
 use format as fmt
 
 emit json.read("{}")
 "#;
     let tokens = Lexer::new(source).tokenize().unwrap();
     let program = Parser::new(tokens).parse_program().unwrap();
-    assert_eq!(program.statements.len(), 5);
+    assert_eq!(program.statements.len(), 4);
+}
+
+#[test]
+fn parses_regex_namespace_calls_and_text_normalization_items() {
+    let source = r#"
+val pat = regex {
+  r"\d{2}"
+}
+emit regex.find("42", pat)
+"#;
+    let tokens = Lexer::new(source).tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    assert_eq!(program.statements.len(), 2);
+}
+
+#[test]
+fn parses_regex_conditionals() {
+    let source = r#"
+val pat = regex {
+  optional group {
+    "a"
+  }
+  "b"
+  if_capture 1 then {
+    "c"
+  } else {
+    "d"
+  }
+}
+"#;
+    let tokens = Lexer::new(source).tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    assert_eq!(program.statements.len(), 1);
+}
+
+#[test]
+fn parses_extended_regex_dsl_surface() {
+    let source = r#"
+val pat = regex {
+  start_text
+  property "Greek"
+  until {
+    "END"
+  }
+  call_group 1
+  if_matches {
+    digit
+  }
+  define {
+    named word {
+      one_or_more letter
+    }
+  }
+  fail
+  end_text
+}
+"#;
+    let tokens = Lexer::new(source).tokenize().unwrap();
+    let program = Parser::new(tokens).parse_program().unwrap();
+    assert_eq!(program.statements.len(), 1);
 }

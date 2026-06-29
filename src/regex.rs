@@ -11,12 +11,13 @@ use std::rc::Rc;
 
 mod api;
 mod engine;
+mod parsing;
 mod rendering;
 mod support;
 mod validation;
 
 pub use self::api::{
-    compile, compile_text, render, render_for_target, validate, validate_for_target,
+    compile, compile_text, parse_text, render, render_for_target, validate, validate_for_target,
     validate_replacement, validate_replacement_syntax, validate_text,
 };
 
@@ -34,6 +35,7 @@ pub struct RegexPattern {
 pub enum RegexFlag {
     CaseInsensitive,
     Multiline,
+    Crlf,
     DotAll,
     Unicode,
     IgnoreWhitespace,
@@ -46,6 +48,7 @@ impl RegexFlag {
         Some(match name {
             "case_insensitive" => Self::CaseInsensitive,
             "multiline" => Self::Multiline,
+            "crlf" => Self::Crlf,
             "dot_all" => Self::DotAll,
             "unicode" => Self::Unicode,
             "ignore_whitespace" => Self::IgnoreWhitespace,
@@ -59,6 +62,7 @@ impl RegexFlag {
         match self {
             Self::CaseInsensitive => "case_insensitive",
             Self::Multiline => "multiline",
+            Self::Crlf => "crlf",
             Self::DotAll => "dot_all",
             Self::Unicode => "unicode",
             Self::IgnoreWhitespace => "ignore_whitespace",
@@ -70,6 +74,7 @@ impl RegexFlag {
         match self {
             Self::CaseInsensitive => 'i',
             Self::Multiline => 'm',
+            Self::Crlf => 'R',
             Self::DotAll => 's',
             Self::Unicode => 'u',
             Self::IgnoreWhitespace => 'x',
@@ -87,6 +92,8 @@ pub enum RegexNode {
     Literal(String),
     /// Raw regex text inserted as-is.
     Raw(String),
+    /// Unicode property shorthand.
+    Property { name: String, negated: bool },
     /// Zero-width anchor.
     Anchor(RegexAnchor),
     /// Character class shorthand.
@@ -117,6 +124,29 @@ pub enum RegexNode {
     },
     /// Backreference by index or name.
     Reference(RegexReference),
+    /// Zero-width assertion condition without branches.
+    Condition(RegexCondition),
+    /// Conditional subpattern that selects a branch based on capture state or an assertion.
+    Conditional {
+        condition: RegexCondition,
+        then_branch: Vec<RegexNode>,
+        else_branch: Vec<RegexNode>,
+    },
+    /// Call a named or indexed subroutine capture.
+    SubroutineCall(RegexReference),
+    /// Backtracking control verb.
+    BacktrackingVerb(RegexBacktrackingVerb),
+    /// Match until the limit pattern would match, optionally applying a body within that range.
+    Until {
+        limit: Vec<RegexNode>,
+        body: Option<Vec<RegexNode>>,
+    },
+    /// Limit the haystack range until the given pattern would match.
+    UntilStop(Vec<RegexNode>),
+    /// Clear an active until-stop range.
+    UntilClear,
+    /// Define capture groups for later subroutine calls without matching anything immediately.
+    DefineGroup { body: Vec<RegexNode> },
     /// Scoped flag delta for a sub-sequence.
     ScopedFlags {
         enable: Vec<RegexFlag>,
@@ -130,8 +160,17 @@ pub enum RegexNode {
 pub enum RegexAnchor {
     Start,
     End,
+    StartText,
+    EndText,
+    EndTextBeforeNewlines,
+    LeftWordBoundary,
+    LeftWordHalfBoundary,
+    RightWordBoundary,
+    RightWordHalfBoundary,
     WordBoundary,
     NotWordBoundary,
+    PreviousMatchEnd,
+    KeepOut,
 }
 
 impl RegexAnchor {
@@ -140,8 +179,17 @@ impl RegexAnchor {
         Some(match name {
             "start" => Self::Start,
             "end" => Self::End,
+            "start_text" => Self::StartText,
+            "end_text" => Self::EndText,
+            "end_text_before_newlines" => Self::EndTextBeforeNewlines,
+            "left_word_boundary" => Self::LeftWordBoundary,
+            "left_word_half_boundary" => Self::LeftWordHalfBoundary,
+            "right_word_boundary" => Self::RightWordBoundary,
+            "right_word_half_boundary" => Self::RightWordHalfBoundary,
             "word_boundary" => Self::WordBoundary,
             "not_word_boundary" => Self::NotWordBoundary,
+            "previous_match_end" => Self::PreviousMatchEnd,
+            "keep_out" => Self::KeepOut,
             _ => return None,
         })
     }
@@ -151,8 +199,17 @@ impl RegexAnchor {
         match self {
             Self::Start => "start",
             Self::End => "end",
+            Self::StartText => "start_text",
+            Self::EndText => "end_text",
+            Self::EndTextBeforeNewlines => "end_text_before_newlines",
+            Self::LeftWordBoundary => "left_word_boundary",
+            Self::LeftWordHalfBoundary => "left_word_half_boundary",
+            Self::RightWordBoundary => "right_word_boundary",
+            Self::RightWordHalfBoundary => "right_word_half_boundary",
             Self::WordBoundary => "word_boundary",
             Self::NotWordBoundary => "not_word_boundary",
+            Self::PreviousMatchEnd => "previous_match_end",
+            Self::KeepOut => "keep_out",
         }
     }
 
@@ -160,8 +217,17 @@ impl RegexAnchor {
         match self {
             Self::Start => "^",
             Self::End => "$",
+            Self::StartText => "\\A",
+            Self::EndText => "\\z",
+            Self::EndTextBeforeNewlines => "\\Z",
+            Self::LeftWordBoundary => "\\b{start}",
+            Self::LeftWordHalfBoundary => "\\b{start-half}",
+            Self::RightWordBoundary => "\\b{end}",
+            Self::RightWordHalfBoundary => "\\b{end-half}",
             Self::WordBoundary => "\\b",
             Self::NotWordBoundary => "\\B",
+            Self::PreviousMatchEnd => "\\G",
+            Self::KeepOut => "\\K",
         }
     }
 }
@@ -175,14 +241,22 @@ pub enum RegexClass {
     NotWhitespace,
     WordChar,
     NotWordChar,
+    NotHexDigit,
+    NotNewline,
+    GeneralNewline,
     Letter,
     Lowercase,
     Uppercase,
     HexDigit,
     Alnum,
+    Bell,
+    Escape,
+    FormFeed,
     Space,
     Tab,
     Newline,
+    CarriageReturn,
+    VerticalTab,
 }
 
 impl RegexClass {
@@ -195,14 +269,22 @@ impl RegexClass {
             "not_whitespace" => Self::NotWhitespace,
             "word_char" => Self::WordChar,
             "not_word_char" => Self::NotWordChar,
+            "not_hex_digit" => Self::NotHexDigit,
+            "not_newline" => Self::NotNewline,
+            "general_newline" => Self::GeneralNewline,
             "letter" => Self::Letter,
             "lowercase" => Self::Lowercase,
             "uppercase" => Self::Uppercase,
             "hex_digit" => Self::HexDigit,
             "alnum" => Self::Alnum,
+            "bell" => Self::Bell,
+            "escape" => Self::Escape,
+            "form_feed" => Self::FormFeed,
             "space" => Self::Space,
             "tab" => Self::Tab,
             "newline" => Self::Newline,
+            "carriage_return" => Self::CarriageReturn,
+            "vertical_tab" => Self::VerticalTab,
             _ => return None,
         })
     }
@@ -216,14 +298,22 @@ impl RegexClass {
             Self::NotWhitespace => "not_whitespace",
             Self::WordChar => "word_char",
             Self::NotWordChar => "not_word_char",
+            Self::NotHexDigit => "not_hex_digit",
+            Self::NotNewline => "not_newline",
+            Self::GeneralNewline => "general_newline",
             Self::Letter => "letter",
             Self::Lowercase => "lowercase",
             Self::Uppercase => "uppercase",
             Self::HexDigit => "hex_digit",
             Self::Alnum => "alnum",
+            Self::Bell => "bell",
+            Self::Escape => "escape",
+            Self::FormFeed => "form_feed",
             Self::Space => "space",
             Self::Tab => "tab",
             Self::Newline => "newline",
+            Self::CarriageReturn => "carriage_return",
+            Self::VerticalTab => "vertical_tab",
         }
     }
 
@@ -235,14 +325,22 @@ impl RegexClass {
             Self::NotWhitespace => "\\S",
             Self::WordChar => "\\w",
             Self::NotWordChar => "\\W",
+            Self::NotHexDigit => "\\H",
+            Self::NotNewline => "\\N",
+            Self::GeneralNewline => "\\R",
             Self::Letter => "[A-Za-z]",
             Self::Lowercase => "[a-z]",
             Self::Uppercase => "[A-Z]",
             Self::HexDigit => "[0-9A-Fa-f]",
             Self::Alnum => "[A-Za-z0-9]",
+            Self::Bell => "\\a",
+            Self::Escape => "\\e",
+            Self::FormFeed => "\\f",
             Self::Space => " ",
             Self::Tab => "\\t",
             Self::Newline => "\\n",
+            Self::CarriageReturn => "\\r",
+            Self::VerticalTab => "\\v",
         }
     }
 
@@ -254,14 +352,22 @@ impl RegexClass {
             Self::NotWhitespace => "\\S",
             Self::WordChar => "\\w",
             Self::NotWordChar => "\\W",
+            Self::NotHexDigit => "\\H",
+            Self::NotNewline => "\\N",
+            Self::GeneralNewline => "\\R",
             Self::Letter => "A-Za-z",
             Self::Lowercase => "a-z",
             Self::Uppercase => "A-Z",
             Self::HexDigit => "0-9A-Fa-f",
             Self::Alnum => "A-Za-z0-9",
+            Self::Bell => "\\a",
+            Self::Escape => "\\e",
+            Self::FormFeed => "\\f",
             Self::Space => " ",
             Self::Tab => "\\t",
             Self::Newline => "\\n",
+            Self::CarriageReturn => "\\r",
+            Self::VerticalTab => "\\v",
         }
     }
 }
@@ -398,6 +504,8 @@ pub enum RegexCharSetItem {
     Range(char, char),
     /// Nested character class shorthand.
     Class(RegexClass),
+    /// Unicode property shorthand.
+    Property { name: String, negated: bool },
     /// Raw target-specific set fragment.
     Raw(String),
 }
@@ -409,6 +517,53 @@ pub enum RegexReference {
     Named(String),
     /// Numeric capturing group reference.
     Group(usize),
+}
+
+/// Conditional predicate used by [`RegexNode::Conditional`].
+#[derive(Debug, Clone, PartialEq)]
+pub enum RegexCondition {
+    /// Whether a capture group participated in the current match attempt.
+    Capture(RegexReference),
+    /// Whether a zero-width assertion succeeds.
+    Lookaround {
+        kind: RegexLookaroundKind,
+        body: Vec<RegexNode>,
+    },
+    /// Whether an arbitrary regex expression matches from the current position.
+    Expression(Vec<RegexNode>),
+}
+
+/// Backtracking control verbs supported by the regex engine.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegexBacktrackingVerb {
+    Fail,
+    Accept,
+    Commit,
+    Skip,
+    Prune,
+}
+
+impl RegexBacktrackingVerb {
+    /// Returns the stable DSL name for the control verb.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Fail => "fail",
+            Self::Accept => "accept",
+            Self::Commit => "commit",
+            Self::Skip => "skip",
+            Self::Prune => "prune",
+        }
+    }
+
+    fn render(self) -> &'static str {
+        match self {
+            Self::Fail => "(*FAIL)",
+            Self::Accept => "(*ACCEPT)",
+            Self::Commit => "(*COMMIT)",
+            Self::Skip => "(*SKIP)",
+            Self::Prune => "(*PRUNE)",
+        }
+    }
 }
 
 /// Rendering target used for cross-engine validation.

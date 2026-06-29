@@ -7,14 +7,25 @@ use super::*;
 
 impl Parser {
     pub(super) fn regex_literal(&mut self) -> NodiaResult<Expr> {
-        let flags = if self.match_kind(&TokenKind::LeftParen) {
+        let mut flags = if self.match_kind(&TokenKind::LeftParen) {
             self.regex_flags()?
         } else {
             Vec::new()
         };
         self.skip_separators();
-        let items =
+        let mut items =
             self.regex_braced_sequence("expected '{' after regex", "expected '}' after regex")?;
+        if let [RegexNode::ScopedFlags {
+            enable,
+            disable,
+            body,
+        }] = items.as_slice()
+        {
+            if disable.is_empty() {
+                flags.extend(enable.iter().copied());
+                items = body.clone();
+            }
+        }
         Ok(Expr::Regex(RegexPattern { flags, body: items }))
     }
 
@@ -71,24 +82,67 @@ impl Parser {
         let mut items = Vec::new();
         self.skip_separators();
         while !self.check(&TokenKind::RightBrace) && !self.is_at_end() {
-            items.push(self.regex_item()?);
+            items.extend(self.regex_sequence_item()?);
             self.skip_separators();
         }
         Ok(items)
     }
 
-    pub(super) fn regex_item(&mut self) -> NodiaResult<RegexNode> {
+    pub(super) fn regex_sequence_item(&mut self) -> NodiaResult<Vec<RegexNode>> {
         let token = self.advance().clone();
         match token.kind {
-            TokenKind::String(value) | TokenKind::RawString(value) => Ok(RegexNode::Literal(value)),
-            TokenKind::Identifier(name) => {
-                self.regex_identifier_item(name, token.line, token.column)
+            TokenKind::String(value) => Ok(vec![RegexNode::Literal(value)]),
+            TokenKind::RawString(value) => {
+                self.regex_text_sequence_item(value, token.line, token.column)
             }
+            TokenKind::Identifier(name) => Ok(vec![self.regex_identifier_item(
+                name,
+                token.line,
+                token.column,
+            )?]),
             _ => Err(NodiaError::new(
                 "expected regex item",
                 token.line,
                 token.column,
             )),
+        }
+    }
+
+    pub(super) fn regex_text_sequence_item(
+        &self,
+        value: String,
+        line: usize,
+        column: usize,
+    ) -> NodiaResult<Vec<RegexNode>> {
+        let pattern = regex_api::parse_text(&value).map_err(|error| {
+            let crate::error::NodiaError {
+                code,
+                message,
+                context,
+                span,
+                ..
+            } = error;
+            let mut mapped = NodiaError::semantic_at(message, line, column).with_code(code);
+            for context in context {
+                mapped = mapped.with_context(context);
+            }
+            if let Some(span) = span {
+                mapped = mapped.with_span(span.line, span.column);
+            }
+            mapped
+        })?;
+        Ok(self.regex_embed_pattern(pattern))
+    }
+
+    pub(super) fn regex_embed_pattern(&self, pattern: RegexPattern) -> Vec<RegexNode> {
+        if pattern.flags.is_empty() {
+            pattern.body
+        } else {
+            vec![RegexNode::ScopedFlags {
+                enable: pattern.flags,
+                disable: Vec::new(),
+                body: pattern.body,
+            }]
         }
     }
 
@@ -116,6 +170,14 @@ impl Parser {
             "raw_regex" => Ok(RegexNode::Raw(
                 self.regex_expect_string("expected string after raw_regex")?,
             )),
+            "property" => Ok(RegexNode::Property {
+                name: self.regex_expect_string("expected property name after property")?,
+                negated: false,
+            }),
+            "not_property" => Ok(RegexNode::Property {
+                name: self.regex_expect_string("expected property name after not_property")?,
+                negated: true,
+            }),
             "optional" => self.regex_quantified(RegexQuantifierKind::Optional),
             "zero_or_more" => self.regex_quantified(RegexQuantifierKind::ZeroOrMore),
             "one_or_more" => self.regex_quantified(RegexQuantifierKind::OneOrMore),
@@ -147,12 +209,37 @@ impl Parser {
             "not_followed_by" => self.regex_lookaround(RegexLookaroundKind::NotFollowedBy),
             "preceded_by" => self.regex_lookaround(RegexLookaroundKind::PrecededBy),
             "not_preceded_by" => self.regex_lookaround(RegexLookaroundKind::NotPrecededBy),
+            "if_capture" => self.regex_conditional_capture(),
+            "if_followed_by" => self.regex_conditional_lookaround(RegexLookaroundKind::FollowedBy),
+            "if_not_followed_by" => {
+                self.regex_conditional_lookaround(RegexLookaroundKind::NotFollowedBy)
+            }
+            "if_preceded_by" => self.regex_conditional_lookaround(RegexLookaroundKind::PrecededBy),
+            "if_not_preceded_by" => {
+                self.regex_conditional_lookaround(RegexLookaroundKind::NotPrecededBy)
+            }
+            "if_matches" => self.regex_conditional_expression(),
             "same_as" => Ok(RegexNode::Reference(RegexReference::Named(
                 self.expect_name_like("expected named group after same_as")?,
             ))),
             "same_as_group" => Ok(RegexNode::Reference(RegexReference::Group(
                 self.regex_expect_usize("expected group index after same_as_group")?,
             ))),
+            "call" => Ok(RegexNode::SubroutineCall(RegexReference::Named(
+                self.expect_name_like("expected subroutine name after call")?,
+            ))),
+            "call_group" => Ok(RegexNode::SubroutineCall(RegexReference::Group(
+                self.regex_expect_usize("expected subroutine index after call_group")?,
+            ))),
+            "fail" => Ok(RegexNode::BacktrackingVerb(RegexBacktrackingVerb::Fail)),
+            "accept" => Ok(RegexNode::BacktrackingVerb(RegexBacktrackingVerb::Accept)),
+            "commit" => Ok(RegexNode::BacktrackingVerb(RegexBacktrackingVerb::Commit)),
+            "skip" => Ok(RegexNode::BacktrackingVerb(RegexBacktrackingVerb::Skip)),
+            "prune" => Ok(RegexNode::BacktrackingVerb(RegexBacktrackingVerb::Prune)),
+            "until" => self.regex_until(),
+            "until_stop" => self.regex_until_stop(),
+            "until_clear" => Ok(RegexNode::UntilClear),
+            "define" => self.regex_define(),
             "with_flags" => self.regex_scoped_flags(true),
             "without_flags" => self.regex_scoped_flags(false),
             "branch" => Err(NodiaError::new(
@@ -220,7 +307,26 @@ impl Parser {
             )?;
             return Ok(RegexNode::Sequence(items));
         }
-        self.regex_item()
+        let token = self.advance().clone();
+        match token.kind {
+            TokenKind::String(value) => Ok(RegexNode::Literal(value)),
+            TokenKind::RawString(value) => {
+                let items = self.regex_text_sequence_item(value, token.line, token.column)?;
+                if items.len() == 1 {
+                    Ok(items.into_iter().next().unwrap())
+                } else {
+                    Ok(RegexNode::Sequence(items))
+                }
+            }
+            TokenKind::Identifier(name) => {
+                self.regex_identifier_item(name, token.line, token.column)
+            }
+            _ => Err(NodiaError::new(
+                "expected regex item",
+                token.line,
+                token.column,
+            )),
+        }
     }
 
     pub(super) fn regex_group(&mut self, kind: RegexGroupKind) -> NodiaResult<RegexNode> {
@@ -237,6 +343,70 @@ impl Parser {
             "expected '}' after regex lookaround",
         )?;
         Ok(RegexNode::Lookaround { kind, body: items })
+    }
+
+    pub(super) fn regex_conditional_capture(&mut self) -> NodiaResult<RegexNode> {
+        let reference = match self.peek().kind.clone() {
+            TokenKind::Int(value) if value >= 0 => {
+                self.advance();
+                RegexReference::Group(value as usize)
+            }
+            _ => RegexReference::Named(
+                self.expect_name_like("expected capture name or group index after if_capture")?,
+            ),
+        };
+        self.regex_conditional(RegexCondition::Capture(reference))
+    }
+
+    pub(super) fn regex_conditional_lookaround(
+        &mut self,
+        kind: RegexLookaroundKind,
+    ) -> NodiaResult<RegexNode> {
+        let body = self.regex_braced_sequence(
+            "expected '{' after conditional regex assertion",
+            "expected '}' after conditional regex assertion",
+        )?;
+        self.regex_conditional(RegexCondition::Lookaround { kind, body })
+    }
+
+    pub(super) fn regex_conditional(
+        &mut self,
+        condition: RegexCondition,
+    ) -> NodiaResult<RegexNode> {
+        self.skip_separators();
+        if matches!(&self.peek().kind, TokenKind::Identifier(name) if name == "then") {
+            self.advance();
+            self.skip_separators();
+            let then_branch = self.regex_braced_sequence(
+                "expected '{' after then",
+                "expected '}' after then block",
+            )?;
+            self.skip_separators();
+            let else_branch = if self.match_kind(&TokenKind::Else) {
+                self.skip_separators();
+                self.regex_braced_sequence(
+                    "expected '{' after else",
+                    "expected '}' after else block",
+                )?
+            } else {
+                Vec::new()
+            };
+            Ok(RegexNode::Conditional {
+                condition,
+                then_branch,
+                else_branch,
+            })
+        } else {
+            Ok(RegexNode::Condition(condition))
+        }
+    }
+
+    pub(super) fn regex_conditional_expression(&mut self) -> NodiaResult<RegexNode> {
+        let body = self.regex_braced_sequence(
+            "expected '{' after if_matches",
+            "expected '}' after if_matches condition",
+        )?;
+        self.regex_conditional(RegexCondition::Expression(body))
     }
 
     pub(super) fn regex_either(&mut self) -> NodiaResult<RegexNode> {
@@ -287,6 +457,15 @@ impl Parser {
                     return Ok(RegexCharSetItem::Class(class));
                 }
                 match name.as_str() {
+                    "property" => Ok(RegexCharSetItem::Property {
+                        name: self.regex_expect_string("expected property name after property")?,
+                        negated: false,
+                    }),
+                    "not_property" => Ok(RegexCharSetItem::Property {
+                        name: self
+                            .regex_expect_string("expected property name after not_property")?,
+                        negated: true,
+                    }),
                     "char" => {
                         let value = self.regex_parenthesized_string(
                             "expected '(' after char",
@@ -366,6 +545,37 @@ impl Parser {
             },
             disable: if enable_only { Vec::new() } else { flags },
             body,
+        })
+    }
+
+    pub(super) fn regex_until(&mut self) -> NodiaResult<RegexNode> {
+        let limit =
+            self.regex_braced_sequence("expected '{' after until", "expected '}' after until")?;
+        self.skip_separators();
+        let body = if matches!(&self.peek().kind, TokenKind::Identifier(name) if name == "then") {
+            self.advance();
+            self.skip_separators();
+            Some(self.regex_braced_sequence(
+                "expected '{' after then",
+                "expected '}' after then block",
+            )?)
+        } else {
+            None
+        };
+        Ok(RegexNode::Until { limit, body })
+    }
+
+    pub(super) fn regex_until_stop(&mut self) -> NodiaResult<RegexNode> {
+        Ok(RegexNode::UntilStop(self.regex_braced_sequence(
+            "expected '{' after until_stop",
+            "expected '}' after until_stop",
+        )?))
+    }
+
+    pub(super) fn regex_define(&mut self) -> NodiaResult<RegexNode> {
+        Ok(RegexNode::DefineGroup {
+            body: self
+                .regex_braced_sequence("expected '{' after define", "expected '}' after define")?,
         })
     }
 

@@ -29,15 +29,43 @@ pub(super) fn validate_node(
         }
         RegexNode::Literal(_)
         | RegexNode::Raw(_)
+        | RegexNode::Property { .. }
         | RegexNode::Anchor(_)
         | RegexNode::Class(_)
         | RegexNode::AnyChar
         | RegexNode::AnyCodepoint => Ok(()),
         RegexNode::Reference(reference) => validate_reference(reference),
+        RegexNode::Condition(condition) => validate_condition(condition, named_groups),
         RegexNode::Quantifier { target, kind, .. } => {
             validate_node(target, named_groups)?;
             validate_quantifier(*kind)?;
             validate_repeat_target(target)
+        }
+        RegexNode::Conditional {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            validate_condition(condition, named_groups)?;
+            if !then_branch.is_empty() {
+                validate_sequence(then_branch, named_groups)?;
+            }
+            if !else_branch.is_empty() {
+                validate_sequence(else_branch, named_groups)?;
+            }
+            Ok(())
+        }
+        RegexNode::SubroutineCall(reference) => validate_reference(reference),
+        RegexNode::BacktrackingVerb(_) | RegexNode::UntilClear => Ok(()),
+        RegexNode::Until { limit, body } => {
+            validate_sequence(limit, named_groups)?;
+            if let Some(body) = body {
+                validate_sequence(body, named_groups)?;
+            }
+            Ok(())
+        }
+        RegexNode::UntilStop(body) | RegexNode::DefineGroup { body } => {
+            validate_sequence(body, named_groups)
         }
         RegexNode::Group {
             kind: RegexGroupKind::Named(name),
@@ -107,6 +135,66 @@ pub(super) fn validate_target_node(node: &RegexNode, target: RegexTarget) -> Nod
             }
             validate_target_sequence(body, target)
         }
+        RegexNode::Condition(condition) => validate_target_condition(condition, target),
+        RegexNode::Conditional {
+            condition,
+            then_branch,
+            else_branch,
+        } => {
+            if matches!(condition, RegexCondition::Capture(_))
+                && matches!(target, RegexTarget::Javascript | RegexTarget::Re2)
+            {
+                return Err(regex_error(format!(
+                    "conditional regex branches are not supported by {}",
+                    target.name()
+                )));
+            }
+            validate_target_condition(condition, target)?;
+            validate_target_sequence(then_branch, target)?;
+            validate_target_sequence(else_branch, target)
+        }
+        RegexNode::SubroutineCall(_) => {
+            if matches!(
+                target,
+                RegexTarget::Javascript
+                    | RegexTarget::Python
+                    | RegexTarget::DotNet
+                    | RegexTarget::Re2
+            ) {
+                return Err(regex_error(format!(
+                    "subroutine calls are not supported by {}",
+                    target.name()
+                )));
+            }
+            Ok(())
+        }
+        RegexNode::BacktrackingVerb(_)
+        | RegexNode::Until { .. }
+        | RegexNode::UntilStop(_)
+        | RegexNode::UntilClear
+        | RegexNode::DefineGroup { .. }
+        | RegexNode::Anchor(RegexAnchor::PreviousMatchEnd)
+        | RegexNode::Anchor(RegexAnchor::KeepOut) => {
+            if target != RegexTarget::Classic {
+                return Err(regex_error(format!(
+                    "this regex feature is not supported by {}",
+                    target.name()
+                )));
+            }
+            match node {
+                RegexNode::Until { limit, body } => {
+                    validate_target_sequence(limit, target)?;
+                    if let Some(body) = body {
+                        validate_target_sequence(body, target)?;
+                    }
+                }
+                RegexNode::UntilStop(body) | RegexNode::DefineGroup { body } => {
+                    validate_target_sequence(body, target)?;
+                }
+                _ => {}
+            }
+            Ok(())
+        }
         RegexNode::ScopedFlags { body, .. } => {
             if matches!(target, RegexTarget::Javascript | RegexTarget::Re2) {
                 return Err(regex_error(format!(
@@ -143,6 +231,7 @@ pub(super) fn validate_target_node(node: &RegexNode, target: RegexTarget) -> Nod
             target.name()
         ))),
         RegexNode::CharSet(_) => Ok(()),
+        RegexNode::Property { .. } => Ok(()),
         _ => Ok(()),
     }
 }
@@ -187,6 +276,38 @@ pub(super) fn validate_reference(reference: &RegexReference) -> NodiaResult<()> 
     }
 }
 
+pub(super) fn validate_condition(
+    condition: &RegexCondition,
+    named_groups: &mut HashSet<String>,
+) -> NodiaResult<()> {
+    match condition {
+        RegexCondition::Capture(reference) => validate_reference(reference),
+        RegexCondition::Lookaround { body, .. } | RegexCondition::Expression(body) => {
+            validate_sequence(body, named_groups)
+        }
+    }
+}
+
+pub(super) fn validate_target_condition(
+    condition: &RegexCondition,
+    target: RegexTarget,
+) -> NodiaResult<()> {
+    match condition {
+        RegexCondition::Capture(reference) => validate_reference(reference),
+        RegexCondition::Lookaround { kind, body } => {
+            if target == RegexTarget::Re2 {
+                return Err(regex_error(format!(
+                    "{} is not supported by {}",
+                    kind.name(),
+                    target.name()
+                )));
+            }
+            validate_target_sequence(body, target)
+        }
+        RegexCondition::Expression(body) => validate_target_sequence(body, target),
+    }
+}
+
 pub(super) fn validate_quantifier(kind: RegexQuantifierKind) -> NodiaResult<()> {
     if let RegexQuantifierKind::Between(min, max) = kind {
         if min > max {
@@ -204,10 +325,15 @@ pub(super) fn validate_repeat_target(target: &RegexNode) -> NodiaResult<()> {
             "'{}' cannot be quantified",
             anchor.name()
         ))),
+        RegexNode::Condition(_) => Err(regex_error("regex condition cannot be quantified")),
         RegexNode::Lookaround { kind, .. } => Err(regex_error(format!(
             "'{}' cannot be quantified",
             kind.name()
         ))),
+        RegexNode::BacktrackingVerb(_) => {
+            Err(regex_error("regex control verbs cannot be quantified"))
+        }
+        RegexNode::DefineGroup { .. } => Err(regex_error("define blocks cannot be quantified")),
         RegexNode::Literal(value) if value.is_empty() => {
             Err(regex_error("empty regex literal cannot be quantified"))
         }
@@ -221,7 +347,10 @@ pub(super) fn validate_char_set(set: &RegexCharSet) -> NodiaResult<()> {
     }
     for item in &set.items {
         match item {
-            RegexCharSetItem::Char(_) | RegexCharSetItem::Raw(_) | RegexCharSetItem::Class(_) => {}
+            RegexCharSetItem::Char(_)
+            | RegexCharSetItem::Raw(_)
+            | RegexCharSetItem::Class(_)
+            | RegexCharSetItem::Property { .. } => {}
             RegexCharSetItem::Range(start, end) => {
                 if start > end {
                     return Err(regex_error(

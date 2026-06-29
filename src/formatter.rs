@@ -6,8 +6,8 @@
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::interpolation::{self, Chunk as InterpolationChunk};
 use crate::regex::{
-    RegexCharSet, RegexCharSetItem, RegexFlag, RegexGroupKind, RegexNode, RegexPattern,
-    RegexQuantifierMode, RegexReference,
+    RegexCharSet, RegexCharSetItem, RegexCondition, RegexFlag, RegexGroupKind, RegexNode,
+    RegexPattern, RegexQuantifierMode, RegexReference,
 };
 use crate::textcodec;
 use crate::value::Value;
@@ -536,6 +536,13 @@ fn format_regex_node(node: &RegexNode, indent: usize) -> String {
         RegexNode::Sequence(items) => format_regex_sequence_block(items, indent),
         RegexNode::Literal(value) => quote_string(value),
         RegexNode::Raw(value) => format!("raw_regex {}", quote_string(value)),
+        RegexNode::Property { name, negated } => {
+            if *negated {
+                format!("not_property {}", quote_string(name))
+            } else {
+                format!("property {}", quote_string(name))
+            }
+        }
         RegexNode::Anchor(anchor) => anchor.name().to_string(),
         RegexNode::Class(class) => class.name().to_string(),
         RegexNode::AnyChar => "any_char".to_string(),
@@ -594,6 +601,26 @@ fn format_regex_node(node: &RegexNode, indent: usize) -> String {
         RegexNode::Lookaround { kind, body } => format_regex_named_block(kind.name(), body, indent),
         RegexNode::Reference(RegexReference::Named(name)) => format!("same_as {name}"),
         RegexNode::Reference(RegexReference::Group(index)) => format!("same_as_group {index}"),
+        RegexNode::Condition(condition) => format_regex_condition_header(condition, indent),
+        RegexNode::Conditional {
+            condition,
+            then_branch,
+            else_branch,
+        } => format_regex_conditional(condition, then_branch, else_branch, indent),
+        RegexNode::SubroutineCall(RegexReference::Named(name)) => format!("call {name}"),
+        RegexNode::SubroutineCall(RegexReference::Group(index)) => format!("call_group {index}"),
+        RegexNode::BacktrackingVerb(verb) => verb.name().to_string(),
+        RegexNode::Until { limit, body } => {
+            let mut out = format_regex_named_block("until", limit, indent);
+            if let Some(body) = body {
+                out.push_str(" then ");
+                out.push_str(&format_regex_sequence_block(body, indent));
+            }
+            out
+        }
+        RegexNode::UntilStop(limit) => format_regex_named_block("until_stop", limit, indent),
+        RegexNode::UntilClear => "until_clear".to_string(),
+        RegexNode::DefineGroup { body } => format_regex_named_block("define", body, indent),
         RegexNode::ScopedFlags {
             enable,
             disable,
@@ -625,6 +652,35 @@ fn format_regex_char_set(set: &RegexCharSet, indent: usize) -> String {
     out.push_str(&indent_string(indent));
     out.push('}');
     out
+}
+
+fn format_regex_conditional(
+    condition: &RegexCondition,
+    then_branch: &[RegexNode],
+    else_branch: &[RegexNode],
+    indent: usize,
+) -> String {
+    let mut out = format_regex_condition_header(condition, indent);
+    if !then_branch.is_empty() || !else_branch.is_empty() {
+        out.push_str(" then ");
+        out.push_str(&format_regex_sequence_block(then_branch, indent));
+        if !else_branch.is_empty() {
+            out.push_str(" else ");
+            out.push_str(&format_regex_sequence_block(else_branch, indent));
+        }
+    }
+    out
+}
+
+fn format_regex_condition_header(condition: &RegexCondition, indent: usize) -> String {
+    match condition {
+        RegexCondition::Capture(RegexReference::Named(name)) => format!("if_capture {name}"),
+        RegexCondition::Capture(RegexReference::Group(index)) => format!("if_capture {index}"),
+        RegexCondition::Lookaround { kind, body } => {
+            format_regex_named_block(&format!("if_{}", kind.name()), body, indent)
+        }
+        RegexCondition::Expression(body) => format_regex_named_block("if_matches", body, indent),
+    }
 }
 
 fn format_regex_scoped_flags(
@@ -694,6 +750,13 @@ fn format_regex_char_set_item(item: &RegexCharSetItem) -> String {
     match item {
         RegexCharSetItem::Char(ch) => quote_string(&ch.to_string()),
         RegexCharSetItem::Class(class) => class.name().to_string(),
+        RegexCharSetItem::Property { name, negated } => {
+            if *negated {
+                format!("not_property {}", quote_string(name))
+            } else {
+                format!("property {}", quote_string(name))
+            }
+        }
         RegexCharSetItem::Raw(value) => format!("raw_regex {}", quote_string(value)),
         RegexCharSetItem::Range(start, end) => {
             format!(
@@ -828,6 +891,11 @@ fn quote_string(value: &str) -> String {
     out.push('"');
     for ch in value.chars() {
         match ch {
+            '\u{0007}' => out.push_str("\\a"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\u{000b}' => out.push_str("\\v"),
+            '\u{001b}' => out.push_str("\\e"),
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
             '\n' => out.push_str("\\n"),
@@ -849,6 +917,11 @@ fn quote_source_string(value: &str, interpolate: bool) -> String {
     out.push('"');
     for ch in value.chars() {
         match ch {
+            '\u{0007}' => out.push_str("\\a"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000c}' => out.push_str("\\f"),
+            '\u{000b}' => out.push_str("\\v"),
+            '\u{001b}' => out.push_str("\\e"),
             '\\' => out.push_str("\\\\"),
             '"' => out.push_str("\\\""),
             '\n' => out.push_str("\\n"),
@@ -945,7 +1018,7 @@ mod tests {
     #[test]
     fn preserves_keyword_field_access() {
         let source = r#"val m={from:"x",val:"y"}
-val hit=re.find("42",regex{named val{one_or_more digit}})
+val hit=regex.find("42",regex{named val{one_or_more digit}})
 emit m.from
 emit hit.named.val"#;
         let tokens = Lexer::new(source).tokenize().unwrap();
@@ -954,6 +1027,31 @@ emit hit.named.val"#;
 
         assert!(formatted.contains("emit m.from"));
         assert!(formatted.contains("emit hit.named.val"));
+    }
+
+    #[test]
+    fn canonicalizes_regex_text_items_back_into_dsl() {
+        let source = r#"emit regex{r"(?i)^\d{2}$"}"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("emit regex(case_insensitive) {"));
+        assert!(formatted.contains("start"));
+        assert!(formatted.contains("exactly 2 digit"));
+        assert!(formatted.contains("end"));
+    }
+
+    #[test]
+    fn canonicalizes_regex_conditionals_back_into_dsl() {
+        let source = r#"emit regex{r"(a)?b(?(1)c|d)"}"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("optional group {"));
+        assert!(formatted.contains("if_capture 1 then {"));
+        assert!(formatted.contains("} else {"));
     }
 
     #[test]

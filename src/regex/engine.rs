@@ -87,7 +87,8 @@ impl RuntimeRegex {
 
     fn translate_replacement(&self, replacement: &str) -> NodiaResult<String> {
         let mut out = String::new();
-        let chunks = parse_replacement_chunks(replacement).map_err(NodiaError::runtime)?;
+        let chunks = parse_replacement_chunks(replacement)
+            .map_err(|err| NodiaError::runtime(err.message).with_span(err.line, err.column))?;
         let names = self
             .engine
             .capture_names()
@@ -100,20 +101,27 @@ impl RuntimeRegex {
             match chunk {
                 ReplacementChunk::Literal(value) => out.push_str(&value),
                 ReplacementChunk::Dollar => out.push_str("$$"),
-                ReplacementChunk::CaptureIndex { raw, index } => {
+                ReplacementChunk::CaptureIndex {
+                    raw,
+                    index,
+                    line,
+                    column,
+                } => {
                     if index >= capture_len {
                         return Err(NodiaError::runtime(format!(
                             "regex replacement refers to missing capture group {index}"
-                        )));
+                        ))
+                        .with_span(line, column));
                     }
                     out.push('$');
                     out.push_str(&raw);
                 }
-                ReplacementChunk::CaptureName(name) => {
+                ReplacementChunk::CaptureName { name, line, column } => {
                     if !names.contains(&name) {
                         return Err(NodiaError::runtime(format!(
                             "regex replacement refers to missing named capture '{name}'"
-                        )));
+                        ))
+                        .with_span(line, column));
                     }
                     out.push_str("${");
                     out.push_str(&name);

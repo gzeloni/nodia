@@ -214,7 +214,13 @@ impl Parser {
             }),
             TokenKind::Bytes(value) => Ok(Expr::Literal(Value::Bytes(value))),
             TokenKind::Lambda => self.lambda_expression(),
-            TokenKind::Regex => self.regex_literal(),
+            TokenKind::Regex => {
+                if self.check(&TokenKind::Dot) {
+                    Ok(Expr::Identifier("regex".to_string()))
+                } else {
+                    self.regex_literal()
+                }
+            }
             TokenKind::Identifier(name) => Ok(Expr::Identifier(name)),
             TokenKind::LeftParen => {
                 self.skip_separators();

@@ -238,9 +238,14 @@ impl Lexer {
                     .advance()
                     .ok_or_else(|| NodiaError::new("unterminated escape", line, column))?;
                 out.push(match escaped {
+                    'a' => '\u{0007}',
+                    'b' => '\u{0008}',
+                    'e' => '\u{001b}',
+                    'f' => '\u{000c}',
                     'n' => '\n',
                     'r' => '\r',
                     't' => '\t',
+                    'v' => '\u{000b}',
                     '"' => '"',
                     '\'' => '\'',
                     '\\' => '\\',
@@ -294,9 +299,14 @@ impl Lexer {
                     .advance()
                     .ok_or_else(|| NodiaError::new("unterminated byte escape", line, column))?;
                 match escaped {
+                    'a' => out.push(0x07),
+                    'b' => out.push(0x08),
+                    'e' => out.push(0x1b),
+                    'f' => out.push(0x0c),
                     'n' => out.push(b'\n'),
                     'r' => out.push(b'\r'),
                     't' => out.push(b'\t'),
+                    'v' => out.push(0x0b),
                     '0' => out.push(0),
                     '"' => out.push(b'"'),
                     '\'' => out.push(b'\''),

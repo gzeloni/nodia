@@ -5,10 +5,11 @@
 
 use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
 use crate::error::{NodiaError, NodiaResult};
+use crate::regex as regex_api;
 use crate::regex::{
-    RegexAnchor, RegexCharSet, RegexCharSetItem, RegexClass, RegexFlag, RegexGroupKind,
-    RegexLookaroundKind, RegexNode, RegexPattern, RegexQuantifierKind, RegexQuantifierMode,
-    RegexReference,
+    RegexAnchor, RegexBacktrackingVerb, RegexCharSet, RegexCharSetItem, RegexClass, RegexCondition,
+    RegexFlag, RegexGroupKind, RegexLookaroundKind, RegexNode, RegexPattern, RegexQuantifierKind,
+    RegexQuantifierMode, RegexReference,
 };
 use crate::token::{Token, TokenKind};
 use crate::value::Value;
