@@ -8,17 +8,15 @@ are lazily linked, cached by canonical path, and support cycles.
 ```nodia
 use json
 use csv as table
-use result
 
-emit result.raise(json.read(r'{"name":"Ana"}')).name
-emit table.write([{name: "Ana"}])
+emit json.parse(r'{"name":"Ana"}').name
+emit table.stringify([{name: "Ana"}], ["name"])
 ```
 
 `regex` is built into the language and does not use `use`:
 
 ```nodia
-use result
-emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
+emit regex.find("ana 42", regex { one_or_more digit }).text
 ```
 
 Direct stdlib picks work too:
@@ -115,6 +113,9 @@ Top-level declarations in a module are exported:
 * `val`
 * `var`
 * `func`
+* `namespace`
+* `struct`
+* `enum`
 
 Local bindings declared inside blocks or function bodies are not exported.
 

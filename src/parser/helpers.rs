@@ -168,13 +168,20 @@ impl Parser {
         NodiaError::new(message, self.peek().line, self.peek().column)
     }
 
-    pub(super) fn parameter_list(&mut self, start_message: &str) -> NodiaResult<Vec<String>> {
+    pub(super) fn parameter_list(&mut self, start_message: &str) -> NodiaResult<Vec<FuncParam>> {
         self.expect(TokenKind::LeftParen, start_message)?;
         self.skip_separators();
         let mut params = Vec::new();
         if !self.check(&TokenKind::RightParen) {
             loop {
-                params.push(self.expect_identifier("expected parameter name")?);
+                let name = self.expect_identifier("expected parameter name")?;
+                let default = if self.match_kind(&TokenKind::Equal) {
+                    self.skip_separators();
+                    Some(self.expression()?)
+                } else {
+                    None
+                };
+                params.push(FuncParam { name, default });
                 self.skip_separators();
                 if !self.match_kind(&TokenKind::Comma) {
                     break;

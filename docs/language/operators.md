@@ -1,8 +1,9 @@
 # Operators
 
 Nodia uses word-form logical operators (`and`, `or`, `not`) and standard
-symbolic arithmetic / comparison operators. There is no operator overloading
-and no user-defined operators.
+symbolic arithmetic / comparison operators. Bitwise operators are available for
+`int` values only. There is no operator overloading and no user-defined
+operators.
 
 ## Arithmetic
 
@@ -33,6 +34,45 @@ emit 10 / 3
 | `*`      | numeric multiplication                             |
 | `/`      | numeric division (always returns float) |
 | `%`      | numeric remainder (sign follows the dividend)      |
+
+## Bitwise
+
+Bitwise operators only accept `int` operands:
+
+```bash
+./target/release/nodia eval '
+emit ~1
+emit 5 & 3
+emit 5 | 2
+emit 5 ^ 1
+emit 1 << 3
+emit 8 >> 2
+emit 1 | 2 & 4
+emit (1 | 2) & 7
+'
+```
+
+```text
+-2
+1
+7
+4
+8
+2
+1
+3
+```
+
+| Operator | Meaning |
+| -------- | ------- |
+| `~x`     | bitwise complement |
+| `&`      | bitwise AND |
+| `|`      | bitwise OR |
+| `^`      | bitwise XOR |
+| `<<`     | left shift |
+| `>>`     | right shift |
+
+Shift counts must be between `0` and `63`.
 
 Mixing `int` and `float` produces a `float`:
 
@@ -143,7 +183,7 @@ true
 true
 ```
 
-`!` is not accepted. Use `not` instead.
+`!`, `&&`, and `||` are not accepted. Use `not`, `and`, and `or` instead.
 
 `and` and `or` short-circuit on truthiness (see
 [Truthiness](values.md#truthiness)). They return one of the original operands,
@@ -167,6 +207,7 @@ kept
 | -------- | -------------------------------------- |
 | `-x`     | numeric negation                       |
 | `not x`  | logical negation, returns `true`/`false` |
+| `~x`     | bitwise complement                     |
 
 ## Precedence
 
@@ -178,11 +219,15 @@ Lowest to highest:
 | 2     | `and`                                    | left          |
 | 3     | `==`, `!=`                               | left          |
 | 4     | `<`, `<=`, `>`, `>=`                     | left          |
-| 5     | `+`, `-`                                 | left          |
-| 6     | `*`, `/`, `%`                            | left          |
-| 7     | unary `-`, `not`                         | right         |
-| 8     | call, field access, index access         | left          |
-| 9     | literals, identifiers, grouped expressions | n/a         |
+| 5     | `|`                                      | left          |
+| 6     | `^`                                      | left          |
+| 7     | `&`                                      | left          |
+| 8     | `<<`, `>>`                               | left          |
+| 9     | `+`, `-`                                 | left          |
+| 10    | `*`, `/`, `%`                            | left          |
+| 11    | unary `-`, `not`, `~`                    | right         |
+| 12    | call, field access, index access         | left          |
+| 13    | literals, identifiers, grouped expressions | n/a         |
 
 Use parentheses to override precedence:
 

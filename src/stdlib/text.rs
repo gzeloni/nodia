@@ -4,7 +4,6 @@
 //! Text and regex-backed standard-library helpers.
 
 use super::expect_arity;
-use super::result;
 use crate::regex::{self, RegexMatch};
 use crate::textcodec;
 use crate::value::Value;
@@ -104,13 +103,14 @@ pub(super) fn regex_test(args: &[Value], context: &str) -> NodiaResult<Value> {
     } else {
         RegexTestMode::Any
     };
-    let outcome = match &args[1] {
+    let outcome: NodiaResult<Value> = match &args[1] {
         Value::Regex(pattern) => match mode {
             RegexTestMode::Any => pattern.is_match(&text).map(Value::Bool),
             RegexTestMode::Full => pattern.is_full_match(&text).map(Value::Bool),
         },
         Value::String(pattern) => {
-            let pattern = regex::compile_text(pattern)?;
+            let pattern =
+                regex::compile_text(pattern).map_err(|error| error.with_context(context))?;
             match mode {
                 RegexTestMode::Any => pattern.is_match(&text).map(Value::Bool),
                 RegexTestMode::Full => pattern.is_full_match(&text).map(Value::Bool),
@@ -123,7 +123,7 @@ pub(super) fn regex_test(args: &[Value], context: &str) -> NodiaResult<Value> {
             )))
         }
     };
-    Ok(result::capture_outcome_in_context(context, outcome))
+    outcome.map_err(|error| error.with_context(context))
 }
 
 pub(super) fn regex_find(args: &[Value], context: &str) -> NodiaResult<Value> {
@@ -139,7 +139,7 @@ pub(super) fn regex_find(args: &[Value], context: &str) -> NodiaResult<Value> {
     } else {
         RegexFindMode::First
     };
-    let outcome = match &args[1] {
+    let outcome: NodiaResult<Value> = match &args[1] {
         Value::Regex(pattern) => match mode {
             RegexFindMode::First => Ok(pattern
                 .find(&text)?
@@ -154,7 +154,8 @@ pub(super) fn regex_find(args: &[Value], context: &str) -> NodiaResult<Value> {
             )),
         },
         Value::String(pattern) => {
-            let pattern = regex::compile_text(pattern)?;
+            let pattern =
+                regex::compile_text(pattern).map_err(|error| error.with_context(context))?;
             match mode {
                 RegexFindMode::First => Ok(pattern
                     .find(&text)?
@@ -176,7 +177,7 @@ pub(super) fn regex_find(args: &[Value], context: &str) -> NodiaResult<Value> {
             )))
         }
     };
-    Ok(result::capture_outcome_in_context(context, outcome))
+    outcome.map_err(|error| error.with_context(context))
 }
 
 pub(super) fn contains_text(text: &str, needle: &Value) -> NodiaResult<bool> {
@@ -355,7 +356,7 @@ pub(super) fn decode(args: &[Value]) -> NodiaResult<Value> {
             Ok(Value::String(textcodec::decode_utf8_lossy(&bytes)))
         }
     };
-    Ok(result::capture_outcome_in_context("text.decode", outcome))
+    outcome.map_err(|error| error.with_context("text.decode"))
 }
 
 pub(super) fn offset(args: &[Value]) -> NodiaResult<Value> {

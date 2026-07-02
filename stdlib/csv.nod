@@ -1,0 +1,252 @@
+use scan
+use collections as col
+use conversion as conv
+use text
+
+/* -- CSV parser & writer -- */
+
+/* ---------------------------------------------------------------------------
+   Scanner helpers
+   --------------------------------------------------------------------------- */
+
+func peek(sc) {
+  if scan.at_end(sc) { return "" }
+  return scan.lookahead(sc, 1)
+}
+
+/* ---------------------------------------------------------------------------
+   Field reader -- handles quoted and unquoted fields
+   --------------------------------------------------------------------------- */
+
+func read_field(sc) {
+  var field = ""
+
+  if peek(sc) == "\"" {
+    /* Quoted field */
+    scan.advance(sc, 1)
+
+    while not scan.at_end(sc) {
+      if peek(sc) == "\"" {
+        scan.advance(sc, 1)
+        if peek(sc) == "\"" {
+          /* Escaped quote -> literal quote */
+          field = field + "\""
+          scan.advance(sc, 1)
+        } else {
+          /* Closing quote -- end of field */
+          return field
+        }
+      } else {
+        field = field + peek(sc)
+        scan.advance(sc, 1)
+      }
+    }
+
+    throw {
+      code: "E8101",
+      message: "unterminated quoted field",
+    }
+  }
+
+  /* Unquoted field -- read until comma, newline, or end */
+  while not scan.at_end(sc) {
+    val c = peek(sc)
+    if c == "," or c == "\n" or c == "\r" { break }
+    field = field + c
+    scan.advance(sc, 1)
+  }
+
+  return field
+}
+
+/* ---------------------------------------------------------------------------
+   Record reader -- reads one CSV line, consuming trailing newline
+   --------------------------------------------------------------------------- */
+
+func read_record(sc) {
+  var record = []
+
+  while true {
+    record = col.push(record, read_field(sc))
+
+    if scan.at_end(sc) { break }
+
+    val c = peek(sc)
+
+    if c == "\n" {
+      scan.advance(sc, 1)
+      break
+    }
+
+    if c == "\r" {
+      scan.advance(sc, 1)
+      if not scan.at_end(sc) and peek(sc) == "\n" {
+        scan.advance(sc, 1)
+      }
+      break
+    }
+
+    if c != "," {
+      throw {
+        code: "E8102",
+        message: "expected comma or newline, got: " + c,
+      }
+    }
+    scan.advance(sc, 1)
+
+    /* Trailing comma -> empty last field */
+    if scan.at_end(sc) or peek(sc) == "\n" or peek(sc) == "\r" {
+      record = col.push(record, "")
+
+      if not scan.at_end(sc) {
+        if peek(sc) == "\n" { scan.advance(sc, 1) }
+        else if peek(sc) == "\r" {
+          scan.advance(sc, 1)
+          if not scan.at_end(sc) and peek(sc) == "\n" {
+            scan.advance(sc, 1)
+          }
+        }
+      }
+      break
+    }
+  }
+
+  return record
+}
+
+/* Skip leading blank lines. */
+func skip_blank_lines(sc) {
+  while not scan.at_end(sc) {
+    if peek(sc) == "\n" { scan.advance(sc, 1) }
+    else if peek(sc) == "\r" {
+      scan.advance(sc, 1)
+      if not scan.at_end(sc) and peek(sc) == "\n" { scan.advance(sc, 1) }
+    } else {
+      return
+    }
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Public API -- parse
+   --------------------------------------------------------------------------- */
+
+func parse(text, has_header) {
+  val sc = scan.cursor(text)
+
+  if scan.at_end(sc) { return [] }
+
+  skip_blank_lines(sc)
+
+  if scan.at_end(sc) { return [] }
+
+  if has_header {
+    val headers = read_record(sc)
+    var rows = []
+
+    while not scan.at_end(sc) {
+      skip_blank_lines(sc)
+      if scan.at_end(sc) { break }
+
+      val fields = read_record(sc)
+      var row = {}
+
+      var i = 0
+      while i < col.len(fields) and i < col.len(headers) {
+        row[headers[i]] = fields[i]
+        i = i + 1
+      }
+
+      /* Extra fields without headers stored under numeric keys. */
+      while i < col.len(fields) {
+        row[conv.string(i)] = fields[i]
+        i = i + 1
+      }
+
+      rows = col.push(rows, row)
+    }
+
+    return rows
+  }
+
+  /* No header -- return list of lists */
+  var rows = []
+
+  rows = col.push(rows, read_record(sc))
+
+  while not scan.at_end(sc) {
+    skip_blank_lines(sc)
+    if scan.at_end(sc) { break }
+    rows = col.push(rows, read_record(sc))
+  }
+
+  return rows
+}
+
+/* ---------------------------------------------------------------------------
+   Public API -- stringify
+   --------------------------------------------------------------------------- */
+
+func needs_quoting(s) {
+  return text.contains(s, ",") or
+         text.contains(s, "\"") or
+         text.contains(s, "\n") or
+         text.contains(s, "\r")
+}
+
+func quote_field(s) {
+  return "\"" + text.replace(s, "\"", "\"\"") + "\""
+}
+
+/* When headers != null: rows are list-of-maps, fields emitted in header order.
+   When headers == null: rows are list-of-lists, fields emitted as-is.       */
+func stringify(rows, headers) {
+  var out = ""
+
+  if headers != null {
+    /* Header row */
+    var hi = 0
+    for h in headers {
+      if hi > 0 { out = out + "," }
+      out = out + quote_field(h)
+      hi = hi + 1
+    }
+
+    /* Data rows */
+    for row in rows {
+      out = out + "\n"
+      var fi = 0
+      for h in headers {
+        if fi > 0 { out = out + "," }
+        val v = col.get(row, h, "")
+        val s = conv.string(v)
+        if needs_quoting(s) {
+          out = out + quote_field(s)
+        } else {
+          out = out + s
+        }
+        fi = fi + 1
+      }
+    }
+  } else {
+    /* No headers -- rows are lists */
+    var ri = 0
+    for row in rows {
+      if ri > 0 { out = out + "\n" }
+      var fi = 0
+      for v in row {
+        if fi > 0 { out = out + "," }
+        val s = conv.string(v)
+        if needs_quoting(s) {
+          out = out + quote_field(s)
+        } else {
+          out = out + s
+        }
+        fi = fi + 1
+      }
+      ri = ri + 1
+    }
+  }
+
+  return out
+}

@@ -4,7 +4,6 @@
 //! Datetime-oriented standard-library functions backed by [`crate::temporal`].
 
 use super::expect_arity;
-use super::result;
 use crate::error::{NodiaError, NodiaResult};
 use crate::temporal::{
     days_in_month, is_leap_year, parse_offset_text, DateTimeValue, DateValue, DurationValue,
@@ -184,15 +183,12 @@ pub fn parse(args: &[Value]) -> NodiaResult<Value> {
     expect_arity(args, 2, "parse")?;
     let text = expect_string(&args[0], "parse", "first")?;
     let kind = expect_parse_kind(&args[1], "parse", "second")?;
-    let outcome = match kind {
+    match kind {
         ParseKind::Date => DateValue::parse_iso(&text).map(Value::Date),
         ParseKind::DateTime => DateTimeValue::parse_iso(&text).map(Value::DateTime),
         ParseKind::Duration => DurationValue::parse_iso(&text).map(Value::Duration),
-    };
-    Ok(result::capture_outcome_in_context(
-        "datetime.parse",
-        outcome,
-    ))
+    }
+    .map_err(|error| error.with_context("datetime.parse"))
 }
 
 pub fn isoformat(args: &[Value]) -> NodiaResult<Value> {

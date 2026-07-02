@@ -4,6 +4,7 @@
 //! Runtime helpers for argument validation, conversions, and assignment.
 
 use crate::interpolation::{self, Chunk as InterpolationChunk};
+use crate::scanner::ScannerValue;
 
 use super::*;
 
@@ -49,6 +50,21 @@ impl Runtime {
             Value::Stream(stream) => Ok(*stream),
             other => Err(NodiaError::runtime(format!(
                 "{name}() expects stream as {position} argument, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    pub(super) fn expect_scanner(
+        &self,
+        value: &Value,
+        name: &str,
+        position: &str,
+    ) -> NodiaResult<ScannerValue> {
+        match value {
+            Value::Scanner(scanner) => Ok(scanner.clone()),
+            other => Err(NodiaError::runtime(format!(
+                "{name}() expects scanner as {position} argument, got {}",
                 other.type_name()
             ))),
         }
@@ -102,6 +118,21 @@ impl Runtime {
         }
     }
 
+    pub(super) fn expect_positive_size(
+        &self,
+        value: &Value,
+        name: &str,
+        position: &str,
+    ) -> NodiaResult<usize> {
+        let size = self.expect_non_negative_size(value, name, position)?;
+        if size == 0 {
+            return Err(NodiaError::runtime(format!(
+                "{name}() expects positive size as {position} argument"
+            )));
+        }
+        Ok(size)
+    }
+
     pub(super) fn expect_exit_code(&self, value: &Value) -> NodiaResult<i32> {
         match value {
             Value::Int(value) if (0..=255).contains(value) => Ok(*value as i32),
@@ -133,6 +164,57 @@ impl Runtime {
 
     pub(super) fn divide(&self, left: Value, right: Value) -> NodiaResult<Value> {
         Ok(Value::Float(to_number(&left)? / to_number(&right)?))
+    }
+
+    pub(super) fn bit_not(&self, value: Value) -> NodiaResult<Value> {
+        match value {
+            Value::Int(value) => Ok(Value::Int(!value)),
+            other => Err(NodiaError::runtime(format!(
+                "bitwise not expects int, got {}",
+                other.type_name()
+            ))),
+        }
+    }
+
+    pub(super) fn bitwise_binary(
+        &self,
+        left: Value,
+        right: Value,
+        op_name: &str,
+        op: impl FnOnce(i64, i64) -> i64,
+    ) -> NodiaResult<Value> {
+        match (left, right) {
+            (Value::Int(left), Value::Int(right)) => Ok(Value::Int(op(left, right))),
+            (left, right) => Err(NodiaError::runtime(format!(
+                "{op_name} expects int operands, got {} and {}",
+                left.type_name(),
+                right.type_name()
+            ))),
+        }
+    }
+
+    pub(super) fn shift_binary(
+        &self,
+        left: Value,
+        right: Value,
+        op_name: &str,
+        op: impl FnOnce(i64, u32) -> Option<i64>,
+    ) -> NodiaResult<Value> {
+        match (left, right) {
+            (Value::Int(left), Value::Int(right)) => {
+                if !(0..=63).contains(&right) {
+                    return Err(NodiaError::runtime("shift count must be between 0 and 63"));
+                }
+                Ok(Value::Int(
+                    op(left, right as u32).expect("validated shift count"),
+                ))
+            }
+            (left, right) => Err(NodiaError::runtime(format!(
+                "{op_name} expects int operands, got {} and {}",
+                left.type_name(),
+                right.type_name()
+            ))),
+        }
     }
 
     pub(super) fn numeric(
@@ -252,7 +334,6 @@ impl Runtime {
                     .ok_or_else(|| NodiaError::runtime(format!("key '{key}' not found")))?;
                 self.resolve_value(value)
             }
-            Value::Result(_) => Err(result_access_error("index")),
             other => Err(NodiaError::runtime(format!(
                 "cannot index {}",
                 other.type_name()

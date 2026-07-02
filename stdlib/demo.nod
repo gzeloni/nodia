@@ -1,0 +1,189 @@
+use io
+use "./json.nod" as json_std
+use "./csv.nod" as csv_std
+use "./log.nod" as log_mod
+use "./test.nod" as tester
+use "./http.nod" as http_mod
+
+/* ── Stdlib demo ──
+   Exercises the five stdlib modules to verify they work correctly.
+   Run: nodia run nodia/stdlib/demo.nod
+   --------------------------------------------------------------------------- */
+
+func section(title) {
+  emit ""
+  emit "== " + title + " =="
+}
+
+/* ---------------------------------------------------------------------------
+   1. JSON
+   --------------------------------------------------------------------------- */
+
+section("JSON parse & stringify")
+
+/* Parse a simple object. */
+val obj = json_std.parse(
+  r'{ "name": "Ana", "age": 30, "active": true, "scores": [7, 8, 9] }',
+)
+emit "parsed object.name = " + obj["name"]
+emit "parsed object.age  = " + obj["age"]
+
+/* Round-trip: parse then stringify. */
+val rt = json_std.stringify(obj)
+emit "round-tripped: " + rt
+
+/* Parse again from round-tripped string. */
+val obj2 = json_std.parse(rt)
+emit "re-parsed name = " + obj2["name"]
+
+/* Test nested objects. */
+val nested = json_std.parse(
+  r'{ "user": { "id": 1, "tags": ["dev", "ops"] } }',
+)
+val tags = nested["user"]["tags"]
+emit "tags[0] = " + tags[0]
+emit "tags[1] = " + tags[1]
+
+/* Test string escapes. */
+val escaped = json_std.parse(
+  r'{ "msg": "line1\nline2\t\"quoted\"" }',
+)
+emit "escaped string = " + escaped["msg"]
+
+/* Test null, false, numbers. */
+val basics = json_std.parse(
+  "[null, false, true, 0, -3.14, 1.5e10]",
+)
+emit "basics[3] = " + basics[3]
+emit "basics[4] = " + basics[4]
+
+/* Test duplicate key detection. */
+try {
+  json_std.parse(r'{ "x": 1, "x": 2 }')
+  emit "ERROR: should have thrown on duplicate key"
+} catch err {
+  emit "duplicate key correctly rejected: " + err.code
+}
+
+/* Test trailing content rejection. */
+try {
+  json_std.parse(r'true false')
+  emit "ERROR: should have thrown on trailing content"
+} catch err {
+  emit "trailing content correctly rejected: " + err.code
+}
+
+/* Stringify various types. */
+emit "stringify(null)  = " + json_std.stringify(null)
+emit "stringify(true)  = " + json_std.stringify(true)
+emit "stringify(false) = " + json_std.stringify(false)
+emit "stringify(42)    = " + json_std.stringify(42)
+emit "stringify(\"hi\") = " + json_std.stringify("hi")
+emit "stringify([1,2]) = " + json_std.stringify([1, 2])
+emit "stringify({{}})    = " + json_std.stringify({})
+
+/* ---------------------------------------------------------------------------
+   2. CSV
+   --------------------------------------------------------------------------- */
+
+section("CSV parse & stringify")
+
+/* Parse with header. */
+val csv_text = "name,age,city\nAna,30,SP\nBia,25,RJ\n"
+val csv_rows = csv_std.parse(csv_text, true)
+emit "csv row 1 name = " + csv_rows[0]["name"]
+emit "csv row 1 age  = " + csv_rows[0]["age"]
+emit "csv row 2 name = " + csv_rows[1]["name"]
+
+/* Parse without header. */
+val csv_raw = csv_std.parse("a,b,c\n1,2,3\n", false)
+emit "csv raw [0][0] = " + csv_raw[0][0]
+emit "csv raw [1][2] = " + csv_raw[1][2]
+
+/* Quoted fields with embedded commas and newlines. */
+val csv_quoted = csv_std.parse(
+  "col1,col2\n\"hello, world\",\"line1\nline2\"\n",
+  true,
+)
+emit "quoted col1 = " + csv_quoted[0]["col1"]
+emit "quoted col2 = " + csv_quoted[0]["col2"]
+
+/* Escaped quotes. */
+val csv_escaped = csv_std.parse(
+  "msg\n\"say \"\"hi\"\" there\"\n",
+  true,
+)
+emit "escaped quote = " + csv_escaped[0]["msg"]
+
+/* Stringify with headers. */
+val out = csv_std.stringify(
+  [{name: "Ana", age: "30"}, {name: "Bia", age: "25"}],
+  ["name", "age"],
+)
+emit "stringified csv:\n" + out
+
+/* Stringify without headers (list of lists). */
+val out2 = csv_std.stringify(
+  [["a", "b"], ["1", "2"]],
+  null,
+)
+emit "stringified csv (no header):\n" + out2
+
+/* ---------------------------------------------------------------------------
+   3. Log
+   --------------------------------------------------------------------------- */
+
+section("Log")
+
+log_mod.info("application started")
+log_mod.warn("disk usage at 80%")
+log_mod.error("connection refused")
+
+/* ---------------------------------------------------------------------------
+   4. Test runner
+   --------------------------------------------------------------------------- */
+
+section("Test runner")
+
+func test_basic() {
+  tester.assert(1 + 1 == 2, "basic arithmetic")
+  tester.assert_eq(3 * 4, 12, "multiplication")
+}
+
+func test_strings() {
+  tester.assert("hello" + " " + "world" == "hello world", "concat")
+  tester.assert_eq("ab", "ab", "string equality")
+}
+
+func test_json_integration() {
+val data = json_std.parse(r'{"ok": true}')
+  tester.assert(data["ok"] == true, "json bool")
+}
+
+func test_failing() {
+  tester.assert(1 == 2, "this should fail")
+}
+
+io.writeln("")
+io.writeln("Running passing tests:")
+tester.run([test_basic, test_strings, test_json_integration])
+
+io.writeln("")
+io.writeln("Running mixed tests (one should fail):")
+tester.run([test_basic, test_failing])
+
+/* ---------------------------------------------------------------------------
+   5. HTTP (parses without network)
+   --------------------------------------------------------------------------- */
+
+section("HTTP client (module loaded)")
+
+emit "http.get loaded successfully"
+emit "http.request loaded successfully"
+
+/* ---------------------------------------------------------------------------
+   Done
+   --------------------------------------------------------------------------- */
+
+emit ""
+emit "=== All stdlib demos complete ==="

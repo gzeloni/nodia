@@ -1,0 +1,44 @@
+/* Nodia standard library: test runner
+   Usage: use test
+*/
+
+use io
+use conversion
+use system
+
+func assert(condition, message) {
+  if not condition {
+    var msg = "assertion failed"
+    if message != "" { msg = message }
+    throw {code: "E8001", message: msg}
+  }
+}
+
+func assert_eq(a, b, message) {
+  if a != b {
+    var msg = "assert_eq failed: " + conversion.string(a) + " != " + conversion.string(b)
+    if message != "" {
+      msg = message + ": " + conversion.string(a) + " != " + conversion.string(b)
+    }
+    throw {code: "E8001", message: msg}
+  }
+}
+
+func run(tests) {
+  var passed = 0
+  var failed = 0
+  for test_func in tests {
+    try {
+      test_func()
+      passed += 1
+    } catch err {
+      failed += 1
+      io.writeln(io.stderr, "FAIL: " + err.message)
+    }
+  }
+  val total = passed + failed
+  emit conversion.string(passed) + "/" + conversion.string(total) + " passed"
+  if failed > 0 {
+    system.exit(1)
+  }
+}

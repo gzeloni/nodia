@@ -1,0 +1,21 @@
+/* Nodia standard library: logging
+   Usage: use "./stdlib/log.nod" as log
+*/
+
+use io
+use datetime
+
+func now_iso() {
+  val dt = datetime.now()
+  return datetime.isoformat(dt)
+}
+
+func log(level, msg) {
+  io.writeln(io.stderr, now_iso() + " [" + level + "] " + msg)
+}
+
+func info(msg) { log("INFO", msg) }
+
+func warn(msg) { log("WARN", msg) }
+
+func error(msg) { log("ERROR", msg) }

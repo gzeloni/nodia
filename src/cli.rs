@@ -866,7 +866,7 @@ mod tests {
         let output = dir.join("main.out");
         fs::write(
             &source,
-            "use result\nemit \"before\"\nemit result.raise(result.err(\"E8000\", \"boom\"))\n",
+            "emit \"before\"\nthrow {code: \"E8000\", message: \"boom\"}\n",
         )
         .unwrap();
 

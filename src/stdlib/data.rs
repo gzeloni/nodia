@@ -3,7 +3,7 @@
 
 //! JSON and CSV standard-library functions.
 
-use super::{expect_arity, expect_list, result};
+use super::{expect_arity, expect_list};
 use crate::error::{NodiaError, NodiaResult};
 use crate::textcodec;
 use crate::value::Value;
@@ -28,8 +28,7 @@ pub fn csv_write(args: &[Value]) -> NodiaResult<Value> {
 fn json_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
     expect_arity(&args, 1, name)?;
     let input = expect_text_input(&args[0], name, "first")?;
-    let outcome = parse_json_input(input, name);
-    Ok(result::capture_outcome_in_context(name, outcome))
+    parse_json_input(input, name).map_err(|error| error.with_context(name))
 }
 
 fn json_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {
@@ -64,8 +63,7 @@ fn csv_read_named(args: &[Value], name: &str) -> NodiaResult<Value> {
         CsvReadOptions::default()
     };
 
-    let outcome = parse_csv_input(input, options, name);
-    Ok(result::capture_outcome_in_context(name, outcome))
+    parse_csv_input(input, options, name).map_err(|error| error.with_context(name))
 }
 
 fn csv_write_named(args: &[Value], name: &str) -> NodiaResult<Value> {

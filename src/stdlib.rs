@@ -4,12 +4,9 @@
 //! Built-in standard-library function registry used by the checker and runtime.
 
 mod collections;
-mod data;
 mod datetime;
-mod formatting;
 mod numeric;
 mod pathing;
-mod result;
 mod sequence;
 mod text;
 
@@ -102,16 +99,9 @@ const COLLECTIONS_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("map", "map", Some(&[2])),
     ("filter", "filter", Some(&[2])),
     ("reduce", "reduce", Some(&[3])),
+    ("collect", "collect", Some(&[1])),
     ("group_by", "group_by", Some(&[2])),
     ("sort_by", "sort_by", Some(&[2])),
-];
-
-const FORMAT_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("left", "format.left", None),
-    ("right", "format.right", None),
-    ("format", "format", Some(&[2])),
-    ("pad", "format.pad", Some(&[3, 4])),
-    ("fixed", "fixed", Some(&[2])),
 ];
 
 const REGEX_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -141,6 +131,8 @@ const IO_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("eof", "eof", Some(&[1])),
     ("read", "read", Some(&[1, 2, 3])),
     ("readln", "readln", Some(&[1])),
+    ("lines", "io.lines", Some(&[1])),
+    ("chunks", "io.chunks", Some(&[2, 3])),
     ("write", "write", Some(&[2])),
     ("writeln", "writeln", Some(&[2])),
     ("append", "append", Some(&[2])),
@@ -153,6 +145,21 @@ const IO_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("glob", "glob", Some(&[1])),
 ];
 
+const SCAN_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("cursor", "scan.cursor", Some(&[1])),
+    ("at_end", "scan.at_end", Some(&[1])),
+    ("pos", "scan.pos", Some(&[1])),
+    ("lookahead", "scan.lookahead", Some(&[1, 2])),
+    ("advance", "scan.advance", Some(&[1, 2])),
+    ("match", "scan.match", Some(&[2])),
+    ("expect", "scan.expect", Some(&[2, 3])),
+    ("take_while", "scan.take_while", Some(&[2])),
+    ("take_until", "scan.take_until", Some(&[2])),
+    ("span", "scan.span", Some(&[2])),
+    ("token", "scan.token", Some(&[2])),
+    ("error", "scan.error", Some(&[2])),
+];
+
 const SYSTEM_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("args", "args", None),
     ("env", "env", Some(&[1, 2])),
@@ -160,17 +167,20 @@ const SYSTEM_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("exec", "exec", Some(&[1, 2])),
 ];
 
-const RESULT_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("ok", "result.ok", Some(&[1])),
-    ("err", "result.err", Some(&[2])),
-    ("is_ok", "result.is_ok", Some(&[1])),
-    ("is_err", "result.is_err", Some(&[1])),
-    ("value", "result.value", Some(&[1])),
-    ("value_or", "result.value_or", Some(&[2])),
-    ("error", "result.error", Some(&[1])),
-    ("then", "result.then", Some(&[2])),
-    ("recover", "result.recover", Some(&[2])),
-    ("raise", "result.raise", Some(&[1])),
+const NET_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("dial", "net.dial", Some(&[1])),
+    ("listen", "net.listen", Some(&[1])),
+    ("accept", "net.accept", Some(&[1])),
+];
+
+const MATH_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("random", "math.random", Some(&[0])),
+    ("random_int", "math.random_int", Some(&[2])),
+];
+
+const BASE64_MODULE_ITEMS: &[ModuleItemSpec] = &[
+    ("encode", "base64.encode", Some(&[1])),
+    ("decode", "base64.decode", Some(&[1])),
 ];
 
 const DATETIME_MODULE_ITEMS: &[ModuleItemSpec] = &[
@@ -215,16 +225,6 @@ const DATETIME_MODULE_ITEMS: &[ModuleItemSpec] = &[
     ("add", "datetime.add", Some(&[2, 3])),
     ("diff", "datetime.diff", Some(&[3])),
     ("bound", "datetime.bound", Some(&[2])),
-];
-
-const JSON_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("read", "json.read", Some(&[1])),
-    ("write", "json.write", Some(&[1, 2])),
-];
-
-const CSV_MODULE_ITEMS: &[ModuleItemSpec] = &[
-    ("read", "csv.read", Some(&[1, 2])),
-    ("write", "csv.write", Some(&[1])),
 ];
 
 pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
@@ -394,9 +394,6 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
             expect_arity(&args, 1, "string")?;
             Value::String(args[0].to_string())
         }
-        "format" => formatting::format(args)?,
-        "format.pad" => formatting::pad(args)?,
-        "fixed" => formatting::fixed(args)?,
         "basename" => pathing::basename(args)?,
         "dirname" => pathing::dirname(args)?,
         "exists" => pathing::exists(args)?,
@@ -404,14 +401,6 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "is_dir" => pathing::is_dir(args)?,
         "list_dir" => pathing::list_dir(args)?,
         "glob" => pathing::glob(args)?,
-        "result.ok" => result::ok(args)?,
-        "result.err" => result::err(args)?,
-        "result.is_ok" => result::is_ok(args)?,
-        "result.is_err" => result::is_err(args)?,
-        "result.value" => result::value(args)?,
-        "result.value_or" => result::value_or(args)?,
-        "result.error" => result::error(args)?,
-        "result.raise" => result::raise(args)?,
         "now" => datetime::now(args)?,
         "today" => datetime::today(args)?,
         "date" => datetime::date(args)?,
@@ -442,10 +431,6 @@ pub fn call(name: &str, args: &[Value]) -> NodiaResult<Option<Value>> {
         "datetime.add" => datetime::add(args)?,
         "datetime.diff" => datetime::diff(args)?,
         "datetime.bound" => datetime::bound(args)?,
-        "json.read" => data::json_read(args)?,
-        "json.write" => data::json_write(args)?,
-        "csv.read" => data::csv_read(args)?,
-        "csv.write" => data::csv_write(args)?,
         "bool" => {
             expect_arity(&args, 1, "bool")?;
             Value::Bool(args[0].truthy())
@@ -531,13 +516,13 @@ pub fn module_items(name: &str) -> Option<&'static [ModuleItemSpec]> {
         "numbers" => Some(NUMBERS_MODULE_ITEMS),
         "conversion" => Some(CONVERSION_MODULE_ITEMS),
         "collections" => Some(COLLECTIONS_MODULE_ITEMS),
-        "format" => Some(FORMAT_MODULE_ITEMS),
         "io" => Some(IO_MODULE_ITEMS),
+        "scan" => Some(SCAN_MODULE_ITEMS),
         "system" => Some(SYSTEM_MODULE_ITEMS),
-        "result" => Some(RESULT_MODULE_ITEMS),
         "datetime" => Some(DATETIME_MODULE_ITEMS),
-        "json" => Some(JSON_MODULE_ITEMS),
-        "csv" => Some(CSV_MODULE_ITEMS),
+        "net" => Some(NET_MODULE_ITEMS),
+        "math" => Some(MATH_MODULE_ITEMS),
+        "base64" => Some(BASE64_MODULE_ITEMS),
         _ => None,
     }
 }

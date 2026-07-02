@@ -23,17 +23,49 @@
   "in"
   "while"
   "return"
+  "match"
+  "case"
+  "default"
+  "try"
+  "catch"
+  "throw"
 ] @keyword.control
+
+((identifier) @keyword
+  (#match? @keyword "^(namespace|struct|enum|type)$"))
 
 (break_statement) @keyword.control
 
 (continue_statement) @keyword.control
 
-[
-  "not"
-  "and"
-  "or"
-] @operator
+(unary_expression
+  operator: [
+    "-"
+    "~"
+    "not"
+  ] @operator)
+
+(binary_expression
+  operator: [
+    "or"
+    "and"
+    "=="
+    "!="
+    "<"
+    "<="
+    ">"
+    ">="
+    "|"
+    "^"
+    "&"
+    "<<"
+    ">>"
+    "+"
+    "-"
+    "*"
+    "/"
+    "%"
+  ] @operator)
 
 (function_declaration
   name: (identifier) @function)

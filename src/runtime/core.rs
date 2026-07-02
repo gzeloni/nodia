@@ -4,6 +4,7 @@
 //! Core runtime construction and top-level statement execution.
 
 use super::*;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 impl Runtime {
     /// Creates a runtime with default options and no base directory.
@@ -40,6 +41,10 @@ impl Runtime {
         io: IoState,
         options: RuntimeOptions,
     ) -> Self {
+        let prng_state = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos() as u64;
         let mut root = HashMap::new();
         root.insert(
             "input".to_string(),
@@ -58,6 +63,7 @@ impl Runtime {
             current_module,
             io,
             options,
+            prng_state,
         }
     }
 
@@ -162,18 +168,49 @@ impl Runtime {
                 Ok(Flow::None)
             }
             Stmt::Func { name, params, body } => {
-                self.define(name, self.function_value(name, params, body), false)?;
+                let func = self.function_value(name, params, body);
+                self.define(name, func, false)?;
                 Ok(Flow::None)
             }
             Stmt::Return(value) => Ok(Flow::Return(match value {
                 Some(expr) => self.eval(expr)?,
                 None => Value::Null,
             })),
+            Stmt::Throw(expr) => {
+                let value = self.eval(expr)?;
+                Err(self.thrown_error(value))
+            }
             Stmt::Emit(expr) => {
                 let value = self.eval(expr)?;
                 self.write_output_channel(&value.to_string())?;
                 self.write_output_channel("\n")?;
                 Ok(Flow::None)
+            }
+            Stmt::Try {
+                try_branch,
+                catch_name,
+                catch_branch,
+            } => match self.execute_block(try_branch) {
+                Ok(flow) => Ok(flow),
+                Err(err) if err.exit_status.is_some() => Err(err),
+                Err(err) => {
+                    let caught = self.caught_error_value(err);
+                    self.scopes.push(HashMap::new());
+                    let result = (|| {
+                        self.define(catch_name, caught, false)?;
+                        self.execute_block(catch_branch)
+                    })();
+                    self.scopes.pop();
+                    result
+                }
+            },
+            Stmt::Match {
+                value,
+                arms,
+                default,
+            } => {
+                let value = self.eval(value)?;
+                self.execute_match(&value, arms, default.as_deref())
             }
             Stmt::If {
                 condition,
@@ -192,6 +229,9 @@ impl Runtime {
                 body,
             } => {
                 let iterable = self.eval(iterable)?;
+                if let Value::Lazy(lazy) = iterable {
+                    return self.execute_lazy_for(binding, &lazy, body);
+                }
                 let pairs = self.iterable_values(binding, iterable)?;
                 for values in pairs {
                     self.scopes.push(HashMap::new());
@@ -229,6 +269,152 @@ impl Runtime {
                 self.eval(expr)?;
                 Ok(Flow::None)
             }
+            Stmt::Namespace { name, body } => {
+                let ns = self.execute_namespace(name, body)?;
+                self.define(name, Value::Map(ns), false)?;
+                Ok(Flow::None)
+            }
+            Stmt::Struct { name, fields } => {
+                let ctor = self.struct_constructor(name, fields);
+                self.define(name, ctor, false)?;
+                Ok(Flow::None)
+            }
+            Stmt::Enum { name, variants } => {
+                let ns = self.enum_namespace(name, variants);
+                self.define(name, Value::Map(ns), false)?;
+                Ok(Flow::None)
+            }
+            Stmt::TypeAlias { name: _, target: _ } => Ok(Flow::None),
         }
+    }
+
+    fn execute_namespace(
+        &mut self,
+        _name: &str,
+        body: &[Stmt],
+    ) -> NodiaResult<BTreeMap<String, Value>> {
+        self.scopes.push(HashMap::new());
+        for statement in body {
+            match self.execute(statement)? {
+                Flow::None => {}
+                _flow => {
+                    self.scopes.pop();
+                    return Err(NodiaError::runtime(
+                        "unexpected control flow inside namespace".to_string(),
+                    ));
+                }
+            }
+        }
+        let scope = self.scopes.pop().expect("namespace scope");
+        let mut exports = BTreeMap::new();
+        for (name, binding) in scope {
+            exports.insert(name, binding.borrow().value.clone());
+        }
+        Ok(exports)
+    }
+
+    fn struct_constructor(&mut self, _name: &str, fields: &[StructField]) -> Value {
+        let mut ns = BTreeMap::new();
+        for field in fields {
+            let default = match &field.default {
+                Some(expr) => self.eval(expr).unwrap_or(Value::Null),
+                None => Value::Null,
+            };
+            ns.insert(field.name.clone(), default);
+        }
+        Value::Map(ns)
+    }
+
+    fn enum_namespace(&self, _name: &str, variants: &[String]) -> BTreeMap<String, Value> {
+        let mut exports = BTreeMap::new();
+        for variant in variants {
+            let mut map = BTreeMap::new();
+            map.insert("kind".to_string(), Value::String(variant.clone()));
+            exports.insert(variant.clone(), Value::Map(map));
+        }
+        exports
+    }
+
+    fn thrown_error(&self, value: Value) -> NodiaError {
+        match value {
+            Value::Map(fields) => RecoverableErrorValue::from_map(&fields)
+                .map(|error| error.to_error())
+                .unwrap_or_else(|| NodiaError::runtime(Value::Map(fields).to_string())),
+            other => NodiaError::runtime(other.to_string()),
+        }
+    }
+
+    fn caught_error_value(&self, error: NodiaError) -> Value {
+        Value::Map(RecoverableErrorValue::from_error(error).to_map())
+    }
+
+    fn execute_match(
+        &mut self,
+        value: &Value,
+        arms: &[MatchArm],
+        default: Option<&[Stmt]>,
+    ) -> NodiaResult<Flow> {
+        for arm in arms {
+            let mut bindings = Vec::new();
+            if self.match_pattern(&arm.pattern, value, &mut bindings) {
+                return self.execute_match_arm(bindings, &arm.body);
+            }
+        }
+        match default {
+            Some(body) => self.execute_block(body),
+            None => Ok(Flow::None),
+        }
+    }
+
+    fn execute_match_arm(
+        &mut self,
+        bindings: Vec<(String, Value)>,
+        body: &[Stmt],
+    ) -> NodiaResult<Flow> {
+        self.scopes.push(HashMap::new());
+        let result = (|| {
+            for (name, value) in bindings {
+                self.define(&name, value, false)?;
+            }
+            self.execute_block(body)
+        })();
+        self.scopes.pop();
+        result
+    }
+
+    fn match_pattern(
+        &self,
+        pattern: &MatchPattern,
+        value: &Value,
+        bindings: &mut Vec<(String, Value)>,
+    ) -> bool {
+        let start = bindings.len();
+        let matched = match pattern {
+            MatchPattern::Wildcard => true,
+            MatchPattern::Capture(name) => {
+                bindings.push((name.clone(), value.clone()));
+                true
+            }
+            MatchPattern::Literal(expected) => value == expected,
+            MatchPattern::List(items) => match value {
+                Value::List(values) if values.len() == items.len() => items
+                    .iter()
+                    .zip(values)
+                    .all(|(pattern, value)| self.match_pattern(pattern, value, bindings)),
+                _ => false,
+            },
+            MatchPattern::Map(entries) => match value {
+                Value::Map(values) => entries.iter().all(|(key, pattern)| {
+                    values
+                        .get(key)
+                        .is_some_and(|value| self.match_pattern(pattern, value, bindings))
+                }),
+                _ => false,
+            },
+        };
+        if !matched {
+            bindings.truncate(start);
+        }
+        matched
     }
 }

@@ -132,6 +132,23 @@ const STDLIB_MODULES = {
       glob: [1]
     }
   },
+  scan: {
+    summary: "Mutable scanner helpers for staged parsing",
+    members: {
+      cursor: [1],
+      at_end: [1],
+      pos: [1],
+      lookahead: [1, 2],
+      advance: [1, 2],
+      match: [2],
+      expect: [2, 3],
+      take_while: [2],
+      take_until: [2],
+      span: [2],
+      token: [2],
+      error: [2]
+    }
+  },
   system: {
     summary: "Process and environment helpers",
     members: {
@@ -141,19 +158,31 @@ const STDLIB_MODULES = {
       exec: [1, 2]
     }
   },
-  result: {
-    summary: "Recoverable pipeline helpers",
+  http: {
+    summary: "HTTP helpers implemented in stdlib Nodia",
     members: {
-      ok: [1],
-      err: [2],
-      is_ok: [1],
-      is_err: [1],
-      value: [1],
-      value_or: [2],
-      error: [1],
-      then: [2],
-      recover: [2],
-      raise: [1]
+      parse_url: [1],
+      find_colon: [1],
+      request: [4],
+      get: [1]
+    }
+  },
+  log: {
+    summary: "Logging helpers implemented in stdlib Nodia",
+    members: {
+      now_iso: [0],
+      log: [2],
+      info: [1],
+      warn: [1],
+      error: [1]
+    }
+  },
+  test: {
+    summary: "Assertion helpers implemented in stdlib Nodia",
+    members: {
+      assert: [2],
+      assert_eq: [3],
+      run: [1]
     }
   },
   datetime: {
@@ -203,17 +232,17 @@ const STDLIB_MODULES = {
     }
   },
   json: {
-    summary: "JSON encode and decode",
+    summary: "JSON parse and stringify",
     members: {
-      read: [1],
-      write: [1, 2]
+      parse: [1],
+      stringify: [1]
     }
   },
   csv: {
-    summary: "CSV encode and decode",
+    summary: "CSV parse and stringify",
     members: {
-      read: [1, 2],
-      write: [1]
+      parse: [2],
+      stringify: [2]
     }
   }
 };
@@ -237,9 +266,15 @@ const KEYWORD_SNIPPETS = [
   { label: "val", insertText: "val ${1:name} = ${0:value}", detail: "Immutable binding" },
   { label: "var", insertText: "var ${1:name} = ${0:value}", detail: "Mutable binding" },
   { label: "func", insertText: "func ${1:name}(${2}) {\n  $0\n}", detail: "Function declaration" },
+  { label: "try", insertText: "try {\n  $1\n} catch ${2:err} {\n  $0\n}", detail: "Recoverable error handling" },
+  { label: "match", insertText: "match ${1:value} {\n  case ${2:pattern} {\n    $3\n  }\n  default {\n    $0\n  }\n}", detail: "Structural branching" },
   { label: "if", insertText: "if ${1:condition} {\n  $0\n}", detail: "Conditional block" },
   { label: "for", insertText: "for ${1:item} in ${2:items} {\n  $0\n}", detail: "For loop" },
   { label: "while", insertText: "while ${1:condition} {\n  $0\n}", detail: "While loop" },
+  { label: "namespace", insertText: "namespace ${1:name} {\n  $0\n}", detail: "Inline namespace" },
+  { label: "struct", insertText: "struct ${1:Name} {\n  ${2:field}: ${3:null}\n}", detail: "Struct with defaults" },
+  { label: "enum", insertText: "enum ${1:Name} {\n  ${2:one},\n  ${3:two},\n}", detail: "Tagged variants" },
+  { label: "type", insertText: "type ${1:Name} = ${0:string}", detail: "Type alias" },
   { label: "lambda", insertText: "lambda(${1:x}) { $0 }", detail: "Inline callback" },
   { label: "emit", insertText: "emit ${0:value}", detail: "Write to program output" },
   { label: "regex", insertText: "regex {\n  $0\n}", detail: "Regex DSL literal" }
@@ -253,6 +288,16 @@ const KEYWORDS = [
   "val",
   "var",
   "func",
+  "match",
+  "case",
+  "default",
+  "try",
+  "catch",
+  "throw",
+  "namespace",
+  "struct",
+  "enum",
+  "type",
   "return",
   "emit",
   "if",

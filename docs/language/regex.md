@@ -197,7 +197,6 @@ Quantifiers can wrap either a single node or a `{ ... }` block.
 
 ```bash
 ./target/release/nodia eval '
-use result
 val phone = regex {
   start
   "("
@@ -209,7 +208,7 @@ val phone = regex {
   end
 }
 emit phone
-emit result.raise(regex.test("(415) 555-1234", phone))
+emit regex.test("(415) 555-1234", phone)
 '
 ```
 
@@ -278,7 +277,6 @@ only valid inside `either`:
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   either {
     branch { "yes" }
@@ -287,7 +285,7 @@ val p = regex {
   }
 }
 emit p
-emit result.raise(regex.find("yes/maybe/no", p, regex.all))
+emit regex.find("yes/maybe/no", p, regex.all)
 '
 ```
 
@@ -326,14 +324,13 @@ Negation:
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   one_or_more {
     not_char_set { whitespace "," }
   }
 }
 emit p
-emit result.raise(regex.find("a, b , c", p, regex.all))
+emit regex.find("a, b , c", p, regex.all)
 '
 ```
 
@@ -346,14 +343,13 @@ Character ranges use `range "a" to "z"` (not `range "a" "z"`):
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   one_or_more {
     char_set { range "0" to "9" }
   }
 }
 emit p
-emit result.raise(regex.find("ab12cd34", p, regex.all))
+emit regex.find("ab12cd34", p, regex.all)
 '
 ```
 
@@ -375,13 +371,12 @@ Lookarounds always take a block:
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   one_or_more digit
   followed_by { "px" }
 }
 emit p
-emit result.raise(regex.find("12px 7em 3px 99", p, regex.all))
+emit regex.find("12px 7em 3px 99", p, regex.all)
 '
 ```
 
@@ -401,15 +396,14 @@ emit result.raise(regex.find("12px 7em 3px 99", p, regex.all))
 
 ```bash
 ./target/release/nodia eval '
-use result
 val dup = regex {
   named word { one_or_more letter }
   whitespace
   same_as word
 }
 emit dup
-emit result.raise(regex.test("the the cat", dup))
-emit result.raise(regex.test("the cat", dup))
+emit regex.test("the the cat", dup)
+emit regex.test("the cat", dup)
 '
 ```
 
@@ -435,7 +429,6 @@ lookaround assertion:
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   optional group {
     "a"
@@ -448,9 +441,9 @@ val p = regex {
   }
 }
 emit p
-emit result.raise(regex.test("abc", p, regex.full))
-emit result.raise(regex.test("bd", p, regex.full))
-emit result.raise(regex.test("abd", p, regex.full))
+emit regex.test("abc", p, regex.full)
+emit regex.test("bd", p, regex.full)
+emit regex.test("abd", p, regex.full)
 '
 ```
 
@@ -488,7 +481,6 @@ are not just capture checks or lookarounds.
 
 ```bash
 ./target/release/nodia eval '
-use result
 val greek = regex {
   start_text
   one_or_more property "Greek"
@@ -501,9 +493,9 @@ val repeated = regex {
   call num
 }
 emit greek
-emit result.raise(regex.test("ΩβA.+", greek, regex.full))
+emit regex.test("ΩβA.+", greek, regex.full)
 emit repeated
-emit result.raise(regex.test("12 x 34", repeated, regex.full))
+emit regex.test("12 x 34", repeated, regex.full)
 '
 ```
 
@@ -525,7 +517,6 @@ Toggle flags inside a region only:
 
 ```bash
 ./target/release/nodia eval '
-use result
 val p = regex {
   with_flags(case_insensitive) {
     "abc"
@@ -533,8 +524,8 @@ val p = regex {
   "def"
 }
 emit p
-emit result.raise(regex.test("ABCdef", p))
-emit result.raise(regex.test("ABCDEF", p))
+emit regex.test("ABCdef", p)
+emit regex.test("ABCDEF", p)
 '
 ```
 
@@ -549,10 +540,10 @@ false
 The full set of regex builtins is documented in
 [Standard Library / Regex](../stdlib/regex.md). The most common ones are:
 
-* `regex.test(text, pattern)` — returns `result`; success means the pattern matched somewhere.
-* `regex.test(text, pattern, regex.full)` — returns `result`; success means the whole text matched.
-* `regex.find(text, pattern)` — returns `result`; success contains the first match map or `null`.
-* `regex.find(text, pattern, regex.all)` — returns `result`; success contains all non-overlapping matches.
+* `regex.test(text, pattern)` — returns `bool`; success means the pattern matched somewhere.
+* `regex.test(text, pattern, regex.full)` — returns `bool`; success means the whole text matched.
+* `regex.find(text, pattern)` — returns the first match map or `null`.
+* `regex.find(text, pattern, regex.all)` — returns all non-overlapping matches.
 * `regex.replace(text, pattern, replacement)` — replace literal text, or regex
   matches when `pattern` is a regex value; supports `$(0)`, `$(1)`, `$(name)`,
   `$$` placeholders in regex mode.
@@ -566,7 +557,7 @@ enables regex mode.
 
 ## Match Shape
 
-A `result.raise(regex.find(...))` hit is a map:
+A `regex.find(...)` hit is a map:
 
 ```nodia
 {

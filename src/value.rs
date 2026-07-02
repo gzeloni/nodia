@@ -6,6 +6,7 @@
 use crate::ast::Stmt;
 use crate::error::{ErrorSpan, NodiaError};
 use crate::regex::RuntimeRegex;
+use crate::scanner::ScannerValue;
 use crate::temporal::{DateTimeValue, DateValue, DurationValue};
 use crate::textcodec;
 use std::cell::RefCell;
@@ -30,6 +31,39 @@ pub enum StreamId {
     Stderr,
     /// Runtime-managed file stream.
     File(usize),
+    /// TCP network connection.
+    Tcp(usize),
+    /// TCP listener socket.
+    TcpListener(usize),
+}
+
+/// Shared lazy iterable state used by streaming built-ins and transforms.
+#[derive(Clone)]
+pub struct LazyValue {
+    state: Rc<RefCell<LazyState>>,
+}
+
+#[derive(Clone)]
+struct LazyState {
+    kind: LazyKind,
+    finished: bool,
+}
+
+/// Snapshot of one lazy iterable state used by the runtime while consuming it.
+#[derive(Debug, Clone)]
+pub(crate) struct LazySnapshot {
+    pub kind: LazyKind,
+    pub finished: bool,
+}
+
+/// Internal lazy iterable shapes supported by the runtime.
+#[derive(Debug, Clone)]
+pub enum LazyKind {
+    Lines { stream: StreamId },
+    TextChunks { stream: StreamId, size: usize },
+    ByteChunks { stream: StreamId, size: usize },
+    Map { source: LazyValue, function: Value },
+    Filter { source: LazyValue, function: Value },
 }
 
 /// Loaded module state cached by the runtime.
@@ -56,13 +90,6 @@ pub struct SharedBinding {
     pub mutable: bool,
 }
 
-/// Recoverable pipeline result value.
-#[derive(Debug, Clone, PartialEq)]
-pub enum ResultValue {
-    Ok(Box<Value>),
-    Err(RecoverableErrorValue),
-}
-
 /// Canonical recoverable error payload.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RecoverableErrorValue {
@@ -86,12 +113,13 @@ pub enum Value {
     Bytes(Vec<u8>),
     List(Vec<Value>),
     Map(BTreeMap<String, Value>),
-    Result(ResultValue),
     Date(DateValue),
     DateTime(DateTimeValue),
     Duration(DurationValue),
     Regex(RuntimeRegex),
     Stream(StreamId),
+    Scanner(ScannerValue),
+    Lazy(LazyValue),
     UseBinding(ModuleRef, String),
     BuiltinFunction(String),
     Function(Function),
@@ -102,6 +130,8 @@ pub enum Value {
 pub struct Function {
     /// Parameter names in declaration order.
     pub params: Vec<String>,
+    /// Default values for parameters, aligned with `params`. None = required.
+    pub defaults: Vec<Option<Value>>,
     /// Function body statements.
     pub body: Vec<Stmt>,
     /// Closed-over bindings from outer scopes.
@@ -120,12 +150,13 @@ impl Value {
             Value::Bytes(value) => !value.is_empty(),
             Value::List(value) => !value.is_empty(),
             Value::Map(value) => !value.is_empty(),
-            Value::Result(value) => value.is_ok(),
             Value::Date(_) => true,
             Value::DateTime(_) => true,
             Value::Duration(_) => true,
             Value::Regex(_) => true,
             Value::Stream(_) => true,
+            Value::Scanner(_) => true,
+            Value::Lazy(_) => true,
             Value::UseBinding(_, _) => true,
             Value::BuiltinFunction(_) => true,
             Value::Function(_) => true,
@@ -143,12 +174,13 @@ impl Value {
             Value::Bytes(_) => "bytes",
             Value::List(_) => "list",
             Value::Map(_) => "map",
-            Value::Result(_) => "result",
             Value::Date(_) => "date",
             Value::DateTime(_) => "datetime",
             Value::Duration(_) => "duration",
             Value::Regex(_) => "regex",
             Value::Stream(_) => "stream",
+            Value::Scanner(_) => "scanner",
+            Value::Lazy(_) => "lazy",
             Value::UseBinding(_, _) => "use",
             Value::BuiltinFunction(_) => "function",
             Value::Function(_) => "function",
@@ -197,12 +229,13 @@ impl Value {
                 }
                 write!(f, "}}")
             }
-            Value::Result(value) => value.write_display(f, nested),
             Value::Date(value) => write!(f, "{}", value.isoformat()),
             Value::DateTime(value) => write!(f, "{}", value.isoformat()),
             Value::Duration(value) => write!(f, "{}", value.isoformat()),
             Value::Regex(regex) => write!(f, "{}", regex.rendered()),
             Value::Stream(stream) => write!(f, "{stream}"),
+            Value::Scanner(_) => write!(f, "<scanner>"),
+            Value::Lazy(lazy) => write!(f, "<lazy {}>", lazy.label()),
             Value::UseBinding(_, name) => write!(f, "<use {name}>"),
             Value::BuiltinFunction(name) => write!(f, "<builtin {name}>"),
             Value::Function(_) => write!(f, "<func>"),
@@ -221,65 +254,19 @@ impl PartialEq for Value {
             (Value::Bytes(a), Value::Bytes(b)) => a == b,
             (Value::List(a), Value::List(b)) => a == b,
             (Value::Map(a), Value::Map(b)) => a == b,
-            (Value::Result(a), Value::Result(b)) => a == b,
             (Value::Date(a), Value::Date(b)) => a == b,
             (Value::DateTime(a), Value::DateTime(b)) => a == b,
             (Value::Duration(a), Value::Duration(b)) => a == b,
             (Value::Regex(a), Value::Regex(b)) => a == b,
             (Value::Stream(a), Value::Stream(b)) => a == b,
+            (Value::Scanner(a), Value::Scanner(b)) => a == b,
+            (Value::Lazy(a), Value::Lazy(b)) => a == b,
             (Value::BuiltinFunction(a), Value::BuiltinFunction(b)) => a == b,
             (Value::Function(a), Value::Function(b)) => a == b,
             (Value::UseBinding(a_module, a_name), Value::UseBinding(b_module, b_name)) => {
                 Rc::ptr_eq(a_module, b_module) && a_name == b_name
             }
             _ => false,
-        }
-    }
-}
-
-impl ResultValue {
-    pub fn ok(value: Value) -> Self {
-        Self::Ok(Box::new(value))
-    }
-
-    pub fn err(code: impl Into<String>, message: impl Into<String>) -> Self {
-        Self::Err(RecoverableErrorValue::new(code, message))
-    }
-
-    pub fn is_ok(&self) -> bool {
-        matches!(self, Self::Ok(_))
-    }
-
-    pub fn is_err(&self) -> bool {
-        matches!(self, Self::Err(_))
-    }
-
-    pub fn value(&self) -> Option<&Value> {
-        match self {
-            Self::Ok(value) => Some(value),
-            Self::Err(_) => None,
-        }
-    }
-
-    pub fn error(&self) -> Option<&RecoverableErrorValue> {
-        match self {
-            Self::Ok(_) => None,
-            Self::Err(error) => Some(error),
-        }
-    }
-
-    fn write_display(&self, f: &mut fmt::Formatter<'_>, nested: bool) -> fmt::Result {
-        match self {
-            Self::Ok(value) => {
-                write!(f, "ok(")?;
-                value.write_display(f, nested)?;
-                write!(f, ")")
-            }
-            Self::Err(error) => {
-                write!(f, "err(")?;
-                error.write_display(f)?;
-                write!(f, ")")
-            }
         }
     }
 }
@@ -315,6 +302,18 @@ impl RecoverableErrorValue {
             context: error.context,
             span: error.span,
         }
+    }
+
+    pub fn from_map(fields: &BTreeMap<String, Value>) -> Option<Self> {
+        Some(Self {
+            code: required_string_field(fields, "code")?,
+            message: required_string_field(fields, "message")?,
+            file: optional_string_field(fields.get("file"))?,
+            line: optional_usize_field(fields.get("line"))?,
+            column: optional_usize_field(fields.get("column"))?,
+            context: optional_string_list_field(fields.get("context"))?,
+            span: optional_span_field(fields.get("span"))?,
+        })
     }
 
     pub fn to_error(&self) -> NodiaError {
@@ -378,67 +377,70 @@ impl RecoverableErrorValue {
         );
         fields
     }
+}
 
-    fn write_display(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{{")?;
-        write_map_key(f, "code")?;
-        write!(f, ": ")?;
-        Value::String(self.code.clone()).write_display(f, true)?;
-        write!(f, ", ")?;
-        write_map_key(f, "message")?;
-        write!(f, ": ")?;
-        Value::String(self.message.clone()).write_display(f, true)?;
-        write!(f, ", ")?;
-        write_map_key(f, "file")?;
-        write!(f, ": ")?;
-        self.file
-            .as_ref()
-            .map(|value| Value::String(value.clone()))
-            .unwrap_or(Value::Null)
-            .write_display(f, true)?;
-        write!(f, ", ")?;
-        write_map_key(f, "line")?;
-        write!(f, ": ")?;
-        self.line
-            .map(|value| Value::Int(value as i64))
-            .unwrap_or(Value::Null)
-            .write_display(f, true)?;
-        write!(f, ", ")?;
-        write_map_key(f, "column")?;
-        write!(f, ": ")?;
-        self.column
-            .map(|value| Value::Int(value as i64))
-            .unwrap_or(Value::Null)
-            .write_display(f, true)?;
-        if !self.context.is_empty() {
-            write!(f, ", ")?;
-            write_map_key(f, "context")?;
-            write!(f, ": ")?;
-            Value::List(
-                self.context
-                    .iter()
-                    .cloned()
-                    .map(Value::String)
-                    .collect::<Vec<_>>(),
-            )
-            .write_display(f, true)?;
+impl LazyValue {
+    pub fn lines(stream: StreamId) -> Self {
+        Self::new(LazyKind::Lines { stream })
+    }
+
+    pub fn text_chunks(stream: StreamId, size: usize) -> Self {
+        Self::new(LazyKind::TextChunks { stream, size })
+    }
+
+    pub fn byte_chunks(stream: StreamId, size: usize) -> Self {
+        Self::new(LazyKind::ByteChunks { stream, size })
+    }
+
+    pub fn map(source: LazyValue, function: Value) -> Self {
+        Self::new(LazyKind::Map { source, function })
+    }
+
+    pub fn filter(source: LazyValue, function: Value) -> Self {
+        Self::new(LazyKind::Filter { source, function })
+    }
+
+    fn new(kind: LazyKind) -> Self {
+        Self {
+            state: Rc::new(RefCell::new(LazyState {
+                kind,
+                finished: false,
+            })),
         }
-        if let Some(span) = &self.span {
-            let mut span_fields = BTreeMap::new();
-            span_fields.insert("line".to_string(), Value::Int(span.line as i64));
-            span_fields.insert("column".to_string(), Value::Int(span.column as i64));
-            write!(f, ", ")?;
-            write_map_key(f, "span")?;
-            write!(f, ": ")?;
-            Value::Map(span_fields).write_display(f, true)?;
+    }
+
+    pub(crate) fn snapshot(&self) -> LazySnapshot {
+        let state = self.state.borrow();
+        LazySnapshot {
+            kind: state.kind.clone(),
+            finished: state.finished,
         }
-        write!(f, "}}")
+    }
+
+    pub(crate) fn finish(&self) {
+        self.state.borrow_mut().finished = true;
+    }
+
+    fn label(&self) -> &'static str {
+        match &self.state.borrow().kind {
+            LazyKind::Lines { .. } => "lines",
+            LazyKind::TextChunks { .. } => "chunks",
+            LazyKind::ByteChunks { .. } => "byte_chunks",
+            LazyKind::Map { .. } => "map",
+            LazyKind::Filter { .. } => "filter",
+        }
     }
 }
 
 impl PartialEq for Function {
     fn eq(&self, other: &Self) -> bool {
         self.params == other.params && self.body == other.body
+    }
+}
+
+impl PartialEq for LazyValue {
+    fn eq(&self, other: &Self) -> bool {
+        Rc::ptr_eq(&self.state, &other.state)
     }
 }
 
@@ -462,9 +464,24 @@ impl fmt::Debug for SharedBinding {
     }
 }
 
+impl fmt::Debug for LazyValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("LazyValue")
+            .field("kind", &self.label())
+            .field("finished", &self.snapshot().finished)
+            .finish()
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         self.write_display(f, false)
+    }
+}
+
+impl fmt::Display for LazyValue {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.label())
     }
 }
 
@@ -475,6 +492,8 @@ impl fmt::Display for StreamId {
             StreamId::Stdout => write!(f, "<stream stdout>"),
             StreamId::Stderr => write!(f, "<stream stderr>"),
             StreamId::File(id) => write!(f, "<stream {id}>"),
+            StreamId::Tcp(id) => write!(f, "<stream tcp:{id}>"),
+            StreamId::TcpListener(id) => write!(f, "<stream listener:{id}>"),
         }
     }
 }
@@ -512,4 +531,52 @@ fn write_string_literal(f: &mut fmt::Formatter<'_>, value: &str) -> fmt::Result 
         }
     }
     write!(f, "\"")
+}
+
+fn required_string_field(fields: &BTreeMap<String, Value>, key: &str) -> Option<String> {
+    match fields.get(key)? {
+        Value::String(value) => Some(value.clone()),
+        _ => None,
+    }
+}
+
+fn optional_string_field(value: Option<&Value>) -> Option<Option<String>> {
+    match value {
+        None | Some(Value::Null) => Some(None),
+        Some(Value::String(value)) => Some(Some(value.clone())),
+        Some(_) => None,
+    }
+}
+
+fn optional_usize_field(value: Option<&Value>) -> Option<Option<usize>> {
+    match value {
+        None | Some(Value::Null) => Some(None),
+        Some(Value::Int(value)) if *value >= 0 => usize::try_from(*value).ok().map(Some),
+        Some(_) => None,
+    }
+}
+
+fn optional_string_list_field(value: Option<&Value>) -> Option<Vec<String>> {
+    match value {
+        None | Some(Value::Null) => Some(Vec::new()),
+        Some(Value::List(values)) => values
+            .iter()
+            .map(|value| match value {
+                Value::String(value) => Some(value.clone()),
+                _ => None,
+            })
+            .collect(),
+        Some(_) => None,
+    }
+}
+
+fn optional_span_field(value: Option<&Value>) -> Option<Option<ErrorSpan>> {
+    match value {
+        None | Some(Value::Null) => Some(None),
+        Some(Value::Map(fields)) => Some(Some(ErrorSpan {
+            line: optional_usize_field(fields.get("line"))??,
+            column: optional_usize_field(fields.get("column"))??,
+        })),
+        Some(_) => None,
+    }
 }

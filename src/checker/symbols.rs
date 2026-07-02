@@ -29,6 +29,19 @@ impl<'a> State<'a> {
                 Ok(())
             }
             UseTarget::Stdlib(name) => {
+                if let Some(module) = self.try_load_stdlib_file(name)? {
+                    let symbols = self.selected_symbols(&module, pick, hide)?;
+                    if let Some(alias) = alias {
+                        return self.declare(alias, Symbol::namespace(symbols));
+                    }
+                    if pick.is_empty() {
+                        return self.declare(name, Symbol::namespace(symbols));
+                    }
+                    for (n, s) in symbols {
+                        self.declare(&n, s)?;
+                    }
+                    return Ok(());
+                }
                 let symbols = self.selected_stdlib_symbols(name, pick, hide)?;
                 if let Some(alias) = alias {
                     return self.declare(alias, Symbol::namespace(symbols));
@@ -42,6 +55,47 @@ impl<'a> State<'a> {
                 Ok(())
             }
         }
+    }
+
+    fn try_load_stdlib_file(&mut self, name: &str) -> NodiaResult<Option<ModuleInfo>> {
+        let candidate = self.stdlib_dir().join(format!("{name}.nod"));
+        if candidate.exists() {
+            let module = self
+                .checker
+                .load_module(&candidate.to_string_lossy(), self.base_dir.as_deref())?;
+            return Ok(Some(module));
+        }
+        Ok(None)
+    }
+
+    fn stdlib_dir(&self) -> PathBuf {
+        if let Ok(root) = std::env::var("NODIA_ROOT") {
+            let candidate = PathBuf::from(&root).join("lib/nodia/stdlib");
+            if candidate.exists() {
+                return candidate;
+            }
+            let candidate = PathBuf::from(&root).join("stdlib");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+        if let Ok(exe) = std::env::current_exe() {
+            let root = exe
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf());
+            if let Some(root) = root {
+                let candidate = root.join("lib/nodia/stdlib");
+                if candidate.exists() {
+                    return candidate;
+                }
+                let candidate = root.join("stdlib");
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+        }
+        PathBuf::from("stdlib")
     }
 
     pub(super) fn selected_symbols(
@@ -145,9 +199,7 @@ impl<'a> State<'a> {
                 .cloned()
                 .map(FieldStatus::Found)
                 .unwrap_or(FieldStatus::Missing),
-            SymbolKind::Unknown | SymbolKind::Result | SymbolKind::Function { .. } => {
-                FieldStatus::Unknown
-            }
+            SymbolKind::Unknown | SymbolKind::Function { .. } => FieldStatus::Unknown,
         }
     }
 
@@ -164,10 +216,14 @@ impl<'a> State<'a> {
 
     pub(super) fn symbol_for_expr(&self, expr: &Expr, mutable: bool) -> Symbol {
         let kind = match expr {
-            Expr::Lambda { params, .. } => SymbolKind::Function {
-                arities: vec![params.len()],
-                builtin_target: None,
-            },
+            Expr::Lambda { params, .. } => {
+                let required = params.iter().filter(|p| p.default.is_none()).count();
+                let total = params.len();
+                SymbolKind::Function {
+                    arities: (required..=total).collect(),
+                    builtin_target: None,
+                }
+            }
             Expr::Call { callee, .. } => self
                 .builtin_call_target(callee)
                 .as_deref()

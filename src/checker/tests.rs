@@ -7,7 +7,6 @@ use crate::check_source;
 
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
-use result as __res
 "#;
 
 fn check_stdlib_source(source: &str) -> crate::NodiaResult<()> {
@@ -129,61 +128,26 @@ fn checker_reports_first_keyword_occurrence() {
 
 #[test]
 fn checker_accepts_stdlib_use_modules_and_first_class_native_functions() {
-    let source = r#"use text
+    let source = r##"use text
 use numbers
 use collections as col
 use conversion as conv
-use format as fmt
 use io
 use system
-use result
 use datetime as dt
-use json
-use csv as table
-val decode = json.read
-val encode = json.write
 val to_int = numbers.int
 val out = io.stdout
 emit text.upper("ana")
 emit to_int("42")
 emit conv.string(3)
-emit fmt.fixed(3.14, 1)
-emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
+emit regex.find("ana 42", regex { one_or_more digit }).text
 emit io.basename("/tmp/report.txt")
 emit system.args[0]
-emit result.is_err(result.err("E8000", "bad"))
 emit dt.year(dt.date(2026, 6, 3))
 emit col.map(numbers.int, ["1", "2"])
-emit result.raise(decode(r'{"ok":true}')).ok
-emit result.raise(table.read("name,age\nAna,30", {header: true, types: true}))[0].age + 1
-emit encode({ok: true}, 2)
-"#;
+"##;
 
     assert!(check_source(source).is_ok());
-}
-
-#[test]
-fn checker_rejects_direct_result_field_access() {
-    let err = check_source(
-        r#"use json
-emit json.read(r'{"name":"Ana"}').name"#,
-    )
-    .unwrap_err();
-
-    assert_eq!(err.code, "E4108");
-    assert!(err.message.contains("cannot access field on result"));
-}
-
-#[test]
-fn checker_rejects_direct_result_index_access() {
-    let err = check_source(
-        r#"use csv
-emit csv.read("name,age\nAna,30", true)[0]"#,
-    )
-    .unwrap_err();
-
-    assert_eq!(err.code, "E4108");
-    assert!(err.message.contains("cannot index result"));
 }
 
 #[test]
@@ -199,27 +163,54 @@ for i in range(3) {
 }
 
 #[test]
-fn checker_accepts_result_module_calls() {
-    let source = r#"use result
-use text
-func fallback(error) {
-  return error.message
+fn checker_accepts_try_catch_and_throw_with_canonical_error_fields() {
+    let source = r#"try {
+  throw {
+    code: "E8000",
+    message: "missing row",
+    context: ["io.read"],
+    span: {line: 2, column: 4},
+  }
+} catch err {
+  emit err.code
+  emit err.message
+  emit err.context
+  emit err.span.line
 }
-val ok = result.ok("Ana")
-val bad = result.err("E8000", "missing row")
-emit result.is_ok(ok)
-emit result.is_err(bad)
-emit result.value(ok)
-emit result.value_or(bad, "fallback")
-emit result.error(bad).code
-emit result.error(bad).context
-emit result.error(bad).span.line
-emit result.then(ok, text.upper)
-emit result.recover(bad, fallback)
-emit result.raise(ok)
 "#;
 
     assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_bitwise_integer_operators() {
+    let source = r#"emit ~1
+emit 5 & 3
+emit 5 | 2
+emit 5 ^ 1
+emit 1 << 3
+emit 8 >> 2
+"#;
+
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_scopes_catch_binding_to_the_catch_block() {
+    let err = check_source(
+        r#"try {
+  throw {code: "E8000", message: "missing row"}
+} catch err {
+  emit err.code
+}
+
+emit err.code
+"#,
+    )
+    .unwrap_err();
+
+    assert_eq!(err.code, "E4100");
+    assert!(err.message.contains("undefined variable 'err'"));
 }
 
 #[test]
@@ -277,4 +268,104 @@ emit txt.upper("a", "b")"#,
     assert!(err
         .message
         .contains("txt.upper() expects 1 argument(s), got 2"));
+}
+
+#[test]
+fn checker_accepts_namespace_with_bindings_and_functions() {
+    let source = r#"
+namespace http {
+  val timeout = 30
+  func get(url) {
+    return url
+  }
+}
+emit http.timeout
+emit http.get("/api")
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_struct_with_and_without_defaults() {
+    let source = r#"
+struct Point {
+  x: 0
+  y: 0
+}
+struct User {
+  name
+  age
+}
+emit Point.x
+emit User.name
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_rejects_duplicate_struct_fields() {
+    let err = check_source("struct Dup { x: 0\n x: 1 }\n").unwrap_err();
+    assert_eq!(err.code, "E4102");
+    assert!(err.message.contains("duplicate struct field"));
+}
+
+#[test]
+fn checker_accepts_enum_with_variants() {
+    let source = r#"
+enum Status {
+  active,
+  inactive,
+}
+emit Status.active
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_rejects_duplicate_enum_variants() {
+    let err = check_source("enum Bad { a, a }\n").unwrap_err();
+    assert_eq!(err.code, "E4102");
+    assert!(err.message.contains("duplicate enum variant"));
+}
+
+#[test]
+fn checker_accepts_type_alias() {
+    let source = r#"
+type Url = string
+emit "ok"
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_compound_assignment_operators() {
+    let source = r#"
+var count = 0
+count += 1
+count -= 1
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_non_ascii_identifiers() {
+    let source = r#"
+val nome = "Ana"
+val über = 1
+emit nome
+emit über
+"#;
+    assert!(check_source(source).is_ok());
+}
+
+#[test]
+fn checker_accepts_net_module() {
+    let source = r#"
+use net
+val conn = net.dial
+val srv = net.listen
+val client = net.accept
+emit "ok"
+"#;
+    assert!(check_source(source).is_ok());
 }

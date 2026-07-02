@@ -17,11 +17,11 @@ The stable surface for text pipelines is now:
 
 There is no compatibility prelude and no legacy alias layer for removed names.
 
-If you are already on `0.8.1+`, remember that `text.decode(...)`,
-`json.read(...)`, `csv.read(...)`, `datetime.parse(...)`, `io.*`, `regex.test(...)`,
-and `regex.find(...)` now return `result`. Use `result.raise(...)`,
-`result.then(...)`, `result.recover(...)`, or `result.value_or(...)` at the
-call site instead of accessing the returned value directly.
+If you are already on `0.8.3`, remember that `text.decode(...)`,
+`json.parse(...)`, `csv.parse(...)`, `datetime.parse(...)`, `io.*`,
+`regex.test(...)`, and `regex.find(...)` now return their direct success value
+and raise a structured runtime error on failure. Use `try` / `catch` when a
+pipeline must recover instead of wrapping everything in a `result` value.
 
 ## Old To New Names
 
@@ -53,11 +53,13 @@ through ad-hoc list conventions. In `0.7.5`, raw byte flow is explicit:
 * read bytes with `io.read(..., io.bytes)`
 * decode bytes with `text.decode(..., text.utf8)` or
   `text.decode(..., text.utf8, text.lossy)`
-* hand bytes directly to `json.read(...)`, `csv.read(...)`, file writes, or
-  inspect them through `bytes[index]`
+* decode bytes before handing the resulting text to `json.parse(...)`,
+  `csv.parse(...)`, or any text-only parser
+* inspect raw bytes directly through `bytes[index]` when needed
 
 If a pipeline may contain malformed UTF-8, decode lossily on purpose. Do not
-expect `io.read(...)` or `json.read(bytes)` to silently replace invalid input.
+expect `io.read(...)`, `json.parse(...)`, or `csv.parse(...)` to silently
+replace invalid input.
 
 ## Compatibility Surfaces That Remain
 
@@ -80,10 +82,9 @@ Prefer namespace imports for larger modules:
 ```nodia
 use text
 use json
-use result
 
 emit text.normalize("é", text.nfc)
-emit result.raise(json.read(r'{"name":"Ana"}')).name
+emit json.parse(r'{"name":"Ana"}').name
 ```
 
 Use `pick` only when it actually improves the local code:

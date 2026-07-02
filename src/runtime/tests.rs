@@ -8,13 +8,18 @@ use std::fs;
 
 const TEST_STDLIB_PRELUDE: &str = r#"use text as __text
 use collections as __col
-use format as __fmt
 use io as __io
 use system as __sys
-use result as __res
 use datetime as __dt
-use json as __json
-use csv as __csv
+
+func __error(task) {
+  try {
+    task()
+    return null
+  } catch err {
+    return err
+  }
+}
 "#;
 
 fn stdlib_source(source: &str) -> String {
@@ -31,6 +36,20 @@ fn run_source_with_options(
     options: RuntimeOptions,
 ) -> NodiaResult<String> {
     crate::run_source_with_options(&stdlib_source(source), input, options)
+}
+
+#[test]
+fn stdlib_resolution_finds_json_module() {
+    std::env::set_var("NODIA_ROOT", ".");
+    let output = run_source(
+        r#"use json
+emit "loaded"
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(output, "loaded");
+    std::env::remove_var("NODIA_ROOT");
 }
 
 #[test]
@@ -66,6 +85,55 @@ fn stdlib_globals_require_use() {
 fn division_always_returns_float() {
     let output = run_source("emit 9 / 3\nemit 10 / 3\n", BTreeMap::new()).unwrap();
     assert_eq!(output, "3.0\n3.3333333333333335");
+}
+
+#[test]
+fn bitwise_integer_operators_work() {
+    let output = run_source(
+        "emit ~1\nemit 5 & 3\nemit 5 | 2\nemit 5 ^ 1\nemit 1 << 3\nemit 8 >> 2\n",
+        BTreeMap::new(),
+    )
+    .unwrap();
+    assert_eq!(output, "-2\n1\n7\n4\n8\n2");
+}
+
+#[test]
+fn modules_export_namespace_struct_and_enum_values() {
+    let dir = std::env::temp_dir().join(format!("nodia-module-exports-{}", std::process::id()));
+    fs::create_dir_all(&dir).unwrap();
+    let lib = dir.join("lib.nod");
+    let main = dir.join("main.nod");
+    fs::write(
+        &lib,
+        r#"namespace http {
+  val timeout = 30
+}
+
+struct Point {
+  x: 0
+  y: 0
+}
+
+enum Status {
+  active,
+  inactive,
+}
+"#,
+    )
+    .unwrap();
+    fs::write(
+        &main,
+        r#"use "./lib" as lib
+emit lib.http.timeout
+emit lib.Point.x
+emit lib.Status.active.kind
+"#,
+    )
+    .unwrap();
+
+    let output = crate::run_file(&main, BTreeMap::new()).unwrap();
+    assert_eq!(output, "30\n0\nactive");
+    let _ = fs::remove_dir_all(dir);
 }
 
 #[test]
@@ -287,18 +355,18 @@ fn file_streams_read_and_write_lines() {
     fs::write(&input, "ana\nbruno\n").unwrap();
 
     let source = format!(
-        r#"val src = __res.raise(__io.open("{}", "read"))
-val out = __res.raise(__io.open("{}", "write"))
+        r#"val src = __io.open("{}", "read")
+val out = __io.open("{}", "write")
 
-var line = __res.raise(__io.readln(src))
+var line = __io.readln(src)
 while line != null {{
-  __res.raise(__io.writeln(out, __text.upper(line)))
-  line = __res.raise(__io.readln(src))
+  __io.writeln(out, __text.upper(line))
+  line = __io.readln(src)
 }}
 
-__res.raise(__io.close(src))
-__res.raise(__io.close(out))
-emit __res.raise(__io.read("{}"))
+__io.close(src)
+__io.close(out)
+emit __io.read("{}")
 "#,
         input.display(),
         output.display(),
@@ -342,10 +410,10 @@ fn readln_handles_final_line_without_trailing_newline() {
     fs::write(&input, "ana\r\nbruno").unwrap();
 
     let source = format!(
-        r#"val src = __res.raise(__io.open("{}", "read"))
-emit __res.raise(__io.readln(src))
-emit __res.raise(__io.readln(src))
-emit __res.raise(__io.readln(src))
+        r#"val src = __io.open("{}", "read")
+emit __io.readln(src)
+emit __io.readln(src)
+emit __io.readln(src)
 "#,
         input.display(),
     );
@@ -363,13 +431,13 @@ fn file_reads_support_path_and_chunked_stream_access() {
     fs::write(&input, "abcdef").unwrap();
 
     let source = format!(
-        r#"emit __res.raise(__io.read("{}"))
-val src = __res.raise(__io.open("{}", "read"))
-emit __res.raise(__io.read(src, 2))
-emit __res.raise(__io.read(src, 2))
-emit __res.raise(__io.read(src, 10))
-emit __res.raise(__io.read(src, 10))
-emit __res.raise(__io.eof(src))
+        r#"emit __io.read("{}")
+val src = __io.open("{}", "read")
+emit __io.read(src, 2)
+emit __io.read(src, 2)
+emit __io.read(src, 10)
+emit __io.read(src, 10)
+emit __io.eof(src)
 "#,
         input.display(),
         input.display(),
@@ -388,14 +456,14 @@ fn chunked_reads_keep_utf8_scalar_boundaries_and_zero_size_is_a_no_op() {
     fs::write(&input, "aéb").unwrap();
 
     let source = format!(
-        r#"val src = __res.raise(__io.open("{}", "read"))
-emit __res.raise(__io.read(src, 0))
-emit __res.raise(__io.eof(src))
-emit __res.raise(__io.read(src, 1))
-emit __res.raise(__io.read(src, 1))
-emit __res.raise(__io.read(src, 1))
-emit __res.raise(__io.read(src, 1))
-emit __res.raise(__io.eof(src))
+        r#"val src = __io.open("{}", "read")
+emit __io.read(src, 0)
+emit __io.eof(src)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.read(src, 1)
+emit __io.eof(src)
 "#,
         input.display(),
     );
@@ -414,7 +482,7 @@ fn file_reads_reject_invalid_utf8_consistently() {
     fs::write(&bad_path, [0xff, b'a']).unwrap();
     let output = run_source(
         &format!(
-            r#"emit __res.error(__io.read("{}")).code"#,
+            r#"emit __error(lambda() {{ __io.read("{}") }}).code"#,
             bad_path.display()
         ),
         BTreeMap::new(),
@@ -426,8 +494,8 @@ fn file_reads_reject_invalid_utf8_consistently() {
     fs::write(&bad_chunk, [0xff, b'a']).unwrap();
     let output = run_source(
         &format!(
-            r#"val src = __res.raise(__io.open("{}", "read"))
-emit __res.error(__io.read(src, 1)).code
+            r#"val src = __io.open("{}", "read")
+emit __error(lambda() {{ __io.read(src, 1) }}).code
 "#,
             bad_chunk.display(),
         ),
@@ -440,8 +508,8 @@ emit __res.error(__io.read(src, 1)).code
     fs::write(&bad_line, [b'a', 0xff, b'\n']).unwrap();
     let output = run_source(
         &format!(
-            r#"val src = __res.raise(__io.open("{}", "read"))
-emit __res.error(__io.readln(src)).code
+            r#"val src = __io.open("{}", "read")
+emit __error(lambda() {{ __io.readln(src) }}).code
 "#,
             bad_line.display(),
         ),
@@ -458,12 +526,12 @@ fn explicit_codec_and_sanitation_helpers_are_available_through_text_module() {
     let output = run_source(
         r#"val encoded = __text.encode("aéb", __text.utf8)
 emit encoded
-emit __res.raise(__text.decode(encoded, __text.utf8))
-emit __res.raise(__text.decode(b"a\xffb", __text.utf8, __text.lossy))
+emit __text.decode(encoded, __text.utf8)
+emit __text.decode(b"a\xffb", __text.utf8, __text.lossy)
 emit __text.normalize("a\r\nb\rc\n", __text.lf)
 emit __text.normalize("a\r\nb\rc\n", __text.crlf)
-emit __text.strip_bom(__res.raise(__text.decode(b"\xef\xbb\xbfhi", __text.utf8)))
-emit __text.drop_nul(__res.raise(__text.decode(b"a\0b\0", __text.utf8)))
+emit __text.strip_bom(__text.decode(b"\xef\xbb\xbfhi", __text.utf8))
+emit __text.drop_nul(__text.decode(b"a\0b\0", __text.utf8))
 "#,
         BTreeMap::new(),
     )
@@ -481,10 +549,10 @@ fn byte_io_surfaces_raw_bytes_without_implicit_decoding() {
     fs::create_dir_all(&dir).unwrap();
     let path = dir.join("payload.bin");
     let source = format!(
-        r#"__res.raise(__io.write("{}", b"a\0\xffb"))
-val raw = __res.raise(__io.read("{}", __io.bytes))
+        r#"__io.write("{}", b"a\0\xffb")
+val raw = __io.read("{}", __io.bytes)
 emit raw
-emit __res.raise(__text.decode(raw, __text.utf8, __text.lossy))
+emit __text.decode(raw, __text.utf8, __text.lossy)
 "#,
         path.display(),
         path.display(),
@@ -539,7 +607,7 @@ fn file_writes_require_permission() {
 
     let output = run_source_with_options(
         &format!(
-            r#"emit __res.error(__io.write("{}", "blocked")).code"#,
+            r#"emit __error(lambda() {{ __io.write("{}", "blocked") }}).code"#,
             output_path.display()
         ),
         BTreeMap::new(),
@@ -665,15 +733,15 @@ fn regex_builtins_execute_against_regex_values() {
   }
 }
 
-val hit = __res.raise(regex.find("go to https://example.com now", pat))
-emit __res.raise(regex.test("go to https://example.com now", pat))
-emit __res.raise(regex.test("https://example.com", pat, regex.full))
+val hit = regex.find("go to https://example.com now", pat)
+emit regex.test("go to https://example.com now", pat)
+emit regex.test("https://example.com", pat, regex.full)
 emit hit.text
 emit hit.named.scheme
 emit hit.named.host
 emit hit.start
 emit hit.end
-emit __col.len(__res.raise(regex.find("http://a https://b", pat, regex.all)))
+emit __col.len(regex.find("http://a https://b", pat, regex.all))
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -685,11 +753,11 @@ emit __col.len(__res.raise(regex.find("http://a https://b", pat, regex.all)))
 
 #[test]
 fn regex_find_reports_scalar_offsets() {
-    let source = r#"val hit = __res.raise(regex.find("é ana", regex {
+    let source = r#"val hit = regex.find("é ana", regex {
   named word {
     one_or_more letter
   }
-}))
+})
 
 emit hit.start
 emit hit.end
@@ -702,9 +770,9 @@ emit hit.end
 #[test]
 fn regex_offsets_align_with_slice_on_unicode_scalar_positions() {
     let source = r#"val text = "éx"
-val hit = __res.raise(regex.find(text, regex {
+val hit = regex.find(text, regex {
   "x"
-}))
+})
 
 emit hit.start
 emit hit.end
@@ -872,12 +940,24 @@ fn text_semantics_reject_invalid_offset_boundaries() {
 
 #[test]
 fn regex_builtins_accept_string_patterns() {
-    let source = r#"emit __res.raise(regex.test("abc-42", "^[a-z]+-\\d+$"))
-emit __res.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
+    let source = r#"emit regex.test("abc-42", "^[a-z]+-\\d+$")
+emit regex.test("abc-42", "^[a-z]+-\\d+$", regex.full)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
     assert_eq!(output, "true\ntrue");
+}
+
+#[test]
+fn regex_string_patterns_report_regex_error_codes_at_runtime() {
+    let output = run_source(
+        r#"val pat = "[A-Z"
+emit __error(lambda() { regex.test("abc", pat) }).code"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "E4200");
 }
 
 #[test]
@@ -886,7 +966,7 @@ fn regex_text_items_normalize_and_execute_as_native_regex_values() {
   r"(?i)^\d{2}$"
 }
 emit pat
-emit __res.raise(regex.test("42", pat, regex.full))
+emit regex.test("42", pat, regex.full)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -913,12 +993,12 @@ val python_named = regex {
   r"(?P<word>[A-Za-z]+)\s+(?P=word)"
 }
 
-emit __res.raise(regex.test("abc", dsl, regex.full))
-emit __res.raise(regex.test("bd", dsl, regex.full))
-emit __res.raise(regex.test("abd", dsl, regex.full))
-emit __res.raise(regex.test("abc", reversed, regex.full))
-emit __res.raise(regex.test("bd", reversed, regex.full))
-emit __res.raise(regex.test("ana ana", python_named, regex.full))
+emit regex.test("abc", dsl, regex.full)
+emit regex.test("bd", dsl, regex.full)
+emit regex.test("abd", dsl, regex.full)
+emit regex.test("abc", reversed, regex.full)
+emit regex.test("bd", reversed, regex.full)
+emit regex.test("ana ana", python_named, regex.full)
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -941,14 +1021,14 @@ val until = regex {
 }
 
 emit scoped
-emit __res.raise(regex.test("abcDEF", scoped, regex.full))
-emit __res.raise(regex.test("ABCdef", scoped, regex.full))
+emit regex.test("abcDEF", scoped, regex.full)
+emit regex.test("ABCdef", scoped, regex.full)
 emit unicode
-emit __res.raise(regex.test("ΩβA.+", unicode, regex.full))
-emit __res.raise(regex.test("ΩβAx", unicode, regex.full))
+emit regex.test("ΩβA.+", unicode, regex.full)
+emit regex.test("ΩβAx", unicode, regex.full)
 emit subroutine
-emit __res.raise(regex.test("12 x 34", subroutine, regex.full))
-emit __res.raise(regex.find("AAENDZZ", until)).text
+emit regex.test("12 x 34", subroutine, regex.full)
+emit regex.find("AAENDZZ", until).text
 "#;
 
     let output = run_source(source, BTreeMap::new()).unwrap();
@@ -984,7 +1064,7 @@ val digits = regex {
     one_or_more digit
   }
 }
-val hit = __res.raise(regex.find("42", digits))
+val hit = regex.find("42", digits)
 
 emit m.from
 emit m.val
@@ -1104,327 +1184,47 @@ emit {name: "Ana", "full name": "Ana Maria", empty: ""}
 }
 
 #[test]
-fn json_builtins_parse_and_stringify_structured_values() {
+fn throw_and_try_catch_share_the_canonical_error_payload() {
     let output = run_source(
-            r#"val parsed = __res.raise(__json.read("{{\"name\":\"Ana\",\"flags\":[true,false],\"meta\":{{\"count\":2}},\"note\":\"line\\nnext\"}}"))
-emit parsed.name
-emit parsed.flags
-emit __json.write(parsed)
-"#,
-            BTreeMap::new(),
-        )
-        .unwrap();
-
-    assert_eq!(
-            output,
-            "Ana\n[true, false]\n{\"flags\":[true,false],\"meta\":{\"count\":2},\"name\":\"Ana\",\"note\":\"line\\nnext\"}"
-        );
+        r#"try {
+  throw "boom"
+} catch err {
+  emit err.code
+  emit err.message
 }
 
-#[test]
-fn json_and_csv_read_accept_explicit_byte_sequences() {
-    let output = run_source(
-        r#"val parsed = __res.raise(__json.read(__text.encode(r'{"name":"Ana","age":30}', __text.utf8)))
-val rows = __res.raise(__csv.read(__text.encode("name,age\nAna,30", __text.utf8), {
-  header: true,
-  types: true,
-}))
-emit parsed.name
-emit rows[0].age + 5
+try {
+  throw {
+    code: "E8000",
+    message: "missing row",
+  }
+} catch err {
+  emit err.code
+  emit err.message
+}
 "#,
         BTreeMap::new(),
     )
     .unwrap();
 
-    assert_eq!(output, "Ana\n35");
+    assert_eq!(output, "E2000\nboom\nE8000\nmissing row");
 }
 
 #[test]
-fn json_read_rejects_duplicate_object_keys() {
+fn try_catch_preserves_recoverable_context_and_span_details() {
     let output = run_source(
-        r#"emit __res.error(__json.read(r'{"name":"Ana","name":"Bia"}')).code"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "E2000");
+        r#"try {
+  __text.decode(b"\xff", __text.utf8)
+} catch err {
+  emit err.context[0]
+  emit err.span == null
 }
 
-#[test]
-fn json_and_csv_reject_invalid_utf8_byte_inputs() {
-    let output = run_source(
-        r#"emit __res.error(__json.read(b"\xff")).code"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-    assert_eq!(output, "E2000");
-
-    let output = run_source(
-        r#"emit __res.error(__csv.read(b"\xff")).code"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-    assert_eq!(output, "E2000");
-}
-
-#[test]
-fn recoverable_errors_expose_context_and_nested_spans() {
-    let output = run_source(
-        r#"val json_bad = __res.error(__json.read(r"""{
-true}"""))
-emit json_bad.context
-emit json_bad.span.line
-emit json_bad.span.column
-val csv_bad = __res.error(__csv.read("name\n\"Ana\"x"))
-emit csv_bad.context
-emit csv_bad.span.line
-emit csv_bad.span.column
-val decode_bad = __res.error(__text.decode(b"\xff", __text.utf8))
-emit decode_bad.context
-emit decode_bad.span == null
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "[\"json.read\"]\n2\n1\n[\"csv.read\"]\n2\n6\n[\"text.decode\"]\ntrue"
-    );
-}
-
-#[test]
-fn json_stringify_supports_pretty_print() {
-    let output = run_source(
-        r#"emit __json.write({
-  name: "Ana",
-  scores: [1, 2],
-}, 2)
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "{\n  \"name\": \"Ana\",\n  \"scores\": [\n    1,\n    2\n  ]\n}"
-    );
-}
-
-#[test]
-fn json_stringify_zero_indent_stays_compact() {
-    let output = run_source(
-        r#"emit __json.write({
-  name: "Ana",
-  age: 30,
-}, 0)
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "{\"age\":30,\"name\":\"Ana\"}");
-}
-
-#[test]
-fn json_stringify_accepts_indent_option_map() {
-    let output = run_source(
-        r#"emit __json.write({
-  name: "Ana",
-  scores: [1, 2],
-}, {indent: 2})
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "{\n  \"name\": \"Ana\",\n  \"scores\": [\n    1,\n    2\n  ]\n}"
-    );
-}
-
-#[test]
-fn json_stringify_rejects_unknown_option_keys() {
-    let err = run_source(
-        r#"emit __json.write({name: "Ana"}, {indent: 2, mode: "wide"})"#,
-        BTreeMap::new(),
-    )
-    .unwrap_err();
-
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("does not accept option 'mode'"));
-}
-
-#[test]
-fn csv_builtins_read_headers_and_write_maps() {
-    let output = run_source(
-        r#"val rows = __res.raise(__csv.read("name,role\nAna,dev\n\"Bia, Jr\",ops", true))
-emit rows[0].name
-emit rows[1].name
-emit __csv.write(rows)
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "Ana\nBia, Jr\nname,role\nAna,dev\n\"Bia, Jr\",ops");
-}
-
-#[test]
-fn csv_read_supports_header_and_type_options() {
-    let output = run_source(
-        r#"val users = __res.raise(__csv.read("name,age,active\nAna,30,true", {
-  header: true,
-  types: true,
-}))
-val rows = __res.raise(__csv.read("1,2\n3,4", {types: true}))
-emit users[0].age + 2
-emit users[0].active and true
-emit rows[1][0] + rows[1][1]
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "32\ntrue\n7");
-}
-
-#[test]
-fn csv_read_rejects_unknown_options_and_duplicate_headers() {
-    let err = run_source(
-        r#"emit __csv.read("name,age\nAna,30", {header: true, skip_empty: true})"#,
-        BTreeMap::new(),
-    )
-    .unwrap_err();
-    assert_eq!(err.code, "E2000");
-    assert!(err.message.contains("does not accept option 'skip_empty'"));
-
-    let output = run_source(
-        r#"emit __res.error(__csv.read("name,name\nAna,30", true)).code"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-    assert_eq!(output, "E2000");
-}
-
-#[test]
-fn csv_handles_embedded_newlines_and_escaped_quotes() {
-    let output = run_source(
-        r#"val rows = __res.raise(__csv.read("name,note\n\"Ana\",\"line 1\nline 2\"\n\"Bia\",\"say \"\"hi\"\"\"", true))
-emit rows[0].note
-emit rows[1].note
-emit __csv.write(rows)
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "line 1\nline 2\nsay \"hi\"\nname,note\nAna,\"line 1\nline 2\"\nBia,\"say \"\"hi\"\"\""
-    );
-}
-
-#[test]
-fn csv_write_uses_sorted_union_headers_and_empty_fields_for_missing_keys() {
-    let output = run_source(
-        r#"emit __csv.write([
-  {role: "dev", name: "Ana"},
-  {team: "core", name: "Bia"},
-])"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "name,role,team\nAna,dev,\nBia,,core");
-}
-
-#[test]
-fn stdlib_data_modules_are_available_via_use() {
-    let output = run_source(
-        r#"use json
-use csv as table
-use result
-val decode = json.read
-val encode = json.write
-val rows = result.raise(table.read("name,age\nAna,30", {header: true, types: true}))
-emit result.raise(decode(r'{"ok":true}')).ok
-emit rows[0].age + 1
-emit encode(rows[0], 2)
-emit __col.map(encode, [{n: 1}, {n: 2}])
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "true\n31\n{\n  \"age\": 30,\n  \"name\": \"Ana\"\n}\n[\"{\\\"n\\\":1}\", \"{\\\"n\\\":2}\"]"
-    );
-}
-
-#[test]
-fn stdlib_core_modules_are_available_via_use() {
-    let output = run_source_with_options(
-        r#"use text
-use numbers
-use collections as col
-use conversion as conv
-use format as fmt
-use io
-use system
-use result
-use datetime as dt
-
-emit text.upper("ana")
-emit numbers.abs(-4)
-emit conv.string(3)
-emit fmt.fixed(3.14, 1)
-emit result.raise(regex.find("ana 42", regex { one_or_more digit })).text
-emit io.basename("/tmp/report.txt")
-emit system.args[1]
-emit result.is_ok(result.ok("ana"))
-emit dt.year(dt.date(2026, 6, 3))
-emit col.map(numbers.int, ["1", "2"])
-"#,
-        BTreeMap::new(),
-        RuntimeOptions {
-            args: vec!["zero".to_string(), "one".to_string()],
-            ..RuntimeOptions::default()
-        },
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "ANA\n4\n3\n3.1\n42\nreport.txt\none\ntrue\n2026\n[1, 2]"
-    );
-}
-
-#[test]
-fn result_values_capture_recoverable_pipeline_state() {
-    let output = run_source(
-        r#"val ok = __res.ok("Ana")
-val bad = __res.err("E8000", "missing row")
-emit ok
-emit bad
-emit __res.is_ok(ok)
-emit __res.is_err(ok)
-emit __res.is_ok(bad)
-emit __res.is_err(bad)
-emit __res.value(ok)
-emit __res.value(bad)
-emit __res.error(ok)
-emit __res.error(bad).code
-emit __res.error(bad).message
-if ok {
-  emit "ok truthy"
-}
-if bad {
-  emit "bad truthy"
-} else {
-  emit "bad falsy"
+try {
+  __dt.parse("2024-99-99", __dt.as_date)
+} catch err {
+  emit err.context[0]
+  emit err.message
 }
 "#,
         BTreeMap::new(),
@@ -1433,37 +1233,41 @@ if bad {
 
     assert_eq!(
         output,
-        "ok(Ana)\nerr({code: \"E8000\", message: \"missing row\", file: null, line: null, column: null})\ntrue\nfalse\nfalse\ntrue\nAna\nnull\nnull\nE8000\nmissing row\nok truthy\nbad falsy"
+        "text.decode\ntrue\ndatetime.parse\nmonth must be between 1 and 12"
     );
 }
 
 #[test]
-fn result_helpers_cover_fallback_and_branch_transforms() {
-    let output = run_source(
-        r#"func classify(error) {
-  return "[{error.code}] {error.message}"
-}
+fn try_catch_handles_recoverable_surfaces() {
+    let missing = std::env::temp_dir()
+        .join(format!("nodia-try-missing-{}", std::process::id()))
+        .join("missing.txt");
+    let source = format!(
+        r#"func context_of(task) {{
+  try {{
+    task()
+    return "ok"
+  }} catch err {{
+    return err.context[0]
+  }}
+}}
 
-func wrapped_upper(text) {
-  return __res.ok(__text.upper(text))
-}
-
-emit __res.value_or(__res.ok("Ana"), "fallback")
-emit __res.value_or(__res.err("E8000", "missing row"), "fallback")
-emit __res.then(__res.ok("ana"), __text.upper)
-emit __res.then(__res.ok("bia"), wrapped_upper)
-emit __res.then(__res.err("E8000", "missing row"), __text.upper)
-emit __res.recover(__res.err("E8000", "missing row"), classify)
-emit __res.recover(__res.ok("Ana"), classify)
+val bad_regex = "[A-Z"
+emit context_of(lambda() {{
+  __io.read("{}")
+}})
+emit context_of(lambda() {{
+  regex.test("abc", bad_regex)
+}})
+emit context_of(lambda() {{
+  __dt.parse("2024-99-99", __dt.as_date)
+}})
 "#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(
-        output,
-        "Ana\nfallback\nok(ANA)\nok(BIA)\nerr({code: \"E8000\", message: \"missing row\", file: null, line: null, column: null})\nok([E8000] missing row)\nok(Ana)"
+        missing.display(),
     );
+    let output = run_source(&source, BTreeMap::new()).unwrap();
+
+    assert_eq!(output, "io.read\nregex.test\ndatetime.parse");
 }
 
 #[test]
@@ -1489,15 +1293,12 @@ fn stdlib_data_modules_work_from_file_execution() {
     let main = dir.join("main.nod");
     fs::write(
         &main,
-        "use json\nuse csv\nuse result\n\nval decode = json.read\nval encode = json.write\nval rows = result.raise(csv.read(\"name,age\\nAna,30\", {\n  header: true,\n  types: true,\n}))\n\nemit result.raise(decode(r'{\"ok\":true,\"name\":\"Ana\"}')).name\nemit rows[0].age + 1\nemit encode(rows[0], 2)\nemit csv.write(rows)\n",
+        "use text\nuse numbers\nuse collections as col\n\nemit text.upper(\"ana\")\nemit numbers.abs(-4)\nemit col.len([1, 2, 3])\n",
     )
     .unwrap();
 
     let output = crate::run_file(&main, BTreeMap::new()).unwrap();
-    assert_eq!(
-        output,
-        "Ana\n31\n{\n  \"age\": 30,\n  \"name\": \"Ana\"\n}\nage,name\n30,Ana"
-    );
+    assert_eq!(output, "ANA\n4\n3");
     let _ = fs::remove_dir_all(dir);
 }
 
@@ -1562,49 +1363,6 @@ emit "{__text.replace(\"xx\", \"x\", \"}\")}"
 }
 
 #[test]
-fn formatting_builtins_cover_padding_and_numeric_output() {
-    let output = run_source(
-        r#"emit __fmt.format("%05d %.2f %-6s", [7, 3.5, "ok"])
-emit __fmt.pad("42", 5, __fmt.left, "0")
-emit __fmt.pad("ok", 5, __fmt.right, ".")
-emit __fmt.fixed(3.14159, 3)
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "00007 3.50 ok    \n00042\nok...\n3.142");
-}
-
-#[test]
-fn formatting_builtins_cover_percent_string_precision_and_multichar_padding() {
-    let output = run_source(
-        r#"emit __fmt.format("%% %.3s", ["Nodia"])
-emit __fmt.pad("7", 5, __fmt.left, "ab")
-emit __fmt.pad("7", 5, __fmt.right, "ab")
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "% Nod\nabab7\n7abab");
-}
-
-#[test]
-fn formatting_counts_graphemes_for_string_precision_and_padding() {
-    let output = run_source(
-        r#"emit __fmt.format("[%2s][%.1s]", ["é", "éx"])
-emit __fmt.pad("é", 2, __fmt.left, ".")
-emit __fmt.pad("é", 2, __fmt.right, ".")
-"#,
-        BTreeMap::new(),
-    )
-    .unwrap();
-
-    assert_eq!(output, "[ é][é]\n.é\né.");
-}
-
-#[test]
 fn args_binding_and_env_builtin_work_with_runtime_options() {
     let key = format!("NODIA_TEST_ENV_{}", std::process::id());
     std::env::set_var(&key, "present");
@@ -1662,9 +1420,12 @@ fn mirrored_output_still_preserves_controlled_exit_output() {
 }
 
 #[test]
-fn result_raise_promotes_recoverable_failure_to_fatal_error() {
+fn throw_without_catch_is_a_fatal_error() {
     let err = run_source(
-        r#"emit __res.raise(__res.err("E8000", "missing row"))"#,
+        r#"throw {
+  code: "E8000",
+  message: "missing row",
+}"#,
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -1674,9 +1435,26 @@ fn result_raise_promotes_recoverable_failure_to_fatal_error() {
 }
 
 #[test]
+fn try_catch_does_not_intercept_exit_control_flow() {
+    let err = run_source_with_options(
+        r#"try {
+  __sys.exit(7)
+} catch err {
+  emit err.code
+}
+"#,
+        BTreeMap::new(),
+        RuntimeOptions::default(),
+    )
+    .unwrap_err();
+
+    assert_eq!(err.exit_status, Some(7));
+}
+
+#[test]
 fn fatal_errors_preserve_partial_output() {
     let err = run_source(
-        "emit \"before\"\nemit __res.raise(__res.err(\"E8000\", \"missing row\"))\n",
+        "emit \"before\"\nthrow {code: \"E8000\", message: \"missing row\"}\n",
         BTreeMap::new(),
     )
     .unwrap_err();
@@ -1687,13 +1465,13 @@ fn fatal_errors_preserve_partial_output() {
 #[test]
 fn exec_builtin_returns_stdout_stderr_and_status() {
     let output = run_source_with_options(
-        r#"val result = __sys.exec("/bin/sh", [
+        r#"val proc = __sys.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit __res.raise(__text.decode(result.stdout, __text.utf8))
-emit __res.raise(__text.decode(result.stderr, __text.utf8))
-emit result.status
+emit __text.decode(proc.stdout, __text.utf8)
+emit __text.decode(proc.stderr, __text.utf8)
+emit proc.status
 "#,
         BTreeMap::new(),
         RuntimeOptions {
@@ -1709,11 +1487,11 @@ emit result.status
 #[test]
 fn exec_builtin_returns_recoverable_error_for_missing_binary() {
     let output = run_source_with_options(
-        r#"val result = __sys.exec("nonexistent_xyz", [])
-emit result.status
-emit result.stdout == b""
-emit result.stderr == b""
-emit result.error != ""
+        r#"val proc = __sys.exec("nonexistent_xyz", [])
+emit proc.status
+emit proc.stdout == b""
+emit proc.stderr == b""
+emit proc.error != ""
 "#,
         BTreeMap::new(),
         RuntimeOptions {
@@ -1808,16 +1586,15 @@ emit __col.reduce(lambda(acc, x) { acc + x }, 0, [1, 2, 3, 4])
 #[test]
 fn raw_and_triple_strings_preserve_literal_braces() {
     let output = run_source(
-        r#"val doc = __res.raise(__json.read(r'{"a":1,"tpl":"hello {world}"}'))
-emit doc.a
-emit doc.tpl
+        r#"val text = r'hello {world}'
+emit text
 emit """{"nested":true}"""
 "#,
         BTreeMap::new(),
     )
     .unwrap();
 
-    assert_eq!(output, "1\nhello {world}\n{\"nested\":true}");
+    assert_eq!(output, "hello {world}\n{\"nested\":true}");
 }
 
 #[test]
@@ -1825,13 +1602,13 @@ fn scientific_notation_literals_work_in_source_and_json() {
     let output = run_source(
         r#"emit 1e3
 emit 1.5e2
-emit __json.write({big: 1e10})
+emit {big: 1e10}.big
 "#,
         BTreeMap::new(),
     )
     .unwrap();
 
-    assert_eq!(output, "1000.0\n150.0\n{\"big\":10000000000.0}");
+    assert_eq!(output, "1000.0\n150.0\n10000000000.0");
 }
 
 #[test]
@@ -1852,10 +1629,10 @@ val dt = __dt.datetime({
 emit __dt.isoformat(d)
 emit __dt.isoformat(dt)
 emit __dt.strftime(dt, "%F %T %:z")
-emit __dt.weekday_name(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
-emit __dt.month_name(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
-emit __dt.ordinal_day(__res.raise(__dt.parse("2024-02-29", __dt.as_date)))
-emit __dt.iso_week(__res.raise(__dt.parse("2021-01-01", __dt.as_date))).week
+emit __dt.weekday_name(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.month_name(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.ordinal_day(__dt.parse("2024-02-29", __dt.as_date))
+emit __dt.iso_week(__dt.parse("2021-01-01", __dt.as_date)).week
 emit __dt.offset_minutes(dt)
 emit __dt.days_in_month(2024, 2)
 emit __dt.is_leap_year(2024)
@@ -1874,7 +1651,7 @@ emit __dt.is_leap_year(2024)
 fn temporal_builtins_cover_epoch_arithmetic_and_json() {
     let output = run_source(
         r#"val end_of_jan = __dt.date(2024, 1, 31)
-val stamp = __res.raise(__dt.parse("2024-01-31T23:00:00Z", __dt.as_datetime))
+val stamp = __dt.parse("2024-01-31T23:00:00Z", __dt.as_datetime)
 val jump = __dt.duration({hours: 2, minutes: 30})
 
 emit __dt.isoformat(__dt.add(end_of_jan, 1, __dt.months))
@@ -1885,12 +1662,7 @@ emit __dt.isoformat(__dt.from_epoch(0.5, __dt.seconds))
 emit __dt.epoch(__dt.from_epoch(0.5, __dt.seconds), __dt.seconds)
 emit __dt.isoformat(__dt.from_epoch(1500, __dt.milliseconds))
 emit __dt.diff(__dt.date(2024, 3, 5), __dt.date(2024, 3, 1), __dt.days)
-emit __dt.diff(__res.raise(__dt.parse("1970-01-01T00:00:01.5Z", __dt.as_datetime)), __res.raise(__dt.parse("1970-01-01T00:00:00Z", __dt.as_datetime)), __dt.seconds)
-emit __json.write({
-  d: __dt.date(2024, 2, 29),
-  dt: __res.raise(__dt.parse("2024-02-29T12:00:00Z", __dt.as_datetime)),
-  dur: __dt.duration({minutes: 90}),
-})
+emit __dt.diff(__dt.parse("1970-01-01T00:00:01.5Z", __dt.as_datetime), __dt.parse("1970-01-01T00:00:00Z", __dt.as_datetime), __dt.seconds)
 "#,
         BTreeMap::new(),
     )
@@ -1898,7 +1670,7 @@ emit __json.write({
 
     assert_eq!(
         output,
-        "2024-02-29\n2024-02-01T01:30:00Z\n2024-01-31T00:00:00Z\n2024-01-31T23:59:59.999999999Z\n1970-01-01T00:00:00.5Z\n0.5\n1970-01-01T00:00:01.5Z\n4\n1.5\n{\"d\":\"2024-02-29\",\"dt\":\"2024-02-29T12:00:00Z\",\"dur\":\"PT1H30M\"}"
+        "2024-02-29\n2024-02-01T01:30:00Z\n2024-01-31T00:00:00Z\n2024-01-31T23:59:59.999999999Z\n1970-01-01T00:00:00.5Z\n0.5\n1970-01-01T00:00:01.5Z\n4\n1.5"
     );
 }
 
@@ -1910,9 +1682,9 @@ fn temporal_values_compare_and_sort_consistently() {
   __dt.date(2024, 1, 1),
   __dt.date(2024, 1, 2),
 ])
-emit __res.raise(__dt.parse("2024-01-01T00:00:00+02:00", __dt.as_datetime)) == __res.raise(__dt.parse("2023-12-31T22:00:00Z", __dt.as_datetime))
-emit __res.raise(__dt.parse("2024-01-01T00:00:00Z", __dt.as_datetime)) < __res.raise(__dt.parse("2024-01-02T00:00:00Z", __dt.as_datetime))
-emit __res.raise(__dt.parse("PT90S", __dt.as_duration)) > __res.raise(__dt.parse("PT1M", __dt.as_duration))
+emit __dt.parse("2024-01-01T00:00:00+02:00", __dt.as_datetime) == __dt.parse("2023-12-31T22:00:00Z", __dt.as_datetime)
+emit __dt.parse("2024-01-01T00:00:00Z", __dt.as_datetime) < __dt.parse("2024-01-02T00:00:00Z", __dt.as_datetime)
+emit __dt.parse("PT90S", __dt.as_duration) > __dt.parse("PT1M", __dt.as_duration)
 "#,
         BTreeMap::new(),
     )
@@ -1922,4 +1694,207 @@ emit __res.raise(__dt.parse("PT90S", __dt.as_duration)) > __res.raise(__dt.parse
         output,
         "[2024-01-01, 2024-01-02, 2024-01-03]\ntrue\ntrue\ntrue"
     );
+}
+
+#[test]
+fn namespace_executes_body_and_exports_bindings() {
+    let output = run_source(
+        r#"namespace math {
+  val pi = 3.14
+  func double(x) { return x * 2 }
+}
+emit math.pi
+emit math.double(21)
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "3.14\n42");
+}
+
+#[test]
+fn struct_creates_map_with_defaults() {
+    let output = run_source(
+        r#"struct Point {
+  x: 0
+  y: 0
+}
+emit Point.x
+emit Point.y
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "0\n0");
+}
+
+#[test]
+fn struct_without_defaults_uses_null() {
+    let output = run_source(
+        r#"struct User {
+  name
+  age
+}
+emit User.name == null
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "true");
+}
+
+#[test]
+fn enum_creates_variant_maps() {
+    let output = run_source(
+        r#"enum Status {
+  active,
+  inactive,
+}
+emit Status.active.kind
+emit Status.inactive.kind
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "active\ninactive");
+}
+
+#[test]
+fn type_alias_is_noop_at_runtime() {
+    let output = run_source(
+        r#"type Url = string
+emit "ok"
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn compound_addition_operator_works() {
+    let output = run_source(
+        r#"var count = 0
+count += 5
+count += 3
+emit count
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "8");
+}
+
+#[test]
+fn compound_subtraction_operator_works() {
+    let output = run_source(
+        r#"var total = 100
+total -= 30
+emit total
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "70");
+}
+
+#[test]
+fn non_ascii_identifiers_work_at_runtime() {
+    let output = run_source(
+        r#"val nome = "Ana"
+val idade = 30
+emit nome
+emit idade
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "Ana\n30");
+}
+
+#[test]
+fn nested_namespace_produces_nested_maps() {
+    let output = run_source(
+        r#"namespace outer {
+  val x = 1
+  namespace inner {
+    val y = 2
+  }
+}
+emit outer.x
+emit outer.inner.y
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "1\n2");
+}
+
+#[test]
+fn net_listen_and_close_work() {
+    let output = run_source(
+        r#"use net
+use io
+val srv = net.listen("127.0.0.1:0")
+io.close(srv)
+emit "ok"
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "ok");
+}
+
+#[test]
+fn math_random_returns_float_between_zero_and_one() {
+    let output = run_source(
+        r#"use math
+val r = math.random()
+emit r >= 0.0 and r < 1.0
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "true");
+}
+
+#[test]
+fn math_random_int_returns_value_in_range() {
+    let output = run_source(
+        r#"use math
+val r = math.random_int(10, 20)
+emit r >= 10 and r <= 20
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "true");
+}
+
+#[test]
+fn base64_roundtrip_preserves_data() {
+    let output = run_source(
+        r#"use base64
+val original = b"Hello, Nodia!"
+val encoded = base64.encode(original)
+val decoded = base64.decode(encoded)
+emit original == decoded
+"#,
+        BTreeMap::new(),
+    )
+    .unwrap();
+
+    assert_eq!(output, "true");
 }

@@ -96,8 +96,9 @@ nodia 0.8.3
 
 ## Status
 
-Nodia 0.8.3 keeps the `0.7.5` text-semantics baseline intact and now carries
-recoverable errors through IO, decode, regex matching, JSON, CSV, and datetime
-parsing. This release adds structured nested `context` / `span` details to
-recoverable failures and preserves partial output when a later fatal boundary
-such as `result.raise(...)` aborts the run.
+Nodia 0.8.3 keeps the `0.7.5` text-semantics baseline intact and now exposes
+recoverable failures through `try` / `catch` / `throw`, plus first-class
+pattern matching with `match` / `case` / `default`.
+IO, decode, regex matching, JSON, CSV, and datetime parsing now return normal
+values on success and raise structured runtime errors on failure, carrying
+nested `context` / `span` details that can be caught explicitly.

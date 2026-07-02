@@ -11,12 +11,11 @@ use text
 use numbers
 use json
 use csv
-use result
 
 emit text.upper("ana")
 emit numbers.abs(-4)
-val doc = result.raise(json.read(r'{"name":"Ana"}'))
-val text = csv.write([{name: "Ana"}])
+val doc = json.parse(r'{"name":"Ana"}')
+val table = csv.stringify([{name: "Ana"}], ["name"])
 ```
 
 These are namespace calls, not methods on arbitrary values.
@@ -46,11 +45,17 @@ Available stdlib namespaces:
 * `collections`
 * `format`
 * `io`
+* `scan`
 * `system`
-* `result`
 * `datetime`
+
+File-backed stdlib modules resolved through `use name`:
+
 * `json`
 * `csv`
+* `http`
+* `log`
+* `test`
 
 ## Sections
 
@@ -63,12 +68,12 @@ Available stdlib namespaces:
   `collections.sort`, `collections.unique`.
 * [Date & Time](datetime.md) — dates, datetimes, durations, parsing,
   formatting, epoch conversion, arithmetic.
-* [Data](data.md) — `use json`, `use csv`.
+* [Data](data.md) — `json.parse`, `json.stringify`, `csv.parse`,
+  `csv.stringify`.
 * [Format](format.md) — `format.format`, `format.pad`, `format.fixed`.
+* [Scan](scan.md) — `scan.cursor`, prefix matching, explicit spans, scanner
+  errors, staged parsing helpers.
 * [System](system.md) — `system.args`, `system.env`, `system.exit`.
-* [Result](result.md) — `result.ok`, `result.err`, `result.is_ok`,
-  `result.is_err`, `result.value`, `result.value_or`, `result.error`,
-  `result.then`, `result.recover`, `result.raise`.
 * [Conversion](conversion.md) — `conversion.string`, `conversion.bool`,
   `conversion.int`, `conversion.float`.
 * [Regex](regex.md) — builtin `regex { ... }`, `regex.test`, `regex.find`,

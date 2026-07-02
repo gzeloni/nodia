@@ -47,6 +47,31 @@ impl Runtime {
         pick: &[String],
         hide: &[String],
     ) -> NodiaResult<()> {
+        // First, try loading a Nodia stdlib file (.nod)
+        if let Ok(resolved) = self.resolve_stdlib_file(name) {
+            let module = self.load_module(&resolved)?;
+            let names = self.selected_use_names(&module, pick, hide)?;
+            if let Some(alias) = alias {
+                let mut ns = BTreeMap::new();
+                for n in names {
+                    ns.insert(n.clone(), Value::UseBinding(module.clone(), n));
+                }
+                return self.define(alias, Value::Map(ns), false);
+            }
+            if pick.is_empty() {
+                let mut ns = BTreeMap::new();
+                for n in names {
+                    ns.insert(n.clone(), Value::UseBinding(module.clone(), n.clone()));
+                }
+                return self.define(name, Value::Map(ns), false);
+            }
+            for n in names {
+                self.define(&n, Value::UseBinding(module.clone(), n.clone()), false)?;
+            }
+            return Ok(());
+        }
+
+        // Fall back to Rust builtins
         let Some(items) = stdlib::module_items(name) else {
             return Err(NodiaError::runtime(format!(
                 "unknown stdlib module '{name}'"
@@ -109,8 +134,6 @@ impl Runtime {
             "text.byte" => Some(Value::String("byte".to_string())),
             "text.scalar" => Some(Value::String("scalar".to_string())),
             "text.grapheme" => Some(Value::String("grapheme".to_string())),
-            "format.left" => Some(Value::String("left".to_string())),
-            "format.right" => Some(Value::String("right".to_string())),
             "regex.any" => Some(Value::String("any".to_string())),
             "regex.full" => Some(Value::String("full".to_string())),
             "regex.first" => Some(Value::String("first".to_string())),
@@ -249,6 +272,54 @@ impl Runtime {
         Err(NodiaError::io(format!("cannot resolve use '{path}'")))
     }
 
+    fn resolve_stdlib_file(&self, name: &str) -> NodiaResult<PathBuf> {
+        let stdlib_dir = self.stdlib_dir();
+        let candidate = stdlib_dir.join(format!("{name}.nod"));
+        if candidate.exists() {
+            return candidate.canonicalize().map_err(|err| {
+                NodiaError::io(format!(
+                    "cannot resolve stdlib '{}': {err}",
+                    candidate.display()
+                ))
+            });
+        }
+        Err(NodiaError::io(format!("stdlib module '{name}' not found")))
+    }
+
+    fn stdlib_dir(&self) -> PathBuf {
+        // 1. NODIA_ROOT env var (override for dev/custom installs)
+        if let Ok(root) = std::env::var("NODIA_ROOT") {
+            let candidate = PathBuf::from(&root).join("lib/nodia/stdlib");
+            if candidate.exists() {
+                return candidate;
+            }
+            // Also try stdlib/ directly under NODIA_ROOT (dev layout)
+            let candidate = PathBuf::from(&root).join("stdlib");
+            if candidate.exists() {
+                return candidate;
+            }
+        }
+        // 2. Go-style: derive from binary location
+        //    Installed:  <exe>/../../lib/nodia/stdlib/
+        if let Ok(exe) = std::env::current_exe() {
+            let root = exe
+                .parent()
+                .and_then(|p| p.parent())
+                .map(|p| p.to_path_buf());
+            if let Some(root) = root {
+                let candidate = root.join("lib/nodia/stdlib");
+                if candidate.exists() {
+                    return candidate;
+                }
+                let candidate = root.join("stdlib");
+                if candidate.exists() {
+                    return candidate;
+                }
+            }
+        }
+        PathBuf::from("stdlib")
+    }
+
     pub(super) fn publish_statement(&mut self, statement: &Stmt) -> NodiaResult<()> {
         let Some(name) = statement_export_name(statement) else {
             return Ok(());
@@ -318,13 +389,29 @@ impl Runtime {
         captures
     }
 
-    pub(super) fn function_value(&self, name: &str, params: &[String], body: &[Stmt]) -> Value {
+    pub(super) fn function_value(
+        &mut self,
+        name: &str,
+        params: &[FuncParam],
+        body: &[Stmt],
+    ) -> Value {
         let mut captures = self.capture_visible_bindings();
         let self_binding = binding_ref(Value::Null, false);
         captures.insert(name.to_string(), self_binding.clone());
 
+        let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        let defaults: Vec<Option<Value>> = params
+            .iter()
+            .map(|p| {
+                p.default
+                    .as_ref()
+                    .map(|d| self.eval(d).unwrap_or(Value::Null))
+            })
+            .collect();
+
         let function = Value::Function(Function {
-            params: params.to_vec(),
+            params: param_names,
+            defaults,
             body: body.to_vec(),
             captures,
         });
@@ -332,9 +419,19 @@ impl Runtime {
         function
     }
 
-    pub(super) fn lambda_value(&self, params: &[String], body: &[Stmt]) -> Value {
+    pub(super) fn lambda_value(&mut self, params: &[FuncParam], body: &[Stmt]) -> Value {
+        let param_names: Vec<String> = params.iter().map(|p| p.name.clone()).collect();
+        let defaults: Vec<Option<Value>> = params
+            .iter()
+            .map(|p| {
+                p.default
+                    .as_ref()
+                    .map(|d| self.eval(d).unwrap_or(Value::Null))
+            })
+            .collect();
         Value::Function(Function {
-            params: params.to_vec(),
+            params: param_names,
+            defaults,
             body: body.to_vec(),
             captures: self.capture_visible_bindings(),
         })

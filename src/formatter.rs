@@ -3,7 +3,10 @@
 
 //! Canonical source formatter for the Nodia AST.
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
+use crate::ast::{
+    AssignTarget, BinaryOp, Expr, ForBinding, FuncParam, MatchArm, MatchPattern, Program, Stmt,
+    UnaryOp, UseTarget,
+};
 use crate::interpolation::{self, Chunk as InterpolationChunk};
 use crate::regex::{
     RegexCharSet, RegexCharSetItem, RegexCondition, RegexFlag, RegexGroupKind, RegexNode,
@@ -109,6 +112,13 @@ impl Formatter {
                 self.write_indent();
                 self.out.push_str("return");
             }
+            Stmt::Throw(expr) => {
+                self.write_indent();
+                let prefix = "throw ";
+                self.out.push_str(prefix);
+                self.out
+                    .push_str(&format_expr_for_line(expr, self.indent, prefix.len()));
+            }
             Stmt::Emit(expr) => {
                 self.write_indent();
                 let prefix = "emit ";
@@ -116,6 +126,16 @@ impl Formatter {
                 self.out
                     .push_str(&format_expr_for_line(expr, self.indent, prefix.len()));
             }
+            Stmt::Try {
+                try_branch,
+                catch_name,
+                catch_branch,
+            } => self.write_try(try_branch, catch_name, catch_branch),
+            Stmt::Match {
+                value,
+                arms,
+                default,
+            } => self.write_match(value, arms, default.as_deref()),
             Stmt::If {
                 condition,
                 then_branch,
@@ -155,12 +175,76 @@ impl Formatter {
                 self.write_indent();
                 self.out.push_str(&format_expr(expr, self.indent));
             }
+            Stmt::Namespace { name, body } => {
+                self.write_indent();
+                self.out.push_str(&format!("namespace {name} "));
+                self.write_block(body);
+            }
+            Stmt::Struct { name, fields } => {
+                self.write_indent();
+                self.out.push_str(&format!("struct {name} "));
+                self.out.push_str("{\n");
+                self.indent += 1;
+                for field in fields {
+                    self.write_indent();
+                    self.out.push_str(&field.name);
+                    if let Some(default) = &field.default {
+                        self.out.push_str(": ");
+                        self.out.push_str(&format_expr(default, self.indent));
+                    }
+                    self.out.push('\n');
+                }
+                self.indent -= 1;
+                self.write_indent();
+                self.out.push('}');
+            }
+            Stmt::Enum { name, variants } => {
+                self.write_indent();
+                self.out.push_str(&format!("enum {name} {{"));
+                if variants.iter().all(|v| {
+                    current_line_width(self.indent) + name.len() + 7 + v.len() + 2 <= LINE_WIDTH
+                }) && variants.len() <= 3
+                {
+                    self.out.push(' ');
+                    self.out.push_str(&variants.join(", "));
+                    self.out.push_str(" }");
+                } else {
+                    self.out.push('\n');
+                    self.indent += 1;
+                    for variant in variants {
+                        self.write_indent();
+                        self.out.push_str(variant);
+                        self.out.push_str(",\n");
+                    }
+                    self.indent -= 1;
+                    self.write_indent();
+                    self.out.push('}');
+                }
+            }
+            Stmt::TypeAlias { name, target } => {
+                self.write_indent();
+                let prefix = format!("type {name} = ");
+                self.out.push_str(&prefix);
+                self.out
+                    .push_str(&format_expr_for_line(target, self.indent, prefix.len()));
+            }
         }
     }
 
-    fn write_function(&mut self, name: &str, params: &[String], body: &[Stmt]) {
+    fn write_function(&mut self, name: &str, params: &[FuncParam], body: &[Stmt]) {
         self.write_indent();
-        let inline = format!("func {name}({}) ", params.join(", "));
+        let params_str = params
+            .iter()
+            .map(|p| {
+                if let Some(default) = &p.default {
+                    format!("{} = {}", p.name, format_expr(default, self.indent))
+                } else {
+                    p.name.clone()
+                }
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        let inline = format!("func {name}({params_str}) ");
         if current_line_width(self.indent) + inline.len() <= LINE_WIDTH {
             self.out.push_str(&inline);
             self.write_block(body);
@@ -173,7 +257,11 @@ impl Formatter {
         self.indent += 1;
         for param in params {
             self.write_indent();
-            self.out.push_str(param);
+            self.out.push_str(&param.name);
+            if let Some(default) = &param.default {
+                self.out.push_str(" = ");
+                self.out.push_str(&format_expr(default, self.indent));
+            }
             self.out.push_str(",\n");
         }
         self.indent -= 1;
@@ -212,6 +300,49 @@ impl Formatter {
         }
     }
 
+    fn write_try(&mut self, try_branch: &[Stmt], catch_name: &str, catch_branch: &[Stmt]) {
+        self.write_indent();
+        self.out.push_str("try ");
+        self.write_block(try_branch);
+        self.out.push_str(" catch ");
+        self.out.push_str(catch_name);
+        self.out.push(' ');
+        self.write_block(catch_branch);
+    }
+
+    fn write_match(&mut self, value: &Expr, arms: &[MatchArm], default: Option<&[Stmt]>) {
+        self.write_indent();
+        self.out.push_str("match ");
+        self.out.push_str(&format_expr(value, self.indent));
+        self.out.push_str(" {");
+
+        if arms.is_empty() && default.is_none() {
+            self.out.push('}');
+            return;
+        }
+
+        self.out.push('\n');
+        self.indent += 1;
+        for arm in arms {
+            self.write_indent();
+            self.out.push_str("case ");
+            self.out
+                .push_str(&format_match_pattern(&arm.pattern, self.indent));
+            self.out.push(' ');
+            self.write_block(&arm.body);
+            self.out.push('\n');
+        }
+        if let Some(default_body) = default {
+            self.write_indent();
+            self.out.push_str("default ");
+            self.write_block(default_body);
+            self.out.push('\n');
+        }
+        self.indent -= 1;
+        self.write_indent();
+        self.out.push('}');
+    }
+
     fn write_block(&mut self, statements: &[Stmt]) {
         self.out.push('{');
         if statements.is_empty() {
@@ -239,10 +370,20 @@ fn needs_blank_line(prev: &Stmt, next: &Stmt) -> bool {
     }
     matches!(
         prev,
-        Stmt::Func { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
+        Stmt::Func { .. }
+            | Stmt::Try { .. }
+            | Stmt::Match { .. }
+            | Stmt::If { .. }
+            | Stmt::For { .. }
+            | Stmt::While { .. }
     ) || matches!(
         next,
-        Stmt::Func { .. } | Stmt::If { .. } | Stmt::For { .. } | Stmt::While { .. }
+        Stmt::Func { .. }
+            | Stmt::Try { .. }
+            | Stmt::Match { .. }
+            | Stmt::If { .. }
+            | Stmt::For { .. }
+            | Stmt::While { .. }
     )
 }
 
@@ -291,6 +432,7 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -
             let op = match op {
                 UnaryOp::Negate => "-",
                 UnaryOp::Not => "not ",
+                UnaryOp::BitNot => "~",
             };
             format!("{}{}", op, format_expr_prec(expr, prec, indent, width))
         }
@@ -307,6 +449,11 @@ fn format_expr_prec(expr: &Expr, parent_prec: u8, indent: usize, width: usize) -
                 BinaryOp::LessEqual => "<=",
                 BinaryOp::Greater => ">",
                 BinaryOp::GreaterEqual => ">=",
+                BinaryOp::BitOr => "|",
+                BinaryOp::BitXor => "^",
+                BinaryOp::BitAnd => "&",
+                BinaryOp::ShiftLeft => "<<",
+                BinaryOp::ShiftRight => ">>",
                 BinaryOp::And => "and",
                 BinaryOp::Or => "or",
             };
@@ -348,12 +495,16 @@ fn precedence(expr: &Expr) -> u8 {
             BinaryOp::And => 2,
             BinaryOp::Equal | BinaryOp::NotEqual => 3,
             BinaryOp::Less | BinaryOp::LessEqual | BinaryOp::Greater | BinaryOp::GreaterEqual => 4,
-            BinaryOp::Add | BinaryOp::Subtract => 5,
-            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 6,
+            BinaryOp::BitOr => 5,
+            BinaryOp::BitXor => 6,
+            BinaryOp::BitAnd => 7,
+            BinaryOp::ShiftLeft | BinaryOp::ShiftRight => 8,
+            BinaryOp::Add | BinaryOp::Subtract => 9,
+            BinaryOp::Multiply | BinaryOp::Divide | BinaryOp::Modulo => 10,
         },
-        Expr::Unary { .. } => 7,
-        Expr::Call { .. } | Expr::Get { .. } | Expr::Index { .. } => 8,
-        _ => 9,
+        Expr::Unary { .. } => 11,
+        Expr::Call { .. } | Expr::Get { .. } | Expr::Index { .. } => 12,
+        _ => 13,
     }
 }
 
@@ -385,17 +536,6 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
                 .collect::<Vec<_>>();
             format_map(&pairs, indent)
         }
-        Value::Result(value) => match value {
-            crate::value::ResultValue::Ok(value) => format!(
-                "result.ok({})",
-                format_literal(value, indent, available_width(indent, 0))
-            ),
-            crate::value::ResultValue::Err(error) => format!(
-                "result.err({}, {})",
-                quote_string(&error.code),
-                quote_string(&error.message)
-            ),
-        },
         Value::Date(value) => format!(
             "datetime.parse({}, datetime.as_date)",
             quote_string(&value.isoformat())
@@ -414,6 +554,8 @@ fn format_literal(value: &Value, indent: usize, width: usize) -> String {
         }
         Value::Regex(regex) => quote_string(regex.rendered()),
         Value::Stream(stream) => stream.to_string(),
+        Value::Scanner(_) => "<scanner>".to_string(),
+        Value::Lazy(lazy) => format!("<lazy {}>", lazy),
         Value::UseBinding(_, name) => format!("<use {name}>"),
         Value::BuiltinFunction(name) => format!("<builtin {name}>"),
         Value::Function(_) => "<func>".to_string(),
@@ -443,9 +585,20 @@ fn format_call(callee: &Expr, args: &[Expr], indent: usize, width: usize) -> Str
     out
 }
 
-fn format_lambda(params: &[String], body: &[Stmt], indent: usize) -> String {
+fn format_lambda(params: &[FuncParam], body: &[Stmt], indent: usize) -> String {
+    let params_str = params
+        .iter()
+        .map(|p| {
+            if let Some(default) = &p.default {
+                format!("{} = {}", p.name, format_expr(default, indent))
+            } else {
+                p.name.clone()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(", ");
     let mut formatter = Formatter {
-        out: format!("lambda({}) ", params.join(", ")),
+        out: format!("lambda({params_str}) "),
         indent,
     };
     formatter.write_block(body);
@@ -493,6 +646,62 @@ fn format_map(pairs: &[(String, Expr)], indent: usize) -> String {
     out.push_str(&indent_string(indent));
     out.push('}');
     out
+}
+
+fn format_match_pattern(pattern: &MatchPattern, indent: usize) -> String {
+    match pattern {
+        MatchPattern::Wildcard => "_".to_string(),
+        MatchPattern::Capture(name) => name.clone(),
+        MatchPattern::Literal(value) => format_literal(value, indent, available_width(indent, 0)),
+        MatchPattern::List(items) => {
+            if items.is_empty() {
+                return "[]".to_string();
+            }
+            let inline_items = items
+                .iter()
+                .map(|item| format_match_pattern(item, indent))
+                .collect::<Vec<_>>();
+            let inline = format!("[{}]", inline_items.join(", "));
+            if fits_inline(&inline, available_width(indent, 0)) {
+                return inline;
+            }
+
+            let mut out = String::new();
+            out.push_str("[\n");
+            for item in items {
+                out.push_str(&indent_string(indent + 1));
+                out.push_str(&format_match_pattern(item, indent + 1));
+                out.push_str(",\n");
+            }
+            out.push_str(&indent_string(indent));
+            out.push(']');
+            out
+        }
+        MatchPattern::Map(entries) => {
+            if entries.is_empty() {
+                return "{}".to_string();
+            }
+            let mut out = String::new();
+            out.push_str("{\n");
+            for (key, pattern) in entries {
+                out.push_str(&indent_string(indent + 1));
+                if matches!(pattern, MatchPattern::Capture(name) if name == key)
+                    && is_identifier_key(key)
+                {
+                    out.push_str(key);
+                } else {
+                    let key = format_map_key(key);
+                    out.push_str(&key);
+                    out.push_str(": ");
+                    out.push_str(&format_match_pattern(pattern, indent + 1));
+                }
+                out.push_str(",\n");
+            }
+            out.push_str(&indent_string(indent));
+            out.push('}');
+            out
+        }
+    }
 }
 
 fn format_regex(pattern: &RegexPattern, indent: usize) -> String {
@@ -872,18 +1081,27 @@ fn split_string_literal(value: &str, max_chars: usize) -> Vec<String> {
 }
 
 fn format_map_key(key: &str) -> String {
-    if key
-        .chars()
-        .next()
-        .is_some_and(|ch| ch.is_ascii_alphabetic() || ch == '_')
-        && key
-            .chars()
-            .all(|ch| ch.is_ascii_alphanumeric() || ch == '_')
-    {
+    if is_identifier_key(key) {
         key.to_string()
     } else {
         quote_string(key)
     }
+}
+
+fn is_identifier_key(key: &str) -> bool {
+    let mut chars = key.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    is_identifier_start(first) && chars.all(is_identifier_continue)
+}
+
+fn is_identifier_start(ch: char) -> bool {
+    ch.is_alphabetic() || ch == '_'
+}
+
+fn is_identifier_continue(ch: char) -> bool {
+    ch.is_alphanumeric() || ch == '_'
 }
 
 fn quote_string(value: &str) -> String {
@@ -1087,6 +1305,21 @@ emit hit.named.val"#;
     }
 
     #[test]
+    fn formats_try_catch_and_throw_canonically() {
+        let source = r#"try{throw {code: "E8000", message: "boom"}}catch err{emit err.code}"#;
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("try {"));
+        assert!(formatted.contains("throw {"));
+        assert!(formatted.contains("code: \"E8000\","));
+        assert!(formatted.contains("message: \"boom\","));
+        assert!(formatted.contains("} catch err {"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
     fn keeps_long_interpolated_strings_valid_after_formatting() {
         let source = r#"val user = {profile: {display_name: "Ana"}}
 emit "prefix {{literal}} value={user.profile.display_name} suffix suffix suffix suffix suffix""#;
@@ -1096,6 +1329,97 @@ emit "prefix {{literal}} value={user.profile.display_name} suffix suffix suffix 
 
         assert!(formatted.contains("\"prefix {{literal}} value=\" +"));
         assert!(formatted.contains("\"{user.profile.display_name}\""));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_namespace_declarations() {
+        let source = "namespace http {\nval timeout = 30\nfunc get(url) {\nreturn url\n}\n}\nemit http.timeout";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("namespace http {"));
+        assert!(formatted.contains("  val timeout = 30"));
+        assert!(formatted.contains("  func get(url) {"));
+        assert!(formatted.contains("emit http.timeout"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_struct_declarations() {
+        let source = "struct Point {\nx: 0\ny: 0\n}\nemit Point.x";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("struct Point {"));
+        assert!(formatted.contains("  x: 0"));
+        assert!(formatted.contains("  y: 0"));
+        assert!(formatted.contains("emit Point.x"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_struct_without_defaults() {
+        let source = "struct User {\nname\nage\n}";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("struct User {"));
+        assert!(formatted.contains("  name"));
+        assert!(formatted.contains("  age"));
+        assert!(!formatted.contains("name:"));
+        assert!(!formatted.contains("age:"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_enum_inline_when_short() {
+        let source = "enum Status {\nactive,\ninactive,\n}";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("enum Status { active, inactive }"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_enum_multiline_when_long() {
+        let source = "enum Color {\nred,\ngreen,\nblue,\nyellow,\n}";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("enum Color {"));
+        assert!(formatted.contains("  red,"));
+        assert!(formatted.contains("  green,"));
+        assert!(formatted.contains("  blue,"));
+        assert!(formatted.contains("  yellow,"));
+        check_source(&formatted).unwrap();
+    }
+
+    #[test]
+    fn formats_type_alias() {
+        let source = "type Url = string";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert_eq!(formatted.trim(), "type Url = string");
+    }
+
+    #[test]
+    fn keeps_non_ascii_map_keys_unquoted_when_they_are_identifiers() {
+        let source = "val dados = {über: 1}\nemit dados.über";
+        let tokens = Lexer::new(source).tokenize().unwrap();
+        let program = Parser::new(tokens).parse_program().unwrap();
+        let formatted = format_program(&program);
+
+        assert!(formatted.contains("über: 1"));
+        assert!(!formatted.contains("\"über\": 1"));
         check_source(&formatted).unwrap();
     }
 }

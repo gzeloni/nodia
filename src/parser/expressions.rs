@@ -61,7 +61,7 @@ impl Parser {
     }
 
     pub(super) fn comparison(&mut self) -> NodiaResult<Expr> {
-        let mut expr = self.term()?;
+        let mut expr = self.bit_or()?;
         loop {
             let op = if self.match_kind(&TokenKind::Less) {
                 Some(BinaryOp::Less)
@@ -71,6 +71,70 @@ impl Parser {
                 Some(BinaryOp::Greater)
             } else if self.match_kind(&TokenKind::GreaterEqual) {
                 Some(BinaryOp::GreaterEqual)
+            } else {
+                None
+            };
+            let Some(op) = op else { break };
+            self.skip_separators();
+            let right = self.bit_or()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    pub(super) fn bit_or(&mut self) -> NodiaResult<Expr> {
+        let mut expr = self.bit_xor()?;
+        while self.match_kind(&TokenKind::Pipe) {
+            self.skip_separators();
+            let right = self.bit_xor()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitOr,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    pub(super) fn bit_xor(&mut self) -> NodiaResult<Expr> {
+        let mut expr = self.bit_and()?;
+        while self.match_kind(&TokenKind::Caret) {
+            self.skip_separators();
+            let right = self.bit_and()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitXor,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    pub(super) fn bit_and(&mut self) -> NodiaResult<Expr> {
+        let mut expr = self.shift()?;
+        while self.match_kind(&TokenKind::Ampersand) {
+            self.skip_separators();
+            let right = self.shift()?;
+            expr = Expr::Binary {
+                left: Box::new(expr),
+                op: BinaryOp::BitAnd,
+                right: Box::new(right),
+            };
+        }
+        Ok(expr)
+    }
+
+    pub(super) fn shift(&mut self) -> NodiaResult<Expr> {
+        let mut expr = self.term()?;
+        loop {
+            let op = if self.match_kind(&TokenKind::LeftShift) {
+                Some(BinaryOp::ShiftLeft)
+            } else if self.match_kind(&TokenKind::RightShift) {
+                Some(BinaryOp::ShiftRight)
             } else {
                 None
             };
@@ -144,6 +208,13 @@ impl Parser {
             self.skip_separators();
             return Ok(Expr::Unary {
                 op: UnaryOp::Not,
+                expr: Box::new(self.unary()?),
+            });
+        }
+        if self.match_kind(&TokenKind::Tilde) {
+            self.skip_separators();
+            return Ok(Expr::Unary {
+                op: UnaryOp::BitNot,
                 expr: Box::new(self.unary()?),
             });
         }

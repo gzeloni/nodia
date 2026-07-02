@@ -1,0 +1,202 @@
+use net
+use io
+use collections as col
+use conversion as conv
+use numbers
+use text
+
+/* -- HTTP client over TCP -- */
+
+/* ---------------------------------------------------------------------------
+   URL parser
+   Returns {scheme, host, port, path}
+   --------------------------------------------------------------------------- */
+
+func parse_url(raw) {
+  var rest = raw
+  var scheme = "http"
+  var default_port = 80
+
+  if text.starts(rest, "https://") {
+    scheme = "https"
+    default_port = 443
+    rest = text.slice(rest, text.byte, 8, text.len(rest, text.byte))
+  } else if text.starts(rest, "http://") {
+    rest = text.slice(rest, text.byte, 7, text.len(rest, text.byte))
+  } else {
+    throw {
+      code: "E8201",
+      message: "unsupported URL scheme (use http:// or https://): " + raw,
+    }
+  }
+
+  /* Split authority from path -- use the first '/' after the scheme. */
+  var authority = rest
+  var path = "/"
+
+  if text.contains(rest, "/") {
+    val parts = text.split(rest, "/")
+    authority = parts[0]
+
+    /* Reconstruct path from remaining segments. */
+    path = ""
+    var j = 1
+    while j < col.len(parts) {
+      path = path + "/" + parts[j]
+      j = j + 1
+    }
+    if path == "" { path = "/" }
+  }
+
+  /* Split host:port. */
+  var host = authority
+  var port = default_port
+
+  if text.contains(authority, ":") {
+    val parts = text.split(authority, ":")
+    host = parts[0]
+    port = numbers.int(parts[1])
+  }
+
+  return {
+    scheme: scheme,
+    host: host,
+    port: port,
+    path: path,
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Find the byte position of the first ':' in a string line.
+   Returns -1 if not found.
+   --------------------------------------------------------------------------- */
+
+func find_colon(line) {
+  val n = text.len(line, text.byte)
+  var i = 0
+  while i < n {
+    if text.slice(line, text.byte, i, i + 1) == ":" {
+      return i
+    }
+    i = i + 1
+  }
+  return -1
+}
+
+/* ---------------------------------------------------------------------------
+   Send an HTTP/1.1 request and parse the response.
+   --------------------------------------------------------------------------- */
+
+func request(method, url, headers, body) {
+  if headers == null { headers = {} }
+  if body == null { body = "" }
+
+  val parsed = parse_url(url)
+
+  /* Build request string. */
+  var req = method + " " + parsed.path + " HTTP/1.1\r\n"
+  req = req + "Host: " + parsed.host + "\r\n"
+
+  if col.get(headers, "User-Agent", "") == "" {
+    req = req + "User-Agent: Nodia-stdlib/0.1\r\n"
+  }
+  if col.get(headers, "Accept", "") == "" {
+    req = req + "Accept: */*\r\n"
+  }
+  if body != "" and col.get(headers, "Content-Length", "") == "" {
+    req = req + "Content-Length: " +
+          conv.string(text.len(body, text.byte)) + "\r\n"
+  }
+
+  /* User-supplied headers. */
+  for k in headers {
+    req = req + k + ": " + conv.string(headers[k]) + "\r\n"
+  }
+
+  req = req + "Connection: close\r\n"
+  req = req + "\r\n"
+  req = req + body
+
+  /* Connect and send. */
+  val conn = net.dial(parsed.host + ":" + conv.string(parsed.port))
+  io.write(conn, req)
+
+  /* -- Read status line -- */
+  val status_line = io.readln(conn)
+  if status_line == "" {
+    io.close(conn)
+    throw { code: "E8202", message: "empty response from server" }
+  }
+
+  var status = 0
+  if text.starts(status_line, "HTTP/") {
+    val parts = text.split(status_line, " ")
+    if col.len(parts) >= 2 {
+      status = numbers.int(parts[1])
+    }
+  }
+
+  if status == 0 {
+    io.close(conn)
+    throw {
+      code: "E8203",
+      message: "invalid status line: " + status_line,
+    }
+  }
+
+  /* -- Read headers -- */
+  var resp_headers = {}
+
+  while true {
+    val line = io.readln(conn)
+    if line == "" { break }
+
+    val colon_at = find_colon(line)
+    if colon_at >= 0 {
+      val name = text.trim(
+        text.slice(line, text.byte, 0, colon_at),
+      )
+      val value = text.trim(
+        text.slice(line, text.byte, colon_at + 1,
+                   text.len(line, text.byte)),
+      )
+      resp_headers[name] = value
+    }
+  }
+
+  /* -- Read body -- */
+  var resp_body = ""
+  val content_length = col.get(resp_headers, "Content-Length", "")
+
+  if content_length != "" {
+    val n = numbers.int(content_length)
+    if n > 0 {
+      resp_body = io.read(conn, n)
+    }
+  } else {
+    /* Read until connection closes. */
+    try {
+      while true {
+        val chunk = io.read(conn, 4096)
+        if chunk == "" { break }
+        resp_body = resp_body + chunk
+      }
+    } catch _ { }
+  }
+
+  io.close(conn)
+
+  return {
+    status: status,
+    headers: resp_headers,
+    body: resp_body,
+  }
+}
+
+/* ---------------------------------------------------------------------------
+   Convenience: GET
+   --------------------------------------------------------------------------- */
+
+func get(url) {
+  return request("GET", url, {}, "")
+}

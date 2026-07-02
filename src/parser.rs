@@ -3,7 +3,10 @@
 
 //! Recursive-descent parser for the Nodia grammar.
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
+use crate::ast::{
+    AssignTarget, BinaryOp, Expr, ForBinding, FuncParam, MatchArm, MatchPattern, Program, Stmt,
+    StructField, UnaryOp, UseTarget,
+};
 use crate::error::{NodiaError, NodiaResult};
 use crate::regex as regex_api;
 use crate::regex::{

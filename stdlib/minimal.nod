@@ -1,0 +1,3 @@
+use scan
+use text
+emit "minimal ok"

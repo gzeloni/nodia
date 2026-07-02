@@ -18,6 +18,7 @@ pub mod parser;
 pub mod project;
 pub mod regex;
 pub mod runtime;
+mod scanner;
 pub mod stdlib;
 pub mod temporal;
 mod textcodec;

@@ -36,6 +36,7 @@ impl Runtime {
                         ))),
                     },
                     UnaryOp::Not => Ok(Value::Bool(!value.truthy())),
+                    UnaryOp::BitNot => self.bit_not(value),
                 }
             }
             Expr::Binary { left, op, right } => self.eval_binary(left, *op, right),
@@ -49,7 +50,6 @@ impl Runtime {
                         })?;
                         self.resolve_value(value)
                     }
-                    Value::Result(_) => Err(result_access_error("access field on")),
                     other => Err(NodiaError::runtime(format!(
                         "cannot access field on {}",
                         other.type_name()
@@ -124,6 +124,11 @@ impl Runtime {
             BinaryOp::LessEqual => self.compare(left, right, |ord| ord.is_lt() || ord.is_eq()),
             BinaryOp::Greater => self.compare(left, right, |ord| ord.is_gt()),
             BinaryOp::GreaterEqual => self.compare(left, right, |ord| ord.is_gt() || ord.is_eq()),
+            BinaryOp::BitOr => self.bitwise_binary(left, right, "bitwise or", |a, b| a | b),
+            BinaryOp::BitXor => self.bitwise_binary(left, right, "bitwise xor", |a, b| a ^ b),
+            BinaryOp::BitAnd => self.bitwise_binary(left, right, "bitwise and", |a, b| a & b),
+            BinaryOp::ShiftLeft => self.shift_binary(left, right, "left shift", i64::checked_shl),
+            BinaryOp::ShiftRight => self.shift_binary(left, right, "right shift", i64::checked_shr),
             BinaryOp::And | BinaryOp::Or => unreachable!(),
         }
     }
@@ -169,6 +174,9 @@ impl Runtime {
         if let Some(result) = self.call_io_builtin(name, args)? {
             return Ok(Some(result));
         }
+        if let Some(result) = self.call_scan_builtin(name, args)? {
+            return Ok(Some(result));
+        }
         if let Some(result) = self.call_runtime_builtin(name, args)? {
             return Ok(Some(result));
         }
@@ -206,19 +214,36 @@ impl Runtime {
     where
         I: IntoIterator<Item = Value>,
     {
-        if function.params.len() != arg_count {
+        let total_params = function.params.len();
+        let required_count = function.defaults.iter().filter(|d| d.is_none()).count();
+
+        if arg_count < required_count || arg_count > total_params {
             return Err(NodiaError::runtime(format!(
-                "function expects {} argument(s), got {}",
-                function.params.len(),
-                arg_count
+                "function expects {}-{} argument(s), got {}",
+                required_count, total_params, arg_count
             )));
         }
+
         let has_captures = !function.captures.is_empty();
         if has_captures {
             self.scopes.push(binding_scope(&function.captures));
         }
-        self.scopes.push(HashMap::with_capacity(arg_count));
-        for (name, value) in function.params.iter().zip(arg_values) {
+        self.scopes.push(HashMap::with_capacity(total_params));
+
+        let mut args: Vec<Value> = arg_values.into_iter().collect();
+        // Fill missing args from defaults
+        while args.len() < total_params {
+            let idx = args.len();
+            args.push(
+                function
+                    .defaults
+                    .get(idx)
+                    .and_then(|d| d.clone())
+                    .unwrap_or(Value::Null),
+            );
+        }
+
+        for (name, value) in function.params.iter().zip(args) {
             self.define(name, value, true)?;
         }
         let flow = self.execute_block(&function.body)?;

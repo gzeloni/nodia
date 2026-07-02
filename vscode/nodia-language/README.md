@@ -21,7 +21,7 @@ vscode/nodia-language
 - `{expr}` interpolation inside strings
 - Numbers, operators, punctuation
 - Stdlib-aware completions for `use`
-- Member completions for imported stdlib namespaces such as `result.raise()`, `json.read()`, and `csv.write()`
+- Member completions for imported stdlib namespaces such as `json.parse()`, `csv.stringify()`, and `scan.cursor()`
 - Builtin regex completions such as `regex.find()`, `regex.test()`, `regex.replace()`, and `regex.split()` without any import
 - Regex DSL suggestions inside `regex { ... }`, including `property`, `define`, `call`, `until`, and backtracking verbs
 - `nodia fmt` on save for `.nod` files
@@ -50,18 +50,19 @@ parameterized API surface:
 use text
 use io
 use format
-use result
 use datetime
 use json
 use csv
+use scan
 
 emit text.upper("ana")
-emit result.raise(text.decode(result.raise(io.read("payload.bin", io.bytes)), text.utf8, text.lossy))
+emit text.decode(io.read("payload.bin", io.bytes), text.utf8, text.lossy)
 emit format.pad("42", 5, format.left, "0")
-emit result.raise(datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime))
-emit result.raise(json.read(r'{"name":"Ana"}')).name
-emit result.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
-emit result.raise(regex.find("ana 42", regex { one_or_more digit }, regex.all))
+emit datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime)
+emit json.parse(r'{"name":"Ana"}').name
+emit regex.test("abc-42", "^[a-z]+-\\d+$", regex.full)
+emit regex.find("ana 42", regex { one_or_more digit }, regex.all)
+emit scan.cursor("name=ana")
 ```
 
 Global helpers such as `json_parse`, `csv_read`, `upper`, `read`, `stdin`, and

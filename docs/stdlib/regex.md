@@ -35,13 +35,11 @@ For DSL syntax, see [Regex DSL](../language/regex.md).
 
 ## `test(text, pattern)`
 
-Returns a `result`. On success, the wrapped value is `true` if the pattern
-matches **anywhere** in the text:
+Returns `true` when the pattern matches **anywhere** in the text:
 
 ```bash
 ./target/release/nodia eval '
-use result
-emit result.raise(regex.test("go to https://example.com now", regex {
+emit regex.test("go to https://example.com now", regex {
   "https://"
   one_or_more letter
 }))
@@ -54,12 +52,11 @@ true
 
 ## `test(text, pattern, regex.full)`
 
-Returns `ok(true)` only when the **entire** text matches:
+Returns `true` only when the **entire** text matches:
 
 ```bash
 ./target/release/nodia eval '
-use result
-emit result.raise(regex.test("abc-42", regex {
+emit regex.test("abc-42", regex {
   start
   one_or_more letter
   "-"
@@ -78,13 +75,11 @@ redundant; pick one and stick with it for clarity.
 
 ## `find(text, pattern)`
 
-Returns a `result` whose success value is a structured match map for the first
-occurrence, or `null`.
+Returns a structured match map for the first occurrence, or `null`.
 
 ```bash
 ./target/release/nodia eval '
-use result
-val hit = result.raise(regex.find("go to https://example.com now", regex {
+val hit = regex.find("go to https://example.com now", regex {
   named scheme {
     either {
       branch { "http" }
@@ -144,8 +139,7 @@ Returns a list of all non-overlapping match maps:
 ```bash
 ./target/release/nodia eval '
 use collections as col
-use result
-emit col.len(result.raise(regex.find("http://a https://b", regex {
+emit col.len(regex.find("http://a https://b", regex {
   either {
     branch { "http" }
     branch { "https" }
@@ -267,8 +261,7 @@ which are treated as raw regex text:
 
 ```bash
 ./target/release/nodia eval '
-use result
-emit result.raise(regex.test("abc-42", "^[a-z]+-\\d+$", regex.full))
+emit regex.test("abc-42", "^[a-z]+-\\d+$", regex.full)
 '
 ```
 

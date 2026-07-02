@@ -30,13 +30,6 @@ impl<'a> State<'a> {
             }
             Expr::Call { callee, args } => self.check_call(callee, args),
             Expr::Get { object, field } => {
-                if matches!(self.symbol_for_expr(object, false).kind, SymbolKind::Result) {
-                    return Err(semantic(
-                        "E4108",
-                        result_access_message("access field on"),
-                        None,
-                    ));
-                }
                 match self.field_status(object, field) {
                     FieldStatus::Found(_) | FieldStatus::Unknown => {}
                     FieldStatus::Missing => {
@@ -170,10 +163,7 @@ impl<'a> State<'a> {
                             Ok(Some(field_symbol))
                         }
                     }
-                    Some(
-                        SymbolKind::Unknown | SymbolKind::Result | SymbolKind::Function { .. },
-                    )
-                    | None => Ok(None),
+                    Some(SymbolKind::Unknown | SymbolKind::Function { .. }) | None => Ok(None),
                 }
             }
             AssignTarget::Index { object, index } => {
@@ -297,7 +287,6 @@ impl<'a> State<'a> {
                     Err(semantic("E4105", format!("key '{key}' not found"), None))
                 }
             }
-            SymbolKind::Result => Err(semantic("E4108", result_access_message("index"), None)),
             SymbolKind::Unknown | SymbolKind::Function { .. } => Ok(()),
         }
     }

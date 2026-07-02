@@ -41,18 +41,18 @@ use numbers
 use collections
 
 func fibs(count) {
-  var result = []
+  var out = []
   var a = 0
   var b = 1
 
   for i in numbers.range(count) {
-    result = collections.push(result, a)
+    out = collections.push(out, a)
     var next = a + b
     a = b
     b = next
   }
 
-  return result
+  return out
 }
 
 emit fibs(10)
@@ -121,8 +121,6 @@ and pair iteration.
 
 ```bash
 ./target/release/nodia eval '
-use result
-
 val pat = regex(case_insensitive) {
   named scheme {
     either {
@@ -140,7 +138,7 @@ val pat = regex(case_insensitive) {
 
 val text = "see http://a.example or https://b.example for details"
 
-for hit in result.raise(regex.find(text, pat, regex.all)) {
+for hit in regex.find(text, pat, regex.all) {
   emit "{hit.named.scheme} -> {hit.named.host}"
 }
 '
@@ -182,12 +180,11 @@ emit text.split("/usr/local/bin", "/")'
 ```bash
 ./target/release/nodia eval '
 use json
-use result
 use text
 
-val doc = result.raise(json.read(text.encode("""
+val doc = json.parse(text.decode(text.encode("""
 {"name":"Ana","meta":{"count":2},"flags":[true,false]}
-""", text.utf8)))
+""", text.utf8), text.utf8))
 emit doc.name
 emit doc.meta.count
 emit doc.flags
@@ -205,10 +202,9 @@ Ana
 ```bash
 ./target/release/nodia eval '
 use csv
-use result
 use text
 
-val rows = result.raise(csv.read(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), true))
+val rows = csv.parse(text.decode(text.encode("name,role\nAna,dev\n\"Bia, Jr\",ops", text.utf8), text.utf8), true)
 emit rows[0].name
 emit rows[1]
 '
@@ -225,20 +221,19 @@ Ana
 
 ```nodia
 use io
-use result
 use text
 
-val src = result.raise(io.open("input.txt", "read"))
-val out = result.raise(io.open("output.txt", "write"))
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
 
-var line = result.raise(io.readln(src))
+var line = io.readln(src)
 while line != null {
-  result.raise(io.writeln(out, text.upper(line)))
-  line = result.raise(io.readln(src))
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-result.raise(io.close(src))
-result.raise(io.close(out))
+io.close(src)
+io.close(out)
 ```
 
 ```bash
@@ -293,9 +288,8 @@ for section in meta.sections {
 ```bash
 ./target/release/nodia eval '
 use datetime
-use result
 
-val base = result.raise(datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime))
+val base = datetime.parse("2024-01-31T23:00:00Z", datetime.as_datetime)
 val next = datetime.add(base, datetime.duration({hours: 2, minutes: 30}))
 
 emit datetime.isoformat(datetime.add(datetime.date(2024, 1, 31), 1, datetime.months))
@@ -314,8 +308,6 @@ emit datetime.strftime(next, "%F %T %:z")
 
 ```bash
 ./target/release/nodia eval '
-use result
-
 val date = regex {
   start
   exactly 4 digit
@@ -326,8 +318,8 @@ val date = regex {
   end
 }
 
-emit result.raise(regex.test("2026-05-26", date, regex.full))
-emit result.raise(regex.test("2026/05/26", date, regex.full))
+emit regex.test("2026-05-26", date, regex.full)
+emit regex.test("2026/05/26", date, regex.full)
 '
 ```
 
@@ -390,8 +382,6 @@ info: started
 
 ```bash
 ./target/release/nodia eval '
-use result
-
 val dup = regex {
   word_boundary
   named word { one_or_more letter }
@@ -400,8 +390,8 @@ val dup = regex {
   word_boundary
 }
 
-emit result.raise(regex.test("the the cat sat", dup))
-emit result.raise(regex.test("the cat sat", dup))
+emit regex.test("the the cat sat", dup)
+emit regex.test("the cat sat", dup)
 '
 ```
 
@@ -467,14 +457,13 @@ emit system.env("HOME")
 ./target/release/nodia eval '
 use system
 use text
-use result
 
 val exec_result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit result.raise(text.decode(exec_result.stdout, text.utf8))
-emit result.raise(text.decode(exec_result.stderr, text.utf8))
+emit text.decode(exec_result.stdout, text.utf8)
+emit text.decode(exec_result.stderr, text.utf8)
 emit exec_result.status
 ' --allow-process
 ```
@@ -558,7 +547,6 @@ carla pending
 ./target/release/nodia eval '
 use text
 use collections
-use result
 
 val entry = regex {
   named level {
@@ -584,7 +572,7 @@ INFO carla sync
 
 var counts = {}
 for line in text.lines(raw) {
-  val hit = result.raise(regex.find(text.trim(line), entry))
+  val hit = regex.find(text.trim(line), entry)
   if hit != null {
     val key = "{hit.named.user}:{hit.named.action}"
     counts[key] = collections.get(counts, key, 0) + 1
@@ -662,10 +650,9 @@ é
 ```bash
 ./target/release/nodia eval '
 use text
-use result
 
 val raw = b"\xef\xbb\xbfa\r\nb\0\xff"
-val decoded = result.raise(text.decode(raw, text.utf8, text.lossy))
+val decoded = text.decode(raw, text.utf8, text.lossy)
 emit text.normalize(text.drop_nul(text.strip_bom(decoded)), text.lf)
 '
 ```

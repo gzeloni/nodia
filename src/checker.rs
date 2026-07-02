@@ -3,7 +3,9 @@
 
 //! Semantic validation for parsed Nodia programs.
 
-use crate::ast::{AssignTarget, Expr, ForBinding, Program, Stmt, UseTarget};
+use crate::ast::{
+    AssignTarget, Expr, ForBinding, FuncParam, MatchPattern, Program, Stmt, UseTarget,
+};
 use crate::error::{NodiaError, NodiaResult};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
@@ -29,7 +31,6 @@ struct Symbol {
 #[derive(Debug, Clone)]
 enum SymbolKind {
     Unknown,
-    Result,
     Function {
         arities: Vec<usize>,
         builtin_target: Option<String>,

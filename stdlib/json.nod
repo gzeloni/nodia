@@ -1,0 +1,280 @@
+/* Nodia standard library: JSON parser & writer
+   Usage: use "./stdlib/json.nod" as json
+*/
+
+use scan
+use text
+use collections
+use numbers
+use conversion
+
+func parse(source) {
+  val cur = scan.cursor(source)
+  skip_ws(cur)
+  if scan.at_end(cur) {
+    throw {code: "E4000", message: "json: empty input", context: ["json.parse"]}
+  }
+  val result = parse_value(cur)
+  skip_ws(cur)
+  if not scan.at_end(cur) {
+    throw {code: "E4000", message: "json: trailing content", context: ["json.parse"]}
+  }
+  return result
+}
+
+func stringify(value) {
+  return write_value(value)
+}
+
+/* -- Whitespace -- */
+func skip_ws(cur) {
+  while not scan.at_end(cur) {
+    val ch = scan.lookahead(cur, 1)
+    if ch == " " or ch == "\n" or ch == "\r" or ch == "\t" {
+      scan.advance(cur, 1)
+    } else {
+      return
+    }
+  }
+}
+
+/* -- Value dispatch -- */
+func parse_value(cur) {
+  skip_ws(cur)
+  if scan.at_end(cur) {
+    throw {code: "E4000", message: "json: unexpected end", context: ["json.parse"]}
+  }
+  val ch = scan.lookahead(cur, 1)
+  if ch == "{{" { return parse_object(cur) }
+  if ch == "[" { return parse_array(cur) }
+  if ch == "\"" { return parse_string(cur) }
+  if ch == "t" or ch == "f" { return parse_bool(cur) }
+  if ch == "n" { return parse_null(cur) }
+  return parse_number(cur)
+}
+
+/* -- Object -- */
+func parse_object(cur) {
+  scan.expect(cur, "{{")
+  var obj = {}
+  skip_ws(cur)
+  if scan.match(cur, "}}") { return obj }
+  while true {
+    skip_ws(cur)
+    val key = parse_string(cur)
+    skip_ws(cur)
+    scan.expect(cur, ":")
+    val value = parse_value(cur)
+    if collections.contains(obj, key) {
+      throw {code: "E4000", message: "json: duplicate key: " + key, context: ["json.parse"]}
+    }
+    obj[key] = value
+    skip_ws(cur)
+    if scan.match(cur, ",") {
+      skip_ws(cur)
+      if scan.match(cur, "}}") {
+        throw {code: "E4000", message: "json: trailing comma", context: ["json.parse"]}
+      }
+    } else {
+      scan.expect(cur, "}}")
+      return obj
+    }
+  }
+}
+
+/* -- Array -- */
+func parse_array(cur) {
+  scan.expect(cur, "[")
+  var arr = []
+  skip_ws(cur)
+  if scan.match(cur, "]") { return arr }
+  while true {
+    val value = parse_value(cur)
+    arr = collections.push(arr, value)
+    skip_ws(cur)
+    if scan.match(cur, ",") {
+      skip_ws(cur)
+      if scan.match(cur, "]") {
+        throw {code: "E4000", message: "json: trailing comma", context: ["json.parse"]}
+      }
+    } else {
+      scan.expect(cur, "]")
+      return arr
+    }
+  }
+}
+
+/* -- String -- */
+func parse_string(cur) {
+  scan.expect(cur, "\"")
+  var out = ""
+  while not scan.at_end(cur) {
+    val ch = scan.advance(cur, 1)
+    if ch == "\"" { return out }
+    if ch == "\\" {
+      val esc = scan.advance(cur, 1)
+      if esc == "\"" { out = out + "\"" }
+      else if esc == "\\" { out = out + "\\" }
+      else if esc == "/" { out = out + "/" }
+      else if esc == "n" { out = out + "\n" }
+      else if esc == "r" { out = out + "\r" }
+      else if esc == "t" { out = out + "\t" }
+      else if esc == "u" {
+        scan.advance(cur, 4)
+        out = out + "?"
+      }
+      else { out = out + esc }
+    } else {
+      out = out + ch
+    }
+  }
+  throw {code: "E4000", message: "json: unterminated string", context: ["json.parse"]}
+}
+
+/* -- Bool / Null -- */
+func parse_bool(cur) {
+  if scan.match(cur, "true") { return true }
+  if scan.match(cur, "false") { return false }
+  throw {code: "E4000", message: "json: expected bool", context: ["json.parse"]}
+}
+
+func parse_null(cur) {
+  if scan.match(cur, "null") { return null }
+  throw {code: "E4000", message: "json: expected null", context: ["json.parse"]}
+}
+
+/* -- Number -- */
+func parse_number(cur) {
+  var text = ""
+  var is_float = false
+  /* sign */
+  if scan.lookahead(cur, 1) == "-" {
+    text = text + scan.advance(cur, 1)
+  }
+  /* integer part */
+  while not scan.at_end(cur) {
+    val ch = scan.lookahead(cur, 1)
+    if ch >= "0" and ch <= "9" {
+      text = text + scan.advance(cur, 1)
+    } else {
+      break
+    }
+  }
+  /* fraction */
+  if not scan.at_end(cur) and scan.lookahead(cur, 1) == "." {
+    is_float = true
+    text = text + scan.advance(cur, 1)
+    while not scan.at_end(cur) {
+      val ch = scan.lookahead(cur, 1)
+      if ch >= "0" and ch <= "9" {
+        text = text + scan.advance(cur, 1)
+      } else {
+        break
+      }
+    }
+  }
+  /* exponent */
+  if not scan.at_end(cur) {
+    val ch = scan.lookahead(cur, 1)
+    if ch == "e" or ch == "E" {
+      is_float = true
+      text = text + scan.advance(cur, 1)
+      val sign = scan.lookahead(cur, 1)
+      if sign == "+" or sign == "-" {
+        text = text + scan.advance(cur, 1)
+      }
+      while not scan.at_end(cur) {
+        val d = scan.lookahead(cur, 1)
+        if d >= "0" and d <= "9" {
+          text = text + scan.advance(cur, 1)
+        } else {
+          break
+        }
+      }
+    }
+  }
+  if text == "" or text == "-" {
+    throw {code: "E4000", message: "json: invalid number", context: ["json.parse"]}
+  }
+  if is_float {
+    return numbers.float(text)
+  }
+  return numbers.int(text)
+}
+
+/* -- Writer -- */
+func write_value(value) {
+  if value == null { return "null" }
+  if value == true { return "true" }
+  if value == false { return "false" }
+
+  /* map */
+  try {
+    val keys = collections.keys(value)
+    return write_object(value, keys)
+  } catch err {}
+
+  /* list */
+  try {
+    collections.push(value, null)
+    return write_array(value)
+  } catch err {}
+
+  /* string */
+  try {
+    text.len(value, text.grapheme)
+    return write_string(value)
+  } catch err {}
+
+  /* number */
+  try {
+    numbers.float(value)
+    return conversion.string(value)
+  } catch err {}
+
+  /* Fallback */
+  return write_string(conversion.string(value))
+}
+
+func write_array(values) {
+  var out = "["
+  val len = collections.len(values)
+  var i = 0
+  while i < len {
+    if i > 0 { out = out + "," }
+    out = out + write_value(values[i])
+    i = i + 1
+  }
+  return out + "]"
+}
+
+func write_object(obj, keys) {
+  var out = "{{"
+  val len = collections.len(keys)
+  var i = 0
+  while i < len {
+    if i > 0 { out = out + "," }
+    val key = keys[i]
+    out = out + write_string(key) + ":" + write_value(obj[key])
+    i = i + 1
+  }
+  return out + "}}"
+}
+
+func write_string(s) {
+  var out = "\""
+  /* Iterate using text.at */
+  val len = collections.len(s)
+  var i = 0
+  while i < len {
+    val ch = text.at(s, text.grapheme, i)
+    if ch == "\"" { out = out + "\\" + "\"" }
+    else if ch == "\\" { out = out + "\\\\" }
+    else if ch == "\n" { out = out + "\\n" }
+    else if ch == "\r" { out = out + "\\r" }
+    else if ch == "\t" { out = out + "\\t" }
+    else { out = out + ch }
+    i = i + 1
+  }
+  return out + "\""
+}

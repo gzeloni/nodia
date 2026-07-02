@@ -41,22 +41,53 @@ preserves whichever you wrote.
 emit "ok"
 ```
 
-Block comments are **not** part of Nodia 0.7. Multi-line documentation is
-written as a stack of single-line comments.
+Block comments use `/*` and `*/` and can span multiple lines:
+
+```nodia
+/*
+  This is a multi-line
+  block comment.
+*/
+emit "ok"
+```
+
+Single-line block comments are also accepted:
+
+```nodia
+emit 1 /* inline */ + 2
+```
+
+Nested block comments are **not** supported. A `/*` inside a block comment
+is treated as plain text until the first `*/` closes the comment.
+
+Multi-line documentation is still commonly written as a stack of
+single-line `#` or `//` comments — the formatter preserves whichever style
+you choose.
 
 The lexer preserves comments as tokens, and the parser represents them as
 statements, so the formatter never loses or reorders them.
 
 ## Identifiers
 
-Identifiers begin with an ASCII letter or `_`, followed by ASCII letters,
-digits, or `_`:
+Identifiers start with `_` or any Unicode letter, and may continue with
+Unicode letters, Unicode digits, or `_`:
 
 ```text
-[A-Za-z_][A-Za-z0-9_]*
+[_\p{L}][_\p{L}\p{N}]*
 ```
 
-Non-ASCII identifiers are not part of the 0.7 baseline.
+Examples:
+
+```nodia
+val name = "Ana"
+val user_id = 42
+val über = 7
+emit name
+emit user_id
+emit über
+```
+
+Keywords remain reserved ASCII words and cannot be reused as identifiers.
 
 ## Reserved Words
 
@@ -64,21 +95,31 @@ Currently reserved (and used by the language):
 
 ```text
 val var func return
+try catch throw
+match case default
 if else for in while break continue
 emit use as pick hide
 true false null
 and or not
 regex
+type enum struct namespace
 ```
 
 Reserved for future versions (rejected as identifiers):
 
 ```text
-from match case default
-try catch throw defer
-type enum struct namespace
+from
+defer
 ```
 
 Legacy keywords from earlier prototypes (`let`, `const`, `fn`, `import`,
 `show`) are also rejected — there is no compatibility mode for the old
 surface syntax.
+
+## Related Pages
+
+* [Conditionals & Match](conditionals.md)
+* [Errors](errors.md)
+* [Modules](modules.md)
+* [Namespaces, Structs, Enums, Types](structs.md)
+* [Operators](operators.md)

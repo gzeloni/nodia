@@ -3,14 +3,19 @@
 
 //! Runtime state and execution engine for Nodia programs.
 
-use crate::ast::{AssignTarget, BinaryOp, Expr, ForBinding, Program, Stmt, UnaryOp, UseTarget};
+use crate::ast::{
+    AssignTarget, BinaryOp, Expr, ForBinding, FuncParam, MatchArm, MatchPattern, Program, Stmt,
+    StructField, UnaryOp, UseTarget,
+};
 use crate::error::{NodiaError, NodiaResult};
 use crate::io::{self as fsio, IoRegistry};
 use crate::lexer::Lexer;
 use crate::parser::Parser;
 use crate::regex;
 use crate::stdlib;
-use crate::value::{BindingRef, Function, Module, ModuleRef, SharedBinding, StreamId, Value};
+use crate::value::{
+    BindingRef, Function, Module, ModuleRef, RecoverableErrorValue, SharedBinding, StreamId, Value,
+};
 use std::cell::RefCell;
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
@@ -22,7 +27,9 @@ use std::rc::Rc;
 mod builtins;
 mod core;
 mod eval;
+mod lazy;
 mod modules;
+mod scanner;
 mod state;
 
 type ModuleCache = Rc<RefCell<HashMap<PathBuf, ModuleRef>>>;
@@ -66,6 +73,7 @@ pub struct Runtime {
     current_module: Option<ModuleRef>,
     io: IoState,
     options: RuntimeOptions,
+    prng_state: u64,
 }
 
 fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
@@ -75,6 +83,9 @@ fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
         .filter_map(|statement| match statement {
             Stmt::Bind { name, mutable, .. } => Some((name.clone(), *mutable)),
             Stmt::Func { name, .. } => Some((name.clone(), false)),
+            Stmt::Namespace { name, .. } => Some((name.clone(), false)),
+            Stmt::Struct { name, .. } => Some((name.clone(), false)),
+            Stmt::Enum { name, .. } => Some((name.clone(), false)),
             _ => None,
         })
         .collect()
@@ -82,7 +93,11 @@ fn declared_bindings(program: &Program) -> BTreeMap<String, bool> {
 
 fn statement_export_name(statement: &Stmt) -> Option<&str> {
     match statement {
-        Stmt::Bind { name, .. } | Stmt::Func { name, .. } => Some(name),
+        Stmt::Bind { name, .. }
+        | Stmt::Func { name, .. }
+        | Stmt::Namespace { name, .. }
+        | Stmt::Struct { name, .. }
+        | Stmt::Enum { name, .. } => Some(name),
         Stmt::Assign { target, .. } => assignment_target_root_name(target),
         _ => None,
     }
@@ -134,12 +149,6 @@ fn to_number(value: &Value) -> NodiaResult<f64> {
             other.type_name()
         ))),
     }
-}
-
-fn result_access_error(action: &str) -> NodiaError {
-    NodiaError::runtime(format!(
-        "cannot {action} result; use result.value(...) / result.then(...) for success, or result.error(...) / result.recover(...) for failures"
-    ))
 }
 
 #[cfg(test)]

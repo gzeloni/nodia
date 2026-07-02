@@ -59,11 +59,11 @@ That means:
 | `text.slice(text, text.scalar, start, end)` | slices text by scalar offsets; offsets must be in range and ordered |
 | `text.slice(text, text.grapheme, start, end)` | slices text by grapheme offsets; offsets must be in range and ordered |
 | `text.offset(text, from_unit, to_unit, offset)` | converts a valid boundary from byte, scalar, or grapheme units into another supported unit |
-| `result.raise(regex.find(...)).start` / `result.raise(regex.find(...)).end` | scalar offsets aligned with `text.len(text, text.scalar)` and `text.slice(..., text.scalar, ...)` |
+| `regex.find(...).start` / `regex.find(...).end` | scalar offsets aligned with `text.len(text, text.scalar)` and `text.slice(..., text.scalar, ...)` |
 | `io.read(stream, size)` | `size` is a byte budget; returned text may read slightly past that budget to finish one UTF-8 scalar value |
 | `text.encode(text, text.utf8)` | returns UTF-8 `bytes` |
-| `text.decode(bytes, text.utf8)` | decodes bytes with codec `text.utf8` and returns `result`; strict failures become `err(...)` |
-| `text.decode(bytes, text.utf8, text.lossy)` | decodes bytes with codec `text.utf8` and returns `result`; lossy replacement is explicit |
+| `text.decode(bytes, text.utf8)` | decodes bytes with codec `text.utf8`; strict failures raise an error |
+| `text.decode(bytes, text.utf8, text.lossy)` | decodes bytes with codec `text.utf8`; lossy replacement is explicit |
 | `text.normalize(text, text.lf)` | normalizes every line ending to `\n` |
 | `text.normalize(text, text.crlf)` | normalizes every line ending to `\r\n` |
 | `text.normalize(text, text.nfc)` / `text.normalize(text, text.nfd)` | canonical Unicode normalization helpers |
@@ -106,10 +106,10 @@ step stays visible at the call site.
 
 | Situation | Rule |
 | --- | --- |
-| text readers such as `io.read(...)` / `io.readln(...)` | UTF-8 strict; invalid bytes produce `err({code: "E3000", ...})` |
+| text readers such as `io.read(...)` / `io.readln(...)` | UTF-8 strict; invalid bytes raise `E3000` |
 | raw byte readers such as `io.read(..., io.bytes)` | return `bytes`; no decode happens |
 | `system.exec(...)` output | returns raw bytes in `stdout` and `stderr` |
-| invalid `text.decode(..., text.utf8)` input | returns `err(...)` in `0.8.1+` |
+| invalid `text.decode(..., text.utf8)` input | raises a structured runtime error |
 | lossy decode | only through explicit `text.decode(..., text.utf8, text.lossy)` |
 
 This removes hidden lossy conversions from the runtime. If a script wants
@@ -121,8 +121,8 @@ The rest of the stdlib now follows the same rules where it matters:
 
 | Surface | Rule |
 | --- | --- |
-| `json.read(text_or_bytes)` | accepts string or `bytes`; byte input is decoded with `text.decode(..., text.utf8)` before parsing and the whole call returns `result` |
-| `csv.read(text_or_bytes, ...)` | accepts string or `bytes`; byte input is decoded with `text.decode(..., text.utf8)` before parsing and the whole call returns `result` |
+| `json.parse(text)` | parses text into Nodia data; bytes must be decoded explicitly first |
+| `csv.parse(text, has_header)` | parses text into rows or row maps; bytes must be decoded explicitly first |
 | `format.format("%...s", ...)` | `%s` precision counts grapheme clusters, not scalar values |
 | `format.pad(...)` | width counts grapheme clusters, so visible characters are not split mid-cluster |
 | regex builtins | remain text-only; bytes must be decoded before matching |
@@ -134,7 +134,6 @@ Explicit byte/scalar conversion:
 ```bash
 ./target/release/nodia eval '
 use text
-use result
 
 val sample = "aéb"
 emit text.len(sample, text.scalar)
@@ -142,7 +141,7 @@ emit text.len(sample, text.byte)
 emit text.offset(sample, text.scalar, text.byte, 2)
 emit text.offset(sample, text.byte, text.scalar, 3)
 emit text.encode(sample, text.utf8)
-emit result.raise(text.decode(text.encode(sample, text.utf8), text.utf8))
+emit text.decode(text.encode(sample, text.utf8), text.utf8)
 '
 ```
 
@@ -209,10 +208,9 @@ Explicit lossy decode and sanitation:
 ```bash
 ./target/release/nodia eval '
 use text
-use result
 
 val raw = b"\xef\xbb\xbfa\r\nb\0\xff"
-val decoded = result.raise(text.decode(raw, text.utf8, text.lossy))
+val decoded = text.decode(raw, text.utf8, text.lossy)
 emit text.normalize(text.drop_nul(text.strip_bom(decoded)), text.lf)
 '
 ```
@@ -227,10 +225,9 @@ Regex offsets remain scalar offsets:
 ```bash
 ./target/release/nodia eval '
 use text
-use result
 
 val sample = "éx"
-val hit = result.raise(regex.find(sample, regex { "x" }))
+val hit = regex.find(sample, regex { "x" })
 emit hit.start
 emit hit.end
 emit text.slice(sample, text.scalar, 0, hit.start)
@@ -261,9 +258,7 @@ Invalid strict decoding is also explicit:
 emit text.decode(b"a\xffb", text.utf8)'
 ```
 
-```text
-err({code: "E2000", message: "cannot decode bytes as UTF-8: invalid utf-8 sequence of 1 bytes from index 1", file: null, line: null, column: null, context: ["text.decode"]})
-```
+This raises `E2000` with `context = ["text.decode"]`.
 
 Cross-stdlib byte adoption is explicit:
 
@@ -272,21 +267,17 @@ Cross-stdlib byte adoption is explicit:
 use text
 use json
 use csv
-use result
 
-val doc = result.raise(json.read(text.encode(r'{"name":"Ana","age":30}', text.utf8)))
-val rows = result.raise(csv.read(text.encode("name,age\nAna,30", text.utf8), {
-  header: true,
-  types: true,
-}))
+val doc = json.parse(text.decode(text.encode(r'{"name":"Ana","age":30}', text.utf8), text.utf8))
+val rows = csv.parse(text.decode(text.encode("name,age\nAna,30", text.utf8), text.utf8), true)
 emit doc.name
-emit rows[0].age + 5
+emit rows[0].age
 '
 ```
 
 ```text
 Ana
-35
+30
 ```
 
 Grapheme-aware formatting also follows the new model:
@@ -311,4 +302,4 @@ These areas are intentionally still out of scope in this release:
 | Area | Status |
 | --- | --- |
 | grapheme-aware regex offsets | regex results still report scalar offsets |
-| recoverable regex replacement / split surfaces | `regex.test(...)` / `regex.find(...)` are on `result`, but broader regex-backed text helpers remain direct for now |
+| recoverable regex replacement / split surfaces | `regex.test(...)` / `regex.find(...)` still raise on invalid patterns; broader regex-backed text helpers remain direct |

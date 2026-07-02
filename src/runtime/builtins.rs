@@ -5,7 +5,7 @@
 
 use super::*;
 use crate::textcodec;
-use crate::value::{RecoverableErrorValue, ResultValue};
+use crate::value::LazyValue;
 
 impl Runtime {
     pub(super) fn call_io_builtin(
@@ -53,6 +53,12 @@ impl Runtime {
                     }),
                 )?
             }
+            "io.lines" => {
+                self.expect_arity(args, 1, "io.lines")?;
+                let stream = self.expect_stream(&args[0], "io.lines", "first")?;
+                Value::Lazy(LazyValue::lines(stream))
+            }
+            "io.chunks" => self.chunks_builtin(args)?,
             "write" => Self::io_pipeline_value("io.write", self.write_builtin(args, false))?,
             "writeln" => Self::io_pipeline_value("io.writeln", self.write_builtin(args, true))?,
             "append" => {
@@ -66,6 +72,30 @@ impl Runtime {
                 };
                 Self::io_pipeline_value("io.append", outcome.map(|_| Value::Null))?
             }
+            "net.dial" => {
+                self.expect_arity(args, 1, "net.dial")?;
+                let addr = self.expect_string(&args[0], "net.dial", "first")?;
+                Self::io_pipeline_value(
+                    "net.dial",
+                    self.io.borrow_mut().dial(&addr).map(Value::Stream),
+                )?
+            }
+            "net.listen" => {
+                self.expect_arity(args, 1, "net.listen")?;
+                let addr = self.expect_string(&args[0], "net.listen", "first")?;
+                Self::io_pipeline_value(
+                    "net.listen",
+                    self.io.borrow_mut().listen(&addr).map(Value::Stream),
+                )?
+            }
+            "net.accept" => {
+                self.expect_arity(args, 1, "net.accept")?;
+                let listener = self.expect_stream(&args[0], "net.accept", "first")?;
+                Self::io_pipeline_value(
+                    "net.accept",
+                    self.io.borrow_mut().accept(listener).map(Value::Stream),
+                )?
+            }
             _ => return Ok(None),
         };
         Ok(Some(result))
@@ -73,11 +103,9 @@ impl Runtime {
 
     fn io_pipeline_value(context: &str, outcome: NodiaResult<Value>) -> NodiaResult<Value> {
         match outcome {
-            Ok(value) => Ok(Value::Result(ResultValue::ok(value))),
+            Ok(value) => Ok(value),
             Err(error) if error.code.starts_with("E2") => Err(error),
-            Err(error) => Ok(Value::Result(ResultValue::Err(
-                RecoverableErrorValue::from_error(error.with_context(context)),
-            ))),
+            Err(error) => Err(error.with_context(context)),
         }
     }
 
@@ -93,57 +121,16 @@ impl Runtime {
             "map" => self.map_builtin(args)?,
             "filter" => self.filter_builtin(args)?,
             "reduce" => self.reduce_builtin(args)?,
+            "collect" => self.collect_builtin(args)?,
             "group_by" => self.group_by_builtin(args)?,
             "sort_by" => self.sort_by_builtin(args)?,
-            "result.then" => self.result_then_builtin(args)?,
-            "result.recover" => self.result_recover_builtin(args)?,
+            "math.random" => self.math_random_builtin(args)?,
+            "math.random_int" => self.math_random_int_builtin(args)?,
+            "base64.encode" => base64_encode_builtin(args)?,
+            "base64.decode" => base64_decode_builtin(args)?,
             _ => return Ok(None),
         };
         Ok(Some(result))
-    }
-
-    fn expect_result<'a>(
-        &self,
-        value: &'a Value,
-        name: &str,
-        position: &str,
-    ) -> NodiaResult<&'a ResultValue> {
-        match value {
-            Value::Result(result) => Ok(result),
-            other => Err(NodiaError::runtime(format!(
-                "{name}() expects result as {position} argument, got {}",
-                other.type_name()
-            ))),
-        }
-    }
-
-    fn lift_result_callback(&mut self, function: Value, arg: Value) -> NodiaResult<Value> {
-        match self.invoke_callable1(function, arg)? {
-            value @ Value::Result(_) => Ok(value),
-            value => Ok(Value::Result(ResultValue::ok(value))),
-        }
-    }
-
-    pub(super) fn result_then_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
-        self.expect_arity(args, 2, "then")?;
-        let result = self.expect_result(&args[0], "then", "first")?.clone();
-        let function = self.expect_callable(&args[1], "then", "second")?;
-        match result {
-            ResultValue::Ok(value) => self.lift_result_callback(function, (*value).clone()),
-            ResultValue::Err(error) => Ok(Value::Result(ResultValue::Err(error))),
-        }
-    }
-
-    pub(super) fn result_recover_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
-        self.expect_arity(args, 2, "recover")?;
-        let result = self.expect_result(&args[0], "recover", "first")?.clone();
-        let function = self.expect_callable(&args[1], "recover", "second")?;
-        match result {
-            ResultValue::Ok(value) => Ok(Value::Result(ResultValue::ok((*value).clone()))),
-            ResultValue::Err(error) => {
-                self.lift_result_callback(function, Value::Map(error.to_map()))
-            }
-        }
     }
 
     pub(super) fn env_builtin(&self, args: &[Value]) -> NodiaResult<Value> {
@@ -241,10 +228,13 @@ impl Runtime {
     pub(super) fn map_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
         self.expect_arity(args, 2, "map")?;
         let function = self.expect_callable(&args[0], "map", "first")?;
-        let values = self.expect_list_value(&args[1], "map", "second")?;
+        if let Value::Lazy(source) = &args[1] {
+            return Ok(Value::Lazy(LazyValue::map(source.clone(), function)));
+        }
+        let values = self.iterable_single_values(args[1].clone())?;
         let mut mapped = Vec::with_capacity(values.len());
         for value in values {
-            mapped.push(self.invoke_callable1(function.clone(), value.clone())?);
+            mapped.push(self.invoke_callable1(function.clone(), value)?);
         }
         Ok(Value::List(mapped))
     }
@@ -252,14 +242,17 @@ impl Runtime {
     pub(super) fn filter_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
         self.expect_arity(args, 2, "filter")?;
         let function = self.expect_callable(&args[0], "filter", "first")?;
-        let values = self.expect_list_value(&args[1], "filter", "second")?;
+        if let Value::Lazy(source) = &args[1] {
+            return Ok(Value::Lazy(LazyValue::filter(source.clone(), function)));
+        }
+        let values = self.iterable_single_values(args[1].clone())?;
         let mut filtered = Vec::new();
         for value in values {
             if self
                 .invoke_callable1(function.clone(), value.clone())?
                 .truthy()
             {
-                filtered.push(value.clone());
+                filtered.push(value);
             }
         }
         Ok(Value::List(filtered))
@@ -268,18 +261,31 @@ impl Runtime {
     pub(super) fn reduce_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
         self.expect_arity(args, 3, "reduce")?;
         let function = self.expect_callable(&args[0], "reduce", "first")?;
-        let values = self.expect_list_value(&args[2], "reduce", "third")?;
         let mut accumulator = args[1].clone();
-        for value in values {
-            accumulator = self.invoke_callable2(function.clone(), accumulator, value.clone())?;
+        match args[2].clone() {
+            Value::Lazy(lazy) => {
+                while let Some(value) = self.next_lazy_value(&lazy)? {
+                    accumulator = self.invoke_callable2(function.clone(), accumulator, value)?;
+                }
+            }
+            other => {
+                for value in self.iterable_single_values(other)? {
+                    accumulator = self.invoke_callable2(function.clone(), accumulator, value)?;
+                }
+            }
         }
         Ok(accumulator)
+    }
+
+    pub(super) fn collect_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 1, "collect")?;
+        Ok(Value::List(self.collect_iterable_values(args[0].clone())?))
     }
 
     pub(super) fn group_by_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
         self.expect_arity(args, 2, "group_by")?;
         let function = self.expect_callable(&args[0], "group_by", "first")?;
-        let values = self.expect_list_value(&args[1], "group_by", "second")?;
+        let values = self.collect_iterable_values(args[1].clone())?;
         let mut groups: BTreeMap<String, Vec<Value>> = BTreeMap::new();
         for value in values {
             let key = self
@@ -299,7 +305,7 @@ impl Runtime {
     pub(super) fn sort_by_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
         self.expect_arity(args, 2, "sort_by")?;
         let function = self.expect_callable(&args[0], "sort_by", "first")?;
-        let values = self.expect_list_value(&args[1], "sort_by", "second")?;
+        let values = self.collect_iterable_values(args[1].clone())?;
         let mut decorated = Vec::with_capacity(values.len());
         for (index, value) in values.iter().cloned().enumerate() {
             let key = self.invoke_callable1(function.clone(), value.clone())?;
@@ -311,6 +317,81 @@ impl Runtime {
         Ok(Value::List(
             decorated.into_iter().map(|(_, _, value)| value).collect(),
         ))
+    }
+
+    fn next_random_u64(&mut self) -> u64 {
+        let mut x = self.prng_state;
+        x ^= x << 13;
+        x ^= x >> 7;
+        x ^= x << 17;
+        self.prng_state = x;
+        x
+    }
+
+    fn random_float(&mut self) -> f64 {
+        (self.next_random_u64() as f64) / (u64::MAX as f64)
+    }
+
+    fn random_int(&mut self, min: i64, max: i64) -> i64 {
+        if min > max {
+            return min;
+        }
+        let range = (max - min + 1) as u64;
+        if range == 0 {
+            return min;
+        }
+        (self.next_random_u64() % range) as i64 + min
+    }
+
+    pub(super) fn math_random_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 0, "math.random")?;
+        Ok(Value::Float(self.random_float()))
+    }
+
+    pub(super) fn math_random_int_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        self.expect_arity(args, 2, "math.random_int")?;
+        let min = match &args[0] {
+            Value::Int(v) => *v,
+            other => {
+                return Err(NodiaError::runtime(format!(
+                    "math.random_int() expects int as first argument, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        let max = match &args[1] {
+            Value::Int(v) => *v,
+            other => {
+                return Err(NodiaError::runtime(format!(
+                    "math.random_int() expects int as second argument, got {}",
+                    other.type_name()
+                )));
+            }
+        };
+        Ok(Value::Int(self.random_int(min, max)))
+    }
+
+    fn chunks_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
+        match args {
+            [stream, size] => {
+                let stream = self.expect_stream(stream, "io.chunks", "first")?;
+                let size = self.expect_positive_size(size, "io.chunks", "second")?;
+                Ok(Value::Lazy(LazyValue::text_chunks(stream, size)))
+            }
+            [stream, mode, size] => {
+                let stream = self.expect_stream(stream, "io.chunks", "first")?;
+                let size = self.expect_positive_size(size, "io.chunks", "third")?;
+                let kind = expect_read_kind(mode, "io.chunks", "second")?;
+                match kind {
+                    ReadKind::Text => Ok(Value::Lazy(LazyValue::text_chunks(stream, size))),
+                    ReadKind::Bytes => Ok(Value::Lazy(LazyValue::byte_chunks(stream, size))),
+                }
+            }
+            _ => Err(NodiaError::runtime(format!(
+                "io.chunks() expects 2 or 3 argument(s), got {}",
+                args.len()
+            ))),
+        }
     }
 
     pub(super) fn read_builtin(&mut self, args: &[Value]) -> NodiaResult<Value> {
@@ -422,6 +503,8 @@ impl Runtime {
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_all(stream),
+            StreamId::Tcp(id) => self.io.borrow_mut().tcp_read_all(id),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot read from a listener")),
         }
     }
 
@@ -444,6 +527,8 @@ impl Runtime {
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_chunk(stream, size),
+            StreamId::Tcp(_) => self.read_stream(stream), // TCP reads all, chunked not supported
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot read from a listener")),
         }
     }
 
@@ -461,6 +546,8 @@ impl Runtime {
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_all_bytes(stream),
+            StreamId::Tcp(id) => self.io.borrow_mut().tcp_read_all_bytes(id),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot read from a listener")),
         }
     }
 
@@ -486,6 +573,8 @@ impl Runtime {
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_chunk_bytes(stream, size),
+            StreamId::Tcp(_) => self.read_bytes_stream(stream), // TCP reads all
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot read from a listener")),
         }
     }
 
@@ -512,6 +601,8 @@ impl Runtime {
             StreamId::Stdout => Err(NodiaError::runtime("cannot read from stdout")),
             StreamId::Stderr => Err(NodiaError::runtime("cannot read from stderr")),
             StreamId::File(_) => self.io.borrow_mut().read_line(stream),
+            StreamId::Tcp(id) => self.io.borrow_mut().tcp_read_line(id),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot read from a listener")),
         }
     }
 
@@ -523,6 +614,8 @@ impl Runtime {
                 .write_all(text.as_bytes())
                 .map_err(|err| NodiaError::io(format!("cannot write stderr: {err}"))),
             StreamId::File(_) => self.io.borrow_mut().write(stream, text),
+            StreamId::Tcp(id) => self.io.borrow_mut().tcp_write(id, text),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot write to a listener")),
         }
     }
 
@@ -536,6 +629,11 @@ impl Runtime {
                 .write_all(bytes)
                 .map_err(|err| NodiaError::io(format!("cannot write stderr: {err}"))),
             StreamId::File(_) => self.io.borrow_mut().write_bytes(stream, bytes),
+            StreamId::Tcp(id) => self
+                .io
+                .borrow_mut()
+                .tcp_write(id, &String::from_utf8_lossy(bytes)),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("cannot write to a listener")),
         }
     }
 
@@ -547,6 +645,7 @@ impl Runtime {
                 .flush()
                 .map_err(|err| NodiaError::io(format!("cannot flush stderr: {err}"))),
             StreamId::File(_) => self.io.borrow_mut().flush(stream),
+            StreamId::Tcp(_) | StreamId::TcpListener(_) => Ok(()), // TCP is auto-flushed
         }
     }
 
@@ -555,6 +654,7 @@ impl Runtime {
             StreamId::Stdin | StreamId::Stdout => Ok(()),
             StreamId::Stderr => self.flush_stream(stream),
             StreamId::File(_) => self.io.borrow_mut().close(stream),
+            StreamId::Tcp(_) | StreamId::TcpListener(_) => self.io.borrow_mut().close_tcp(stream),
         }
     }
 
@@ -565,6 +665,8 @@ impl Runtime {
                 Err(NodiaError::runtime("eof() expects readable stream"))
             }
             StreamId::File(_) => self.io.borrow_mut().eof(stream),
+            StreamId::Tcp(id) => self.io.borrow_mut().tcp_eof(id),
+            StreamId::TcpListener(_) => Err(NodiaError::runtime("eof() expects readable stream")),
         }
     }
 }
@@ -589,4 +691,96 @@ fn expect_read_kind(value: &Value, name: &str, position: &str) -> NodiaResult<Re
             other.type_name()
         ))),
     }
+}
+
+const BASE64_ALPHABET: &[u8; 64] =
+    b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+fn base64_encode_builtin(args: &[Value]) -> NodiaResult<Value> {
+    if args.len() != 1 {
+        return Err(NodiaError::runtime(format!(
+            "base64.encode() expects 1 argument(s), got {}",
+            args.len()
+        )));
+    }
+    let input: Vec<u8> = match &args[0] {
+        Value::Bytes(bytes) => bytes.clone(),
+        Value::String(s) => s.as_bytes().to_vec(),
+        other => {
+            return Err(NodiaError::runtime(format!(
+                "base64.encode() expects string or bytes, got {}",
+                other.type_name()
+            )));
+        }
+    };
+    Ok(Value::String(base64_encode(&input)))
+}
+
+fn base64_decode_builtin(args: &[Value]) -> NodiaResult<Value> {
+    if args.len() != 1 {
+        return Err(NodiaError::runtime(format!(
+            "base64.decode() expects 1 argument(s), got {}",
+            args.len()
+        )));
+    }
+    let input = match &args[0] {
+        Value::String(s) => s.clone(),
+        other => {
+            return Err(NodiaError::runtime(format!(
+                "base64.decode() expects string, got {}",
+                other.type_name()
+            )));
+        }
+    };
+    base64_decode(&input)
+        .map(Value::Bytes)
+        .ok_or_else(|| NodiaError::runtime("base64.decode() invalid base64 input"))
+}
+
+fn base64_encode(input: &[u8]) -> String {
+    let mut output = String::new();
+    for chunk in input.chunks(3) {
+        let b0 = chunk[0] as u32;
+        let b1 = if chunk.len() > 1 { chunk[1] as u32 } else { 0 };
+        let b2 = if chunk.len() > 2 { chunk[2] as u32 } else { 0 };
+        let packed = (b0 << 16) | (b1 << 8) | b2;
+        output.push(BASE64_ALPHABET[((packed >> 18) & 0x3F) as usize] as char);
+        output.push(BASE64_ALPHABET[((packed >> 12) & 0x3F) as usize] as char);
+        if chunk.len() > 1 {
+            output.push(BASE64_ALPHABET[((packed >> 6) & 0x3F) as usize] as char);
+        } else {
+            output.push('=');
+        }
+        if chunk.len() > 2 {
+            output.push(BASE64_ALPHABET[(packed & 0x3F) as usize] as char);
+        } else {
+            output.push('=');
+        }
+    }
+    output
+}
+
+fn base64_decode(input: &str) -> Option<Vec<u8>> {
+    let input = input.trim_end_matches('=');
+    let mut output = Vec::new();
+    let mut buffer: u32 = 0;
+    let mut bits_collected: u32 = 0;
+    for byte in input.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'+' => 62,
+            b'/' => 63,
+            _ => return None,
+        };
+        buffer = (buffer << 6) | value as u32;
+        bits_collected += 6;
+        if bits_collected >= 8 {
+            bits_collected -= 8;
+            output.push((buffer >> bits_collected) as u8);
+            buffer &= (1 << bits_collected) - 1;
+        }
+    }
+    Some(output)
 }

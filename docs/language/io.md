@@ -2,16 +2,15 @@
 
 Import `use io` for streams and file operations.
 
-In `0.8.1+`, operational IO builtins return `result`. The normal success-path
-pattern is:
+Operational IO builtins return their direct success value. On failure, they
+raise a runtime error that can be caught with `try` / `catch`.
 
 ```nodia
 use io
-use result
 
-val src = result.raise(io.open("input.txt", "read"))
-val text = result.raise(io.read(src))
-result.raise(io.close(src))
+val src = io.open("input.txt", "read")
+val text = io.read(src)
+io.close(src)
 emit text
 ```
 
@@ -29,18 +28,17 @@ remain `E2000`.
 
 ```nodia
 use io
-use result
 
-result.raise(io.writeln(io.stdout, "What is your name?"))
-val name = result.raise(io.readln(io.stdin))
-result.raise(io.writeln(io.stdout, "Hello, {name}"))
+io.writeln(io.stdout, "What is your name?")
+val name = io.readln(io.stdin)
+io.writeln(io.stdout, "Hello, {name}")
 ```
 
 ## File Streams
 
 ### `open(path, mode)`
 
-Opens a file stream and returns `result`.
+Opens a file stream and returns the stream value.
 
 | Mode | Meaning |
 | --- | --- |
@@ -50,17 +48,16 @@ Opens a file stream and returns `result`.
 
 ```nodia
 use io
-use result
 
-val out = result.raise(io.open("output.txt", "write"))
-result.raise(io.writeln(out, "first"))
-result.raise(io.writeln(out, "second"))
-result.raise(io.close(out))
+val out = io.open("output.txt", "write")
+io.writeln(out, "first")
+io.writeln(out, "second")
+io.close(out)
 ```
 
 ### `close(stream)` / `flush(stream)` / `eof(stream)`
 
-These builtins also return `result`.
+These builtins also return their direct success value.
 
 * `close(...)` flushes writable streams before closing.
 * `flush(...)` forces buffered output without closing.
@@ -68,16 +65,15 @@ These builtins also return `result`.
 
 ```nodia
 use io
-use result
 
-val src = result.raise(io.open("input.txt", "read"))
-while not result.raise(io.eof(src)) {
-  val chunk = result.raise(io.read(src, 16))
+val src = io.open("input.txt", "read")
+while not io.eof(src) {
+  val chunk = io.read(src, 16)
   if chunk != "" {
     emit chunk
   }
 }
-result.raise(io.close(src))
+io.close(src)
 ```
 
 ## Reading
@@ -92,16 +88,15 @@ result.raise(io.close(src))
 | `io.read(stream, io.bytes, size)` | up to `size` raw bytes |
 | `io.readln(stream)` | one line, or `null` at EOF |
 
-Text readers are UTF-8 strict. Invalid bytes produce `err({code: "E3000", ...})`.
+Text readers are UTF-8 strict. Invalid bytes raise `E3000`.
 When you need undecoded input, use `io.read(..., io.bytes)` and decode
 explicitly with `text.decode(...)`.
 
 ```nodia
 use io
 use text
-use result
 
-val content = result.raise(io.read("input.txt"))
+val content = io.read("input.txt")
 emit text.upper(content)
 ```
 
@@ -111,29 +106,27 @@ finish the current scalar cleanly.
 
 ```nodia
 use io
-use result
 
-val src = result.raise(io.open("input.txt", "read"))
-emit result.raise(io.read(src, 8))
-emit result.raise(io.read(src, 8))
-result.raise(io.close(src))
+val src = io.open("input.txt", "read")
+emit io.read(src, 8)
+emit io.read(src, 8)
+io.close(src)
 ```
 
 Line reads strip trailing `\n` or `\r\n`:
 
 ```nodia
 use io
-use result
 
-val src = result.raise(io.open("input.txt", "read"))
+val src = io.open("input.txt", "read")
 
-var line = result.raise(io.readln(src))
+var line = io.readln(src)
 while line != null {
   emit line
-  line = result.raise(io.readln(src))
+  line = io.readln(src)
 }
 
-result.raise(io.close(src))
+io.close(src)
 ```
 
 Raw-byte reads keep decode choices explicit:
@@ -141,10 +134,9 @@ Raw-byte reads keep decode choices explicit:
 ```nodia
 use io
 use text
-use result
 
-val raw = result.raise(io.read("input.bin", io.bytes))
-emit result.raise(text.decode(raw, text.utf8, text.lossy))
+val raw = io.read("input.bin", io.bytes)
+emit text.decode(raw, text.utf8, text.lossy)
 ```
 
 ## Writing
@@ -158,14 +150,13 @@ All file-writing operations require `--allow-write`.
 | `io.writeln(stream, text)` | write text plus newline |
 | `io.append(path, value)` | append text or bytes to a file |
 
-Each returns `result`.
+Each returns its direct success value.
 
 ```nodia
 use io
-use result
 
-result.raise(io.write("payload.bin", b"\0\x01\x02\xff"))
-result.raise(io.append("payload.bin", b"\n"))
+io.write("payload.bin", b"\0\x01\x02\xff")
+io.append("payload.bin", b"\n")
 ```
 
 `io.stdout` remains a text-output channel, so `io.write(io.stdout, b"...")` is
@@ -174,7 +165,7 @@ rejected deliberately.
 Without `--allow-write`, the call returns:
 
 ```text
-err({code: "E3001", message: "file write requires --allow-write", file: null, line: null, column: null})
+error[E3001]: file write requires --allow-write
 ```
 
 ## Paths
@@ -188,17 +179,16 @@ declares the `use`.
 ```nodia
 use io
 use text
-use result
 
-val src = result.raise(io.open("input.txt", "read"))
-val out = result.raise(io.open("output.txt", "write"))
+val src = io.open("input.txt", "read")
+val out = io.open("output.txt", "write")
 
-var line = result.raise(io.readln(src))
+var line = io.readln(src)
 while line != null {
-  result.raise(io.writeln(out, text.upper(line)))
-  line = result.raise(io.readln(src))
+  io.writeln(out, text.upper(line))
+  line = io.readln(src)
 }
 
-result.raise(io.close(src))
-result.raise(io.close(out))
+io.close(src)
+io.close(out)
 ```

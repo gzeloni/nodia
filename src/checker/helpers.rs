@@ -13,10 +13,6 @@ impl Symbol {
         }
     }
 
-    pub(super) fn function(arity: usize, mutable: bool) -> Self {
-        Self::function_arities(&[arity], mutable)
-    }
-
     pub(super) fn function_arities(arities: &[usize], mutable: bool) -> Self {
         Self::function_symbol(arities, mutable, None)
     }
@@ -102,7 +98,24 @@ pub(super) fn declared_exports(program: &Program) -> HashMap<String, Symbol> {
                 symbols.insert(name.clone(), static_symbol_for_expr(value, *mutable));
             }
             Stmt::Func { name, params, .. } => {
-                symbols.insert(name.clone(), Symbol::function(params.len(), false));
+                let required = params.iter().filter(|p| p.default.is_none()).count();
+                let total = params.len();
+                symbols.insert(
+                    name.clone(),
+                    Symbol::function_arities(&(required..=total).collect::<Vec<_>>(), false),
+                );
+            }
+            Stmt::Namespace { name, body } => {
+                symbols.insert(
+                    name.clone(),
+                    Symbol::namespace(static_namespace_symbols(body)),
+                );
+            }
+            Stmt::Struct { name, fields } => {
+                symbols.insert(name.clone(), static_struct_symbol(fields));
+            }
+            Stmt::Enum { name, variants } => {
+                symbols.insert(name.clone(), static_enum_symbol(variants));
             }
             _ => {}
         }
@@ -113,7 +126,11 @@ pub(super) fn declared_exports(program: &Program) -> HashMap<String, Symbol> {
 pub(super) fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     let kind = match expr {
         Expr::Lambda { params, .. } => SymbolKind::Function {
-            arities: vec![params.len()],
+            arities: {
+                let required = params.iter().filter(|p| p.default.is_none()).count();
+                let total = params.len();
+                (required..=total).collect()
+            },
             builtin_target: None,
         },
         Expr::Map(pairs) => {
@@ -128,28 +145,107 @@ pub(super) fn static_symbol_for_expr(expr: &Expr, mutable: bool) -> Symbol {
     Symbol { mutable, kind }
 }
 
+pub(super) fn static_namespace_symbols(body: &[Stmt]) -> HashMap<String, Symbol> {
+    let mut symbols = HashMap::new();
+    for statement in body {
+        match statement {
+            Stmt::Bind {
+                name,
+                value,
+                mutable,
+            } => {
+                symbols.insert(name.clone(), static_symbol_for_expr(value, *mutable));
+            }
+            Stmt::Func { name, params, .. } => {
+                let required = params.iter().filter(|p| p.default.is_none()).count();
+                let total = params.len();
+                symbols.insert(
+                    name.clone(),
+                    Symbol::function_arities(&(required..=total).collect::<Vec<_>>(), false),
+                );
+            }
+            Stmt::Namespace { name, body } => {
+                symbols.insert(
+                    name.clone(),
+                    Symbol::namespace(static_namespace_symbols(body)),
+                );
+            }
+            Stmt::Struct { name, fields } => {
+                symbols.insert(name.clone(), static_struct_symbol(fields));
+            }
+            Stmt::Enum { name, variants } => {
+                symbols.insert(name.clone(), static_enum_symbol(variants));
+            }
+            _ => {}
+        }
+    }
+    symbols
+}
+
+pub(super) fn static_struct_symbol(fields: &[crate::ast::StructField]) -> Symbol {
+    let mut field_symbols = HashMap::new();
+    for field in fields {
+        let symbol = field
+            .default
+            .as_ref()
+            .map(|value| static_symbol_for_expr(value, false))
+            .unwrap_or_else(|| Symbol::unknown(false));
+        field_symbols.insert(field.name.clone(), symbol);
+    }
+    Symbol {
+        mutable: false,
+        kind: SymbolKind::Map(field_symbols),
+    }
+}
+
+pub(super) fn static_enum_symbol(variants: &[String]) -> Symbol {
+    let mut namespace = HashMap::new();
+    for variant in variants {
+        let mut fields = HashMap::new();
+        fields.insert("kind".to_string(), Symbol::unknown(false));
+        namespace.insert(
+            variant.clone(),
+            Symbol {
+                mutable: false,
+                kind: SymbolKind::Map(fields),
+            },
+        );
+    }
+    Symbol::namespace(namespace)
+}
+
 pub(super) fn builtin_call_symbol(target: &str) -> Option<SymbolKind> {
     match target {
-        "result.ok" | "result.err" | "result.then" | "result.recover" | "text.decode"
-        | "regex.test" | "regex.find" | "datetime.parse" | "json.read" | "csv.read" | "open"
-        | "close" | "flush" | "eof" | "read" | "readln" | "write" | "writeln" | "append" => {
-            Some(SymbolKind::Result)
+        "scan.pos" => Some(scan_position_symbol().kind),
+        "scan.match" | "scan.expect" | "scan.take_while" | "scan.take_until" | "scan.span" => {
+            Some(scan_span_symbol().kind)
         }
-        "result.error" => {
-            let mut fields = HashMap::new();
-            fields.insert("code".to_string(), Symbol::unknown(false));
-            fields.insert("message".to_string(), Symbol::unknown(false));
-            fields.insert("file".to_string(), Symbol::unknown(false));
-            fields.insert("line".to_string(), Symbol::unknown(false));
-            fields.insert("column".to_string(), Symbol::unknown(false));
-            fields.insert("context".to_string(), Symbol::unknown(false));
-            let mut span_fields = HashMap::new();
-            span_fields.insert("line".to_string(), Symbol::unknown(false));
-            span_fields.insert("column".to_string(), Symbol::unknown(false));
-            fields.insert("span".to_string(), Symbol::namespace(span_fields));
-            Some(SymbolKind::Map(fields))
-        }
+        "scan.token" => Some(scan_token_symbol().kind),
         _ => None,
+    }
+}
+
+pub(super) fn recoverable_error_symbol() -> Symbol {
+    let mut fields = HashMap::new();
+    fields.insert("code".to_string(), Symbol::unknown(false));
+    fields.insert("message".to_string(), Symbol::unknown(false));
+    fields.insert("file".to_string(), Symbol::unknown(false));
+    fields.insert("line".to_string(), Symbol::unknown(false));
+    fields.insert("column".to_string(), Symbol::unknown(false));
+    fields.insert("context".to_string(), Symbol::unknown(false));
+    let mut span_fields = HashMap::new();
+    span_fields.insert("line".to_string(), Symbol::unknown(false));
+    span_fields.insert("column".to_string(), Symbol::unknown(false));
+    fields.insert(
+        "span".to_string(),
+        Symbol {
+            mutable: false,
+            kind: SymbolKind::Map(span_fields),
+        },
+    );
+    Symbol {
+        mutable: false,
+        kind: SymbolKind::Map(fields),
     }
 }
 
@@ -169,10 +265,37 @@ pub(super) fn regex_namespace_symbol() -> Symbol {
     Symbol::namespace(fields)
 }
 
-pub(super) fn result_access_message(action: &str) -> String {
-    format!(
-        "cannot {action} result; use result.value(...) / result.then(...) for success, or result.error(...) / result.recover(...) for failures"
-    )
+fn scan_position_symbol() -> Symbol {
+    let mut fields = HashMap::new();
+    fields.insert("offset".to_string(), Symbol::unknown(false));
+    fields.insert("line".to_string(), Symbol::unknown(false));
+    fields.insert("column".to_string(), Symbol::unknown(false));
+    Symbol {
+        mutable: false,
+        kind: SymbolKind::Map(fields),
+    }
+}
+
+fn scan_span_symbol() -> Symbol {
+    let mut fields = HashMap::new();
+    fields.insert("text".to_string(), Symbol::unknown(false));
+    fields.insert("start".to_string(), scan_position_symbol());
+    fields.insert("end".to_string(), scan_position_symbol());
+    Symbol {
+        mutable: false,
+        kind: SymbolKind::Map(fields),
+    }
+}
+
+fn scan_token_symbol() -> Symbol {
+    let mut fields = HashMap::new();
+    fields.insert("kind".to_string(), Symbol::unknown(false));
+    fields.insert("text".to_string(), Symbol::unknown(false));
+    fields.insert("span".to_string(), scan_span_symbol());
+    Symbol {
+        mutable: false,
+        kind: SymbolKind::Map(fields),
+    }
 }
 
 pub(super) fn resolve_use(path: &str, base_dir: Option<&Path>) -> NodiaResult<PathBuf> {
@@ -242,6 +365,12 @@ pub(super) fn keyword_name(kind: &TokenKind) -> Option<&'static str> {
         TokenKind::While => Some("while"),
         TokenKind::Break => Some("break"),
         TokenKind::Continue => Some("continue"),
+        TokenKind::Match => Some("match"),
+        TokenKind::Case => Some("case"),
+        TokenKind::Default => Some("default"),
+        TokenKind::Try => Some("try"),
+        TokenKind::Catch => Some("catch"),
+        TokenKind::Throw => Some("throw"),
         TokenKind::LegacyImport => Some("import"),
         TokenKind::Use => Some("use"),
         TokenKind::Lambda => Some("lambda"),
@@ -271,6 +400,12 @@ pub(super) fn keyword_from_name(name: &str) -> Option<&'static str> {
         "while" => Some("while"),
         "break" => Some("break"),
         "continue" => Some("continue"),
+        "match" => Some("match"),
+        "case" => Some("case"),
+        "default" => Some("default"),
+        "try" => Some("try"),
+        "catch" => Some("catch"),
+        "throw" => Some("throw"),
         "import" => Some("import"),
         "use" => Some("use"),
         "lambda" => Some("lambda"),

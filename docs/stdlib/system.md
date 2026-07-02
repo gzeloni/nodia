@@ -61,13 +61,12 @@ This requires `--allow-process`.
 ./target/release/nodia eval '
 use system
 use text
-use result
 val exec_result = system.exec("/bin/sh", [
   "-c",
   "printf out; printf err 1>&2; exit 7",
 ])
-emit result.raise(text.decode(exec_result.stdout, text.utf8))
-emit result.raise(text.decode(exec_result.stderr, text.utf8))
+emit text.decode(exec_result.stdout, text.utf8)
+emit text.decode(exec_result.stderr, text.utf8)
 emit exec_result.status
 ' --allow-process
 ```
@@ -80,9 +79,9 @@ err
 
 `stdout` and `stderr` are raw `bytes` values.
 This keeps subprocess decoding explicit and avoids hidden lossy conversion.
-Use `result.raise(text.decode(..., text.utf8))` for strict decoding or
-`result.raise(text.decode(..., text.utf8, text.lossy))` when replacement
-semantics are actually desired.
+Use `text.decode(..., text.utf8)` for strict decoding or
+`text.decode(..., text.utf8, text.lossy)` when replacement semantics are
+actually desired.
 
 ## `exit()` / `exit(code)`
 

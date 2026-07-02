@@ -9,11 +9,15 @@ use crate::value::StreamId;
 use std::collections::HashMap;
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Read, Seek, Write};
+use std::net::{TcpListener as StdTcpListener, TcpStream};
 
 /// Registry of open file-backed streams managed by the runtime.
 pub struct IoRegistry {
     next_file_id: usize,
     streams: HashMap<usize, FileStream>,
+    next_tcp_id: usize,
+    tcp_streams: HashMap<usize, TcpConnection>,
+    tcp_listeners: HashMap<usize, StdTcpListener>,
 }
 
 impl Default for IoRegistry {
@@ -33,12 +37,21 @@ enum FileStream {
     },
 }
 
+pub(super) struct TcpConnection {
+    pub(super) stream: TcpStream,
+    pub(super) read_buffer: Vec<u8>,
+    pub(super) eof: bool,
+}
+
 impl IoRegistry {
     /// Creates an empty stream registry.
     pub fn new() -> Self {
         Self {
             next_file_id: 1,
             streams: HashMap::new(),
+            next_tcp_id: 1,
+            tcp_streams: HashMap::new(),
+            tcp_listeners: HashMap::new(),
         }
     }
 
@@ -330,7 +343,168 @@ impl IoRegistry {
                     .map_err(|err| NodiaError::io(format!("cannot flush stream {id}: {err}")))?;
             }
         }
+        for conn in self.tcp_streams.values_mut() {
+            conn.stream
+                .flush()
+                .map_err(|err| NodiaError::io(format!("cannot flush tcp stream: {err}")))?;
+        }
         Ok(())
+    }
+
+    /// Dials a TCP connection to `addr`.
+    pub fn dial(&mut self, addr: &str) -> NodiaResult<StreamId> {
+        let stream = TcpStream::connect(addr)
+            .map_err(|err| NodiaError::io(format!("net.dial '{}': {err}", addr)))?;
+        let id = self.next_tcp_id;
+        self.next_tcp_id += 1;
+        self.tcp_streams.insert(
+            id,
+            TcpConnection {
+                stream,
+                read_buffer: Vec::new(),
+                eof: false,
+            },
+        );
+        Ok(StreamId::Tcp(id))
+    }
+
+    /// Starts listening on `addr`.
+    pub fn listen(&mut self, addr: &str) -> NodiaResult<StreamId> {
+        let listener = StdTcpListener::bind(addr)
+            .map_err(|err| NodiaError::io(format!("net.listen '{}': {err}", addr)))?;
+        let id = self.next_tcp_id;
+        self.next_tcp_id += 1;
+        self.tcp_listeners.insert(id, listener);
+        Ok(StreamId::TcpListener(id))
+    }
+
+    /// Accepts a connection from a listener.
+    pub fn accept(&mut self, listener_id: StreamId) -> NodiaResult<StreamId> {
+        let StreamId::TcpListener(listener_id) = listener_id else {
+            return Err(NodiaError::runtime("net.accept expects a listener"));
+        };
+        let listener = self
+            .tcp_listeners
+            .get(&listener_id)
+            .ok_or_else(|| NodiaError::runtime(format!("listener {listener_id} is closed")))?;
+        let (stream, _) = listener
+            .accept()
+            .map_err(|err| NodiaError::io(format!("net.accept: {err}")))?;
+        let id = self.next_tcp_id;
+        self.next_tcp_id += 1;
+        self.tcp_streams.insert(
+            id,
+            TcpConnection {
+                stream,
+                read_buffer: Vec::new(),
+                eof: false,
+            },
+        );
+        Ok(StreamId::Tcp(id))
+    }
+
+    /// Closes a TCP stream or listener.
+    pub fn close_tcp(&mut self, stream: StreamId) -> NodiaResult<()> {
+        match stream {
+            StreamId::Tcp(id) => {
+                self.tcp_streams
+                    .remove(&id)
+                    .ok_or_else(|| NodiaError::runtime(format!("tcp stream {id} is closed")))?;
+                Ok(())
+            }
+            StreamId::TcpListener(id) => {
+                self.tcp_listeners
+                    .remove(&id)
+                    .ok_or_else(|| NodiaError::runtime(format!("listener {id} is closed")))?;
+                Ok(())
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    pub(super) fn tcp_connection(&mut self, id: usize) -> NodiaResult<&mut TcpConnection> {
+        self.tcp_streams
+            .get_mut(&id)
+            .ok_or_else(|| NodiaError::runtime(format!("tcp stream {id} is closed")))
+    }
+
+    pub(super) fn tcp_read_all(&mut self, id: usize) -> NodiaResult<String> {
+        let conn = self.tcp_connection(id)?;
+        conn.read_buffer.clear();
+        conn.stream
+            .read_to_end(&mut conn.read_buffer)
+            .map_err(|err| NodiaError::io(format!("cannot read tcp {id}: {err}")))?;
+        conn.eof = true;
+        textcodec::decode_utf8_io(
+            std::mem::take(&mut conn.read_buffer),
+            &format!("cannot read tcp {id}"),
+        )
+    }
+
+    pub(super) fn tcp_read_all_bytes(&mut self, id: usize) -> NodiaResult<Vec<u8>> {
+        let conn = self.tcp_connection(id)?;
+        conn.read_buffer.clear();
+        conn.stream
+            .read_to_end(&mut conn.read_buffer)
+            .map_err(|err| NodiaError::io(format!("cannot read tcp {id}: {err}")))?;
+        conn.eof = true;
+        Ok(std::mem::take(&mut conn.read_buffer))
+    }
+
+    pub(super) fn tcp_read_line(&mut self, id: usize) -> NodiaResult<Option<String>> {
+        let conn = self.tcp_connection(id)?;
+        conn.read_buffer.clear();
+        let mut byte = [0u8; 1];
+        loop {
+            match conn.stream.read(&mut byte) {
+                Ok(0) => {
+                    conn.eof = true;
+                    if conn.read_buffer.is_empty() {
+                        return Ok(None);
+                    }
+                    let bytes = std::mem::take(&mut conn.read_buffer);
+                    return textcodec::decode_utf8_io(
+                        bytes,
+                        &format!("cannot read line from tcp {id}"),
+                    )
+                    .map(Some);
+                }
+                Ok(_) => {
+                    conn.read_buffer.push(byte[0]);
+                    if byte[0] == b'\n' {
+                        let mut bytes = std::mem::take(&mut conn.read_buffer);
+                        if bytes.ends_with(b"\n") {
+                            bytes.pop();
+                            if bytes.ends_with(b"\r") {
+                                bytes.pop();
+                            }
+                        }
+                        return textcodec::decode_utf8_io(
+                            bytes,
+                            &format!("cannot read line from tcp {id}"),
+                        )
+                        .map(Some);
+                    }
+                }
+                Err(err) => {
+                    return Err(NodiaError::io(format!("cannot read from tcp {id}: {err}")));
+                }
+            }
+        }
+    }
+
+    pub(super) fn tcp_write(&mut self, id: usize, text: &str) -> NodiaResult<()> {
+        let conn = self.tcp_connection(id)?;
+        conn.stream
+            .write_all(text.as_bytes())
+            .map_err(|err| NodiaError::io(format!("cannot write to tcp {id}: {err}")))
+    }
+
+    pub(super) fn tcp_eof(&self, id: usize) -> NodiaResult<bool> {
+        self.tcp_streams
+            .get(&id)
+            .map(|conn| conn.eof)
+            .ok_or_else(|| NodiaError::runtime(format!("tcp stream {id} is closed")))
     }
 
     fn stream_mut(&mut self, id: usize) -> NodiaResult<&mut FileStream> {
@@ -405,6 +579,9 @@ fn expect_file_stream(stream: StreamId, name: &str) -> NodiaResult<usize> {
     match stream {
         StreamId::File(id) => Ok(id),
         StreamId::Stdin | StreamId::Stdout | StreamId::Stderr => Err(NodiaError::runtime(format!(
+            "{name}() cannot use {stream} through the file registry"
+        ))),
+        StreamId::Tcp(_) | StreamId::TcpListener(_) => Err(NodiaError::runtime(format!(
             "{name}() cannot use {stream} through the file registry"
         ))),
     }

@@ -15,11 +15,12 @@ fixed set of kinds.
 | `bytes`    | `b"hello"`, `b"\xff\0"`                              |
 | `list`     | `[1, 2, 3]`                                          |
 | `map`      | `{name: "Ana", role: "dev"}`                         |
-| `result`   | `result.ok("Ana")`, `result.err("E8000", "missing row")` |
 | `date`     | `datetime.date(2026, 5, 27)`                         |
-| `datetime` | `result.raise(datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime))` |
+| `datetime` | `datetime.parse("2026-05-27T14:30:05Z", datetime.as_datetime)` |
 | `duration` | `datetime.duration({hours: 2, minutes: 30})`         |
-| `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `result.raise(io.open("f.txt", "read"))` |
+| `stream`   | `io.stdin`, `io.stdout`, `io.stderr`, `io.open("f.txt", "read")` |
+| `scanner`  | `scan.cursor("name=ana")`                            |
+| `lazy`     | `io.lines("input.txt")`, `io.chunks("input.bin", 16)` |
 | `function` | `func greet(name) { ... }`                           |
 | `regex`    | `regex { one_or_more digit }`                        |
 | `use`      | result of a `use` declaration                        |
@@ -73,24 +74,12 @@ returns another `bytes` value. Common producers are `text.encode(..., text.utf8)
 
 See [Lists & Maps](collections.md).
 
-### Results
+### Errors Are Not Values
 
-`result` is the recoverable pipeline value introduced in `0.8.0`.
-
-Import `use result` and construct explicit success/failure values:
-
-```nodia
-use result
-
-val ok = result.ok("Ana")
-val bad = result.err("E8000", "missing row")
-```
-
-Use `result.is_ok(...)`, `result.is_err(...)`, `result.value(...)`,
-`result.value_or(...)`, and `result.error(...)` to inspect them.
-`result.then(...)` and `result.recover(...)` transform success/error branches.
-`result.raise(...)` converts a recoverable error back into a fatal runtime
-failure.
+Recoverable failure is handled with `try` / `catch`, not with a dedicated value
+kind. Operations like `io.read(...)`, `text.decode(...)`, `regex.find(...)`,
+`json.parse(...)`, and `datetime.parse(...)` return their normal success value
+or raise an error that can be caught explicitly. See [Errors](errors.md).
 
 ### Dates, Datetimes, And Durations
 
@@ -112,11 +101,12 @@ rules are:
 | `bytes`    | false if empty (`b""`) |
 | `list`     | false if empty (`[]`) |
 | `map`      | false if empty (`{}`) |
-| `result`   | true for `ok(...)`, false for `err(...)` |
 | `date`     | always true           |
 | `datetime` | always true           |
 | `duration` | always true           |
 | `stream`   | always true           |
+| `scanner`  | always true           |
+| `lazy`     | always true           |
 | `function` | always true           |
 | `regex`    | always true           |
 | `use`      | always true           |

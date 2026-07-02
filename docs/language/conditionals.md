@@ -1,7 +1,12 @@
-# Conditionals
+# Conditionals & Match
 
-`if` is the only branching construct in Nodia. It evaluates the condition for
-truthiness (see [Truthiness](values.md#truthiness)).
+Nodia has two branching tools:
+
+* `if` / `else` for ordinary truthiness-based control flow
+* `match` / `case` / `default` for structural branching
+
+`if` evaluates the condition for truthiness (see
+[Truthiness](values.md#truthiness)).
 
 ## `if` / `else`
 
@@ -63,6 +68,75 @@ stage
 
 The AST represents this as an `else` branch containing a nested `If` node —
 there is no dedicated "else if" syntax tree (see [AST](../reference/ast.md)).
+
+## `match` / `case` / `default`
+
+`match` evaluates one value and checks the `case` arms in order. The first
+matching arm runs. A `default` arm is required.
+
+```nodia
+match input.kind {
+  case "ok" {
+    emit "success"
+  }
+  case "warn" {
+    emit "warning"
+  }
+  default {
+    emit "unknown"
+  }
+}
+```
+
+### Capture Patterns
+
+An identifier pattern captures the whole matched value:
+
+```nodia
+match input {
+  case user {
+    emit user.name
+  }
+  default {
+    emit "missing"
+  }
+}
+```
+
+Use `_` when you want a wildcard without binding:
+
+```nodia
+match input.status {
+  case "ready" { emit "ok" }
+  case _ {
+    emit "fallback"
+  }
+  default {
+    emit "unreachable"
+  }
+}
+```
+
+### List And Map Patterns
+
+Patterns can destructure fixed-length lists and maps with required keys:
+
+```nodia
+match payload {
+  case ["user", name] {
+    emit name
+  }
+  case {kind: "user", name} {
+    emit name
+  }
+  default {
+    emit "unsupported"
+  }
+}
+```
+
+Map shorthand like `{name}` means "require the key `name` and bind its value to
+the local name `name`".
 
 ## No Ternary
 

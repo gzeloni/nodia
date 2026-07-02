@@ -8,11 +8,15 @@ From **lowest** to **highest**:
 | 2     | `and`                                    | left          |
 | 3     | `==`, `!=`                               | left          |
 | 4     | `<`, `<=`, `>`, `>=`                     | left          |
-| 5     | `+`, `-`                                 | left          |
-| 6     | `*`, `/`, `%`                            | left          |
-| 7     | unary `-`, `not`                         | right         |
-| 8     | call `f(...)`, field `.x`, index `[...]` | left          |
-| 9     | literals, identifiers, grouped exprs     | n/a           |
+| 5     | `|`                                      | left          |
+| 6     | `^`                                      | left          |
+| 7     | `&`                                      | left          |
+| 8     | `<<`, `>>`                               | left          |
+| 9     | `+`, `-`                                 | left          |
+| 10    | `*`, `/`, `%`                            | left          |
+| 11    | unary `-`, `not`, `~`                    | right         |
+| 12    | call `f(...)`, field `.x`, index `[...]` | left          |
+| 13    | literals, identifiers, grouped exprs     | n/a           |
 
 Use parentheses to force order:
 
